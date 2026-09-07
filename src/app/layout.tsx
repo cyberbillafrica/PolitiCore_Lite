@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Ifeanyichukwu 2027 | House of Assembly",
-  description: "Building a brighter future for Nkanu West Constituency",
+  title: "Uche-Ndi-Enugu 2027 | Governorship",
+  description: "Building a brighter future for Ndi Enugu",
 };
 
 export default function RootLayout({
