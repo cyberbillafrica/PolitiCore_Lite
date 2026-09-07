@@ -195,7 +195,7 @@ export default function HomePage() {
             <div className="relative">
               <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-gradient-to-br from-green-900/10 to-green-700/10">
                 <Image
-                  src="/images/candidate.jpg"
+                  src="/images/candidate.jpeg"
                   alt="Chief Uche Geoffrey Nnaji"
                   fill
                   priority
@@ -343,7 +343,7 @@ export default function HomePage() {
                   ) : (
                     <div className="relative flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br from-green-900/10 to-green-700/10">
                       <span className="text-2xl font-bold text-green-900/20">
-                        Uche Nnaji 2027
+                        Nwakabeiya 2027
                       </span>
                     </div>
                   )}

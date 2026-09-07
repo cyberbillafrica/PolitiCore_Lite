@@ -41,7 +41,7 @@ export default function Header() {
               {/* Campaign Logo */}
               <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-300 group-hover:shadow-md">
                 <Image
-                  src="/images/official_logo.jpg"
+                  src="/images/official_logo.jpeg"
                   alt="Uche Geoffrey Nnaji"
                   fill
                   sizes="44px"
