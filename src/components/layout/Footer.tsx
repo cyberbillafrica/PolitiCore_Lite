@@ -93,7 +93,7 @@ export default function Footer() {
             <Link href="/" className="group inline-flex items-center gap-4">
               <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg transition-shadow group-hover:shadow-xl">
                 <Image
-                  src="/images/official_logo.jpg"
+                  src="/images/official_logo.jpeg"
                   alt="Uche Geoffrey Nnaji"
                   fill
                   sizes="56px"
