@@ -51,6 +51,8 @@ export default function AdminStructurePage() {
   const [formMember, setFormMember] = useState<Partial<StructureMember>>({
     name: "",
     position: "",
+    altTitle: "",
+    zone: "",
     level: "STATE",
     phone: "",
     email: "",
@@ -94,6 +96,8 @@ export default function AdminStructurePage() {
     setFormMember({
       name: "",
       position: "",
+      altTitle: "",
+      zone: "",
       level: "STATE",
       phone: "",
       email: "",
@@ -143,6 +147,8 @@ export default function AdminStructurePage() {
         id: formMember.id || "",
         name: formMember.name.trim(),
         position: formMember.position.trim(),
+        altTitle: formMember.altTitle?.trim() || "",
+        zone: formMember.zone?.trim() || "",
         level: formMember.level || "STATE",
         phone: formMember.phone?.trim() || "",
         email: formMember.email?.trim() || "",
@@ -387,6 +393,38 @@ export default function AdminStructurePage() {
                     setFormMember({ ...formMember, name: e.target.value })
                   }
                   placeholder="e.g. Chief John Nnamani"
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+              </div>
+
+              {/* Alt Title / Traditional Title */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Traditional Title / Honorific (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={formMember.altTitle || ""}
+                  onChange={(e) =>
+                    setFormMember({ ...formMember, altTitle: e.target.value })
+                  }
+                  placeholder="e.g. Eze Ana Eri Ifeya On'enwe Amuri 1 of Enugu State"
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+              </div>
+
+              {/* Senatorial Zone */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Senatorial Zone (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={formMember.zone || ""}
+                  onChange={(e) =>
+                    setFormMember({ ...formMember, zone: e.target.value })
+                  }
+                  placeholder="e.g. Enugu East Senatorial Zone"
                   className="w-full px-3 py-2 border rounded-lg text-sm"
                 />
               </div>

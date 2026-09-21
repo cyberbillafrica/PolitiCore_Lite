@@ -132,45 +132,66 @@ export default async function OurStructurePage() {
 
 function MemberCard({ member }: { member: StructureMember }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col justify-between group">
       <div>
-        <div className="flex items-start gap-4 mb-4">
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-emerald-200 bg-emerald-50 flex items-center justify-center">
-            {member.image_url ? (
-              <Image
-                src={member.image_url}
-                alt={member.name}
-                fill
-                unoptimized
-                className="object-cover"
-              />
-            ) : (
-              <User className="h-8 w-8 text-emerald-600" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-gray-900 text-lg truncate" title={member.name}>
-              {member.name}
-            </h3>
-            <p className="text-sm font-semibold text-emerald-700 line-clamp-2">
-              {member.position}
+        {/* Large Prominent Image Container */}
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 flex items-center justify-center text-white">
+          {member.image_url && member.image_url.startsWith("http") ? (
+            <Image
+              src={member.image_url}
+              alt={member.name}
+              fill
+              unoptimized
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-emerald-200/80 p-6 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-800/60 border border-emerald-500/30 text-white font-extrabold text-2xl shadow-inner mb-2">
+                {member.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/60">DCM Enugu Secretariat</span>
+            </div>
+          )}
+
+          {/* Level or Zone Tag */}
+          {(member.zone || member.level) && (
+            <div className="absolute top-3 left-3 bg-emerald-900/90 backdrop-blur-md text-emerald-100 px-3 py-1 rounded-full text-xs font-semibold shadow-md border border-emerald-500/20 z-10">
+              {member.zone || `${member.level} Executive`}
+            </div>
+          )}
+        </div>
+
+        {/* Content Details */}
+        <div className="p-6">
+          <h3 className="font-extrabold text-gray-900 text-xl leading-tight" title={member.name}>
+            {member.name}
+          </h3>
+
+          <p className="text-sm font-bold text-emerald-700 mt-1">
+            {member.position}
+          </p>
+
+          {member.altTitle && (
+            <p className="text-xs font-medium text-emerald-900/80 bg-emerald-50 border border-emerald-200/80 rounded-lg p-2.5 mt-2.5 leading-relaxed italic">
+              "{member.altTitle}"
             </p>
-            {member.ward && (
-              <span className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-gray-500">
-                <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                {member.ward}
-              </span>
-            )}
-          </div>
+          )}
+
+          {member.ward && (
+            <p className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-gray-600">
+              <MapPin className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              {member.ward}
+            </p>
+          )}
         </div>
       </div>
 
       {(member.phone || member.email) && (
-        <div className="pt-3 mt-3 border-t border-gray-100 space-y-1.5 text-xs text-gray-600">
+        <div className="p-6 pt-0 mt-auto border-t border-gray-100/80 space-y-2 text-xs font-medium text-gray-600">
           {member.phone && (
             <a
               href={`tel:${member.phone}`}
-              className="flex items-center gap-2 hover:text-emerald-700 truncate"
+              className="flex items-center gap-2 hover:text-emerald-700 transition-colors truncate pt-3"
             >
               <Phone className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
               <span>{member.phone}</span>
@@ -179,7 +200,7 @@ function MemberCard({ member }: { member: StructureMember }) {
           {member.email && (
             <a
               href={`mailto:${member.email}`}
-              className="flex items-center gap-2 hover:text-emerald-700 truncate"
+              className="flex items-center gap-2 hover:text-emerald-700 transition-colors truncate"
             >
               <Mail className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
               <span className="truncate">{member.email}</span>
