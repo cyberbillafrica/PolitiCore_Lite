@@ -15,10 +15,14 @@ import {
   Trash2,
   UserCheck,
   RefreshCw,
-  UserPlus,
-  Briefcase,
-  Layers,
   Table as TableIcon,
+  Eye,
+  X,
+  CreditCard,
+  MapPin,
+  GraduationCap,
+  Briefcase,
+  FileText,
 } from "lucide-react";
 
 export default function AdminInecOfficersPage() {
@@ -26,7 +30,8 @@ export default function AdminInecOfficersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedLga, setSelectedLga] = useState("");
-  const [viewMode, setViewMode] = useState<"grouped" | "flat">("grouped");
+  const [selectedPosition, setSelectedPosition] = useState("");
+  const [selectedOfficerModal, setSelectedOfficerModal] = useState<InecOfficer | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchOfficers = async () => {
@@ -53,6 +58,9 @@ export default function AdminInecOfficersPage() {
     try {
       await deleteInecOfficer(id);
       setOfficers((prev) => prev.filter((item) => item.id !== id));
+      if (selectedOfficerModal?.id === id) {
+        setSelectedOfficerModal(null);
+      }
     } catch (err) {
       alert("Failed to delete registration. Please try again.");
     } finally {
@@ -60,43 +68,34 @@ export default function AdminInecOfficersPage() {
     }
   };
 
-  // Filter officers based on search query and selected LGA
+  // Filter officers based on search query, LGA, and position
   const filteredOfficers = useMemo(() => {
     return officers.filter((officer) => {
-      const matchesSearch =
-        officer.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        officer.phone.includes(search) ||
-        officer.ward.toLowerCase().includes(search.toLowerCase()) ||
-        officer.qualification.toLowerCase().includes(search.toLowerCase()) ||
-        officer.submittedByName.toLowerCase().includes(search.toLowerCase()) ||
-        officer.submittedByPosition.toLowerCase().includes(search.toLowerCase());
+      const searchTarget = [
+        officer.fullName,
+        officer.phone,
+        officer.email,
+        officer.nin,
+        officer.ward,
+        officer.qualification,
+        officer.position,
+        officer.bankName,
+        officer.accountNumber,
+        officer.accountName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
+      const matchesSearch = searchTarget.includes(search.toLowerCase());
       const matchesLga = selectedLga ? officer.lga === selectedLga : true;
+      const matchesPosition = selectedPosition ? officer.position === selectedPosition : true;
 
-      return matchesSearch && matchesLga;
+      return matchesSearch && matchesLga && matchesPosition;
     });
-  }, [officers, search, selectedLga]);
+  }, [officers, search, selectedLga, selectedPosition]);
 
-  // Group officers by who submitted them
-  const groupedOfficers = useMemo(() => {
-    const groups: { [key: string]: { name: string; position: string; officers: InecOfficer[] } } = {};
-
-    filteredOfficers.forEach((officer) => {
-      const key = `${officer.submittedByName}___${officer.submittedByPosition}`;
-      if (!groups[key]) {
-        groups[key] = {
-          name: officer.submittedByName || "Direct Public Registration",
-          position: officer.submittedByPosition || "N/A",
-          officers: [],
-        };
-      }
-      groups[key].officers.push(officer);
-    });
-
-    return Object.values(groups);
-  }, [filteredOfficers]);
-
-  // Export CSV Handler with Submitter columns
+  // Export CSV Handler with all new fields
   const handleExportCSV = () => {
     if (filteredOfficers.length === 0) {
       alert("No data available to export.");
@@ -104,15 +103,22 @@ export default function AdminInecOfficersPage() {
     }
 
     const headers = [
-      "Officer Full Name",
-      "Officer Phone",
+      "Full Name",
+      "Position Applied",
+      "Email",
+      "Phone",
+      "NIN",
+      "Gender",
+      "Marital Status",
+      "Address",
+      "State",
       "LGA",
       "Ward",
-      "Gender",
       "Qualification",
-      "Submitted By Name",
-      "Submitted By Position",
-      "Registered Date",
+      "Bank Name",
+      "Account Number",
+      "Account Name",
+      "Submitted Date",
     ];
 
     const rows = filteredOfficers.map((o) => {
@@ -128,14 +134,21 @@ export default function AdminInecOfficersPage() {
       }
 
       return [
-        `"${o.fullName.replace(/"/g, '""')}"`,
-        `"${o.phone}"`,
-        `"${o.lga}"`,
-        `"${o.ward.replace(/"/g, '""')}"`,
-        `"${o.gender}"`,
-        `"${o.qualification.replace(/"/g, '""')}"`,
-        `"${(o.submittedByName || "").replace(/"/g, '""')}"`,
-        `"${(o.submittedByPosition || "").replace(/"/g, '""')}"`,
+        `"${(o.fullName || "").replace(/"/g, '""')}"`,
+        `"${o.position || ""}"`,
+        `"${o.email || ""}"`,
+        `"${o.phone || ""}"`,
+        `"${o.nin || ""}"`,
+        `"${o.gender || ""}"`,
+        `"${o.maritalStatus || ""}"`,
+        `"${(o.address || "").replace(/"/g, '""')}"`,
+        `"${o.state || "Enugu State"}"`,
+        `"${o.lga || ""}"`,
+        `"${(o.ward || "").replace(/"/g, '""')}"`,
+        `"${o.qualification || ""}"`,
+        `"${(o.bankName || "").replace(/"/g, '""')}"`,
+        `"${o.accountNumber || ""}"`,
+        `"${(o.accountName || "").replace(/"/g, '""')}"`,
         `"${dateStr}"`,
       ];
     });
@@ -148,7 +161,7 @@ export default function AdminInecOfficersPage() {
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `DCM_Enugu_INEC_Officers_Grouped_${new Date().toISOString().slice(0, 10)}.csv`
+      `DCM_Enugu_INEC_Officers_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -168,11 +181,11 @@ export default function AdminInecOfficersPage() {
           DCM ENUGU — DIRECTORATE OF CONTACT & MOBILIZATION
         </h1>
         <p className="text-sm font-bold text-emerald-800">
-          INEC OFFICERS OFFICIAL ROSTER (GROUPED BY REGISTRAR)
+          INEC AD-HOC OFFICERS APPLICANT ROSTER
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Generated on: {new Date().toLocaleDateString()} • Total Officers:{" "}
-          {filteredOfficers.length} • Total Submitter Groups: {groupedOfficers.length}
+          Generated on: {new Date().toLocaleDateString()} • Total Applicants:{" "}
+          {filteredOfficers.length}
         </p>
       </div>
 
@@ -181,10 +194,10 @@ export default function AdminInecOfficersPage() {
         <div>
           <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
             <UserCheck className="h-7 w-7 text-emerald-700" />
-            Registered INEC Officers
+            INEC Officers Applications
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            Grouped by who submitted each officer. Filter, print report, or export CSV.
+            Manage INEC Ad-hoc officer applications across all 17 LGAs of Enugu State.
           </p>
         </div>
 
@@ -216,14 +229,14 @@ export default function AdminInecOfficersPage() {
       </div>
 
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:hidden">
         <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 shrink-0">
             <UserCheck className="h-6 w-6" />
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              Total Officers
+              Total Applicants
             </span>
             <p className="text-2xl font-black text-gray-900">{filteredOfficers.length}</p>
           </div>
@@ -231,25 +244,27 @@ export default function AdminInecOfficersPage() {
 
         <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 shrink-0">
-            <UserPlus className="h-6 w-6" />
+            <Briefcase className="h-6 w-6" />
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              Registrar / Submitters
+              Active Position Filter
             </span>
-            <p className="text-2xl font-black text-gray-900">{groupedOfficers.length}</p>
+            <p className="text-lg font-bold text-gray-900">
+              {selectedPosition || "All Positions (APO / PO / SPO)"}
+            </p>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center gap-4 sm:col-span-2 lg:col-span-1">
+        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 shrink-0">
-            <Briefcase className="h-6 w-6" />
+            <MapPin className="h-6 w-6" />
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
               Active LGA Filter
             </span>
-            <p className="text-lg font-extrabold text-emerald-800">
+            <p className="text-lg font-bold text-emerald-800">
               {selectedLga ? `${selectedLga} LGA` : "All 17 Enugu LGAs"}
             </p>
           </div>
@@ -261,15 +276,29 @@ export default function AdminInecOfficersPage() {
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
             {/* Search Input */}
-            <div className="relative md:col-span-1">
+            <div className="relative">
               <Search className="absolute left-3.5 top-3 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by Officer, Submitter, Ward..."
+                placeholder="Search name, phone, NIN, bank..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600"
               />
+            </div>
+
+            {/* Position Filter Dropdown */}
+            <div>
+              <select
+                value={selectedPosition}
+                onChange={(e) => setSelectedPosition(e.target.value)}
+                className="w-full px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 bg-white"
+              >
+                <option value="">All Positions (APO, PO, SPO)</option>
+                <option value="APO">APO - Assistant Presiding Officer</option>
+                <option value="PO">PO - Presiding Officer</option>
+                <option value="SPO">SPO - Supervisory Presiding Officer</option>
+              </select>
             </div>
 
             {/* LGA Filter Dropdown */}
@@ -287,37 +316,11 @@ export default function AdminInecOfficersPage() {
                 ))}
               </select>
             </div>
-
-            {/* Toggle View Mode */}
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setViewMode("grouped")}
-                className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg border transition-all ${
-                  viewMode === "grouped"
-                    ? "bg-emerald-700 text-white border-emerald-700 shadow-sm"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                }`}
-              >
-                <Layers className="h-4 w-4" />
-                Grouped View
-              </button>
-              <button
-                onClick={() => setViewMode("flat")}
-                className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg border transition-all ${
-                  viewMode === "flat"
-                    ? "bg-emerald-700 text-white border-emerald-700 shadow-sm"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                }`}
-              >
-                <TableIcon className="h-4 w-4" />
-                Flat Table View
-              </button>
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Main Content Area */}
+      {/* Main Table Content */}
       {loading ? (
         <Card>
           <CardContent className="p-12 text-center text-sm text-gray-500">
@@ -327,98 +330,14 @@ export default function AdminInecOfficersPage() {
       ) : filteredOfficers.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center text-sm text-gray-500">
-            No registered INEC officers match your search or filter.
+            No applicant registrations match your search or filters.
           </CardContent>
         </Card>
-      ) : viewMode === "grouped" ? (
-        /* GROUPED VIEW BY SUBMITTER */
-        <div className="space-y-6">
-          {groupedOfficers.map((group, groupIdx) => (
-            <Card key={groupIdx} className="overflow-hidden border-emerald-200">
-              <CardHeader className="bg-emerald-50/80 border-b border-emerald-200 py-4 px-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white font-extrabold text-sm shadow-sm">
-                      {groupIdx + 1}
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-black text-gray-900 leading-tight">
-                        Submitted By: {group.name}
-                      </h2>
-                      <p className="text-xs font-semibold text-emerald-800 mt-0.5">
-                        Designation / Position: {group.position}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className="px-3 py-1 rounded-full bg-emerald-200/80 text-emerald-900 text-xs font-extrabold self-start sm:self-auto">
-                    {group.officers.length} Officer{group.officers.length > 1 ? "s" : ""} Registered
-                  </span>
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left border-collapse">
-                    <thead className="bg-gray-50 text-xs uppercase text-gray-600 font-bold border-b border-gray-200">
-                      <tr>
-                        <th className="py-3 px-4">#</th>
-                        <th className="py-3 px-4">Officer Name</th>
-                        <th className="py-3 px-4">Phone Number</th>
-                        <th className="py-3 px-4">LGA</th>
-                        <th className="py-3 px-4">Ward</th>
-                        <th className="py-3 px-4">Gender</th>
-                        <th className="py-3 px-4">Qualification</th>
-                        <th className="py-3 px-4 print:hidden text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {group.officers.map((officer, oIdx) => (
-                        <tr key={officer.id || oIdx} className="hover:bg-gray-50/80">
-                          <td className="py-3 px-4 text-xs font-semibold text-gray-400">
-                            {oIdx + 1}
-                          </td>
-                          <td className="py-3 px-4 font-bold text-gray-900">
-                            {officer.fullName}
-                          </td>
-                          <td className="py-3 px-4 font-medium text-emerald-700">
-                            {officer.phone}
-                          </td>
-                          <td className="py-3 px-4 font-semibold text-gray-800">
-                            {officer.lga}
-                          </td>
-                          <td className="py-3 px-4 text-gray-600">{officer.ward}</td>
-                          <td className="py-3 px-4 text-gray-600">{officer.gender}</td>
-                          <td className="py-3 px-4 text-gray-800 font-bold">
-                            {officer.qualification}
-                          </td>
-                          <td className="py-3 px-4 print:hidden text-right">
-                            {officer.id && (
-                              <button
-                                onClick={() => handleDelete(officer.id!, officer.fullName)}
-                                disabled={deletingId === officer.id}
-                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete officer registration"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       ) : (
-        /* FLAT TABLE VIEW */
         <Card>
           <CardHeader className="print:hidden pb-3">
-            <CardTitle className="text-base font-bold text-gray-900">
-              All Officers Flat Table ({filteredOfficers.length})
+            <CardTitle className="text-base font-bold text-gray-900 flex items-center justify-between">
+              <span>Applications Roster ({filteredOfficers.length})</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -427,14 +346,14 @@ export default function AdminInecOfficersPage() {
                 <thead className="bg-gray-50 text-xs uppercase text-gray-700 font-bold border-b border-gray-200">
                   <tr>
                     <th className="py-3 px-4">#</th>
-                    <th className="py-3 px-4">Officer Name</th>
-                    <th className="py-3 px-4">Phone</th>
-                    <th className="py-3 px-4">LGA</th>
-                    <th className="py-3 px-4">Ward</th>
-                    <th className="py-3 px-4">Gender</th>
+                    <th className="py-3 px-4">Applicant Full Name</th>
+                    <th className="py-3 px-4">Position</th>
+                    <th className="py-3 px-4">Phone / Email</th>
+                    <th className="py-3 px-4">NIN</th>
+                    <th className="py-3 px-4">LGA / Ward</th>
                     <th className="py-3 px-4">Qualification</th>
-                    <th className="py-3 px-4">Submitted By</th>
-                    <th className="py-3 px-4 print:hidden text-right">Action</th>
+                    <th className="py-3 px-4">Bank & Account</th>
+                    <th className="py-3 px-4 print:hidden text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -443,29 +362,50 @@ export default function AdminInecOfficersPage() {
                       <td className="py-3 px-4 text-xs font-semibold text-gray-400">
                         {index + 1}
                       </td>
-                      <td className="py-3 px-4 font-bold text-gray-900">{officer.fullName}</td>
-                      <td className="py-3 px-4 font-medium text-emerald-700">{officer.phone}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-800">{officer.lga}</td>
-                      <td className="py-3 px-4 text-gray-600">{officer.ward}</td>
-                      <td className="py-3 px-4 text-gray-600">{officer.gender}</td>
-                      <td className="py-3 px-4 text-gray-800 font-bold">{officer.qualification}</td>
-                      <td className="py-3 px-4 text-xs font-semibold text-emerald-900">
-                        {officer.submittedByName}{" "}
-                        <span className="text-gray-500 font-normal">
-                          ({officer.submittedByPosition})
+                      <td className="py-3 px-4 font-bold text-gray-900">
+                        <div>{officer.fullName}</div>
+                        <div className="text-xs font-normal text-gray-500">{officer.maritalStatus} • {officer.gender}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-100 text-emerald-800">
+                          {officer.position || "N/A"}
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-emerald-700">{officer.phone}</div>
+                        <div className="text-xs text-gray-500">{officer.email}</div>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-gray-700 font-bold">{officer.nin || "N/A"}</td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-gray-900">{officer.lga} LGA</div>
+                        <div className="text-xs text-gray-500">{officer.ward}</div>
+                      </td>
+                      <td className="py-3 px-4 font-bold text-gray-800">{officer.qualification}</td>
+                      <td className="py-3 px-4 text-xs">
+                        <div className="font-bold text-gray-900">{officer.bankName}</div>
+                        <div className="font-mono text-gray-600">{officer.accountNumber}</div>
+                        <div className="text-[11px] text-gray-400">{officer.accountName}</div>
+                      </td>
                       <td className="py-3 px-4 print:hidden text-right">
-                        {officer.id && (
+                        <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => handleDelete(officer.id!, officer.fullName)}
-                            disabled={deletingId === officer.id}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete officer registration"
+                            onClick={() => setSelectedOfficerModal(officer)}
+                            className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                            title="View Full Details"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </button>
-                        )}
+                          {officer.id && (
+                            <button
+                              onClick={() => handleDelete(officer.id!, officer.fullName)}
+                              disabled={deletingId === officer.id}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete application"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -474,6 +414,126 @@ export default function AdminInecOfficersPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* DETAIL MODAL OVERLAY */}
+      {selectedOfficerModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-gray-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-emerald-800 px-6 py-5 text-white flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-emerald-200">
+                  INEC Officer Details
+                </span>
+                <h3 className="text-xl font-black mt-0.5">{selectedOfficerModal.fullName}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedOfficerModal(null)}
+                className="p-1.5 text-emerald-200 hover:text-white hover:bg-emerald-700 rounded-full transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6 text-sm text-gray-700">
+              {/* Personal Section */}
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold border-b border-gray-200 pb-2 mb-2">
+                  <FileText className="h-4 w-4" /> Personal Information
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">First Name</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.firstName || "N/A"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Middle Name</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.middleName || "N/A"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Last Name</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.lastName || "N/A"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">NIN Number</span>
+                    <span className="font-mono font-bold text-gray-900">{selectedOfficerModal.nin}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Gender</span>
+                    <span className="font-semibold text-gray-800">{selectedOfficerModal.gender}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Marital Status</span>
+                    <span className="font-semibold text-gray-800">{selectedOfficerModal.maritalStatus}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-400 block font-bold uppercase">Address</span>
+                    <span className="font-semibold text-gray-900">{selectedOfficerModal.address}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Position & Location Section */}
+              <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-900 font-bold border-b border-emerald-200 pb-2 mb-2">
+                  <Briefcase className="h-4 w-4" /> Role & Location
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-emerald-800 block font-bold uppercase">Position Applied</span>
+                    <span className="font-extrabold text-emerald-950 text-sm">{selectedOfficerModal.position}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-800 block font-bold uppercase">Qualification</span>
+                    <span className="font-extrabold text-emerald-950 text-sm">{selectedOfficerModal.qualification}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-800 block font-bold uppercase">State</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.state || "Enugu State"}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-800 block font-bold uppercase">LGA & Ward</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.lga} LGA ({selectedOfficerModal.ward})</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bank Details Section */}
+              <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold border-b border-gray-200 pb-2 mb-2">
+                  <CreditCard className="h-4 w-4" /> Bank Account Details
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Bank Name</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.bankName}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Account Number</span>
+                    <span className="font-mono font-bold text-emerald-800 text-sm">{selectedOfficerModal.accountNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block font-bold uppercase">Account Name</span>
+                    <span className="font-bold text-gray-900">{selectedOfficerModal.accountName}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-100 px-6 py-4 flex items-center justify-between">
+              <span className="text-xs text-gray-500 font-medium">DCM Enugu Admin Verification Portal</span>
+              <button
+                onClick={() => setSelectedOfficerModal(null)}
+                className="px-5 py-2 rounded-xl bg-gray-800 hover:bg-gray-900 text-white text-xs font-bold transition-colors"
+              >
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

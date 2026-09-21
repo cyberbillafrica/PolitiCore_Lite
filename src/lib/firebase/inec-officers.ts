@@ -13,14 +13,26 @@ import { db } from "./config";
 
 export interface InecOfficer {
   id?: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
   fullName: string;
+  email: string;
   phone: string;
+  address: string;
+  nin: string;
+  state: string;
   lga: string;
   ward: string;
   gender: string;
-  qualification: string;
-  submittedByName: string;
-  submittedByPosition: string;
+  qualification: "OND" | "HND" | "Degree" | string;
+  position: "APO" | "PO" | "SPO" | string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  maritalStatus: string;
+  submittedByName?: string;
+  submittedByPosition?: string;
   createdAt?: Timestamp | Date | string | any;
 }
 
@@ -43,6 +55,21 @@ export const ENUGU_LGAS = [
   "Udi",
   "Uzo Uwani",
 ];
+
+export const QUALIFICATIONS = ["OND", "HND", "Degree"] as const;
+
+export const POSITIONS = [
+  { value: "APO", label: "Assistant Presiding Officer (APO)" },
+  { value: "PO", label: "Presiding Officer (PO)" },
+  { value: "SPO", label: "Supervisory Presiding Officer (SPO)" },
+] as const;
+
+export const MARITAL_STATUSES = [
+  "Single",
+  "Married",
+  "Divorced",
+  "Widowed",
+] as const;
 
 const COLLECTION_NAME = "inec_officers";
 
@@ -121,16 +148,36 @@ export async function getAllInecOfficers(): Promise<InecOfficer[]> {
 
     const firestoreItems = snapshot.docs.map((docSnap: any) => {
       const data = docSnap.data();
+      const firstName = data.firstName || "";
+      const middleName = data.middleName || "";
+      const lastName = data.lastName || "";
+      const fullName =
+        data.fullName ||
+        [firstName, middleName, lastName].filter(Boolean).join(" ") ||
+        "N/A";
+
       return {
         id: docSnap.id,
-        fullName: data.fullName || "",
+        firstName,
+        middleName,
+        lastName,
+        fullName,
+        email: data.email || "",
         phone: data.phone || "",
+        address: data.address || "",
+        nin: data.nin || "",
+        state: data.state || "Enugu State",
         lga: data.lga || "",
         ward: data.ward || "",
         gender: data.gender || "",
         qualification: data.qualification || "",
-        submittedByName: data.submittedByName || "Direct Public Registration",
-        submittedByPosition: data.submittedByPosition || "N/A",
+        position: data.position || "",
+        bankName: data.bankName || "",
+        accountNumber: data.accountNumber || "",
+        accountName: data.accountName || "",
+        maritalStatus: data.maritalStatus || "",
+        submittedByName: data.submittedByName || undefined,
+        submittedByPosition: data.submittedByPosition || undefined,
         createdAt: data.createdAt,
       };
     });
