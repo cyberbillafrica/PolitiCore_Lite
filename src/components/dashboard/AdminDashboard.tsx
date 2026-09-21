@@ -156,6 +156,13 @@ export default function AdminDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <AdminCard
             icon={<Users className="h-5 w-5" />}
+            title="INEC Officers"
+            description="Manage, print, and export registered INEC officers."
+            href="/portal/admin/inec-officers"
+          />
+
+          <AdminCard
+            icon={<Users className="h-5 w-5" />}
             title="Members"
             description="Manage campaign and social members, profiles and access."
             href="/portal/admin/members"

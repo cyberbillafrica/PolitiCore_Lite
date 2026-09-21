@@ -105,18 +105,25 @@ export default function HomePage() {
                 Building durable stakeholder relationships and coordinating grassroots participation to advance good governance, community engagement, and civic development across all 17 LGAs of Enugu State.
               </p>
 
-              <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
-                  href="/about"
-                  className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-7 py-3.5 font-bold text-white shadow-lg transition-all hover:bg-emerald-600"
+                  href="/register-inec-officer"
+                  className="inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-600 px-7 py-3.5 font-black text-gray-950 shadow-xl transition-all border border-amber-400"
                 >
-                  Learn About DCM
+                  Register as INEC Officer
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
 
                 <Link
+                  href="/about"
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-6 py-3.5 font-bold text-white shadow-lg transition-all hover:bg-emerald-600"
+                >
+                  Learn About DCM
+                </Link>
+
+                <Link
                   href="/structure"
-                  className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-white/10 px-7 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+                  className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-6 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
                 >
                   Our Structure
                 </Link>
