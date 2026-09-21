@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Mail, Phone, MapPin, ArrowUpRight, Heart } from "lucide-react";
 
@@ -91,49 +90,42 @@ export default function Footer() {
           {/* Brand */}
           <div className="lg:col-span-5">
             <Link href="/" className="group inline-flex items-center gap-4">
-              <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-lg transition-shadow group-hover:shadow-xl">
-                <Image
-                  src="/images/official_logo.jpeg"
-                  alt="Uche Geoffrey Nnaji"
-                  fill
-                  sizes="56px"
-                  className="object-contain p-1"
-                />
+              <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#008751] text-white text-xl font-extrabold shadow-lg transition-shadow group-hover:shadow-xl">
+                DCM
               </div>
 
               <div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   <span className="text-xl font-extrabold tracking-tight text-[#008751] sm:text-2xl">
-                    Uche
+                    DCM
                   </span>
 
                   <span className="text-xl font-extrabold tracking-tight text-white sm:text-2xl">
-                    Nnaji
+                    ENUGU
                   </span>
                 </div>
 
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40 sm:text-[11px]">
-                  Governorship • Enugu • 2027
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50 sm:text-[11px]">
+                  Directorate of Contact and Mobilization
                 </p>
               </div>
             </Link>
 
             <div className="mt-7 max-w-md">
               <p className="text-[15px] leading-7 text-white/60">
-                A campaign built around responsive leadership, inclusive
-                governance, sustainable development and a renewed commitment to
-                the people of Enugu State.
+                Serving as a relationship-management, stakeholder-engagement,
+                grassroots outreach, coordination, and mobilization structure in Enugu State.
               </p>
             </div>
 
-            {/* Campaign statement */}
+            {/* Tagline statement */}
             <div className="mt-7 border-l-2 border-[#008751] pl-4">
-              <p className="text-sm font-semibold leading-6 text-white/80">
-                Leadership. Service. Progress.
+              <p className="text-sm font-semibold leading-6 text-white/90">
+                Mobilizing for Good Governance
               </p>
 
               <p className="mt-1 text-xs leading-5 text-white/40">
-                Together, we can build a stronger and more prosperous Enugu.
+                Fostering constructive stakeholder relationships and grassroots coordination across Enugu.
               </p>
             </div>
           </div>
@@ -146,11 +138,11 @@ export default function Footer() {
 
             <ul className="space-y-3.5">
               {[
-                ["Biography", "/biography"],
-                ["Our Agenda", "/manifesto"],
+                ["About Us", "/about"],
+                ["Our Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
-                ["Events", "/#events"],
+                ["Contact", "/contact"],
               ].map(([label, href]) => (
                 <li key={href}>
                   <Link
@@ -212,7 +204,7 @@ export default function Footer() {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-white/35">
-                    Campaign Office
+                    DCM Secretariat
                   </p>
 
                   <p className="mt-1 text-sm leading-5 text-white/65">
@@ -250,7 +242,7 @@ export default function Footer() {
                   </p>
 
                   <p className="mt-1 truncate text-sm text-white/65">
-                    info@uchenna.ng
+                    contact@dcmenugu.org
                   </p>
                 </div>
               </div>
@@ -324,7 +316,7 @@ export default function Footer() {
         <div className="mt-8 border-t border-white/10 py-7">
           <div className="flex flex-col items-center justify-between gap-4 text-center sm:flex-row sm:text-left">
             <p className="text-xs text-white/40">
-              &copy; {new Date().getFullYear()} Uche Nnaji Campaign.
+              &copy; {new Date().getFullYear()} DCM Enugu (Directorate of Contact and Mobilization).
               <span className="hidden sm:inline"> </span>
               All rights reserved.
             </p>
