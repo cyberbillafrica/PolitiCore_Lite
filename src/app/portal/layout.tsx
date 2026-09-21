@@ -111,13 +111,13 @@ const navigation: NavItem[] = [
   },
 
   {
-    name: "Campaign Council",
+    name: "Directorate Operations",
     icon: BriefcaseBusiness,
     group: "campaign",
 
     children: [
       {
-        name: "Campaign Dashboard",
+        name: "Directorate Dashboard",
         href: "/portal/dashboard",
         icon: LayoutDashboard,
         permission: "view_dashboard",
@@ -234,9 +234,14 @@ const adminNavigation = [
   },
 
   {
-    name: "Manifesto",
-    href: "/portal/admin/manifesto",
+    name: "About Us",
+    href: "/portal/admin/about",
     icon: FileText,
+  },
+  {
+    name: "Our Structure",
+    href: "/portal/admin/structure",
+    icon: UsersRound,
   },
   {
     name: "Gallery",
@@ -717,12 +722,12 @@ export default function PortalLayout({
               className="flex items-center space-x-2"
               onClick={() => setSidebarOpen(false)}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-apc-primary">
-                <span className="font-bold text-white">I</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
+                DCM
               </div>
 
-              <span className="text-lg font-bold text-apc-primary">
-                Nwakaibeya 2027
+              <span className="text-lg font-bold text-emerald-800">
+                DCM ENUGU
               </span>
             </Link>
 
@@ -760,12 +765,12 @@ export default function PortalLayout({
         <div className="flex h-full min-h-0 flex-col overflow-hidden border-r bg-white">
           <div className="flex h-16 shrink-0 items-center border-b px-6">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-apc-primary">
-                <span className="font-bold text-white">I</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
+                DCM
               </div>
 
-              <span className="text-lg font-bold text-apc-primary">
-                Nwakaibeya 2027
+              <span className="text-lg font-bold text-emerald-800">
+                DCM ENUGU
               </span>
             </Link>
           </div>
@@ -794,12 +799,12 @@ export default function PortalLayout({
         <div className="sticky top-0 z-40 border-b bg-white lg:hidden">
           <div className="flex h-16 items-center justify-between px-4">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-apc-primary">
-                <span className="font-bold text-white">I</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
+                DCM
               </div>
 
-              <span className="font-bold text-apc-primary">
-                Nwakeibeya 2027
+              <span className="font-bold text-emerald-800">
+                DCM ENUGU
               </span>
             </Link>
 

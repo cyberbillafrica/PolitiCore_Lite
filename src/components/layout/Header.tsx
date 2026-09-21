@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Menu, X, User, Bell, LogOut, ArrowUpRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
-import Image from "next/image";
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,33 +37,24 @@ export default function Header() {
               onClick={closeMenu}
               className="group flex items-center gap-3"
             >
-              {/* Campaign Logo */}
-              <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-300 group-hover:shadow-md">
-                <Image
-                  src="/images/official_logo.jpeg"
-                  alt="Uche Geoffrey Nnaji"
-                  fill
-                  sizes="44px"
-                  className="object-contain p-1"
-                />
+              {/* DCM Logo */}
+              <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-emerald-700 text-white font-extrabold shadow-sm transition-all duration-300 group-hover:shadow-md">
+                DCM
               </div>
 
-              {/* Campaign Name */}
+              {/* DCM Brand Name */}
               <div className="leading-none">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   <span className="text-lg font-extrabold tracking-tight text-[#008751] sm:text-xl">
-                    Uche
-                  </span>
-                  <span className="text-lg font-extrabold text-[#d71920] sm:text-xl">
-                    Ndi
+                    DCM
                   </span>
                   <span className="text-lg font-extrabold text-gray-800 sm:text-xl">
-                    Enugu
+                    ENUGU
                   </span>
                 </div>
 
-                <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400 sm:text-[11px]">
-                  Governorship • Enugu • 2027
+                <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
+                  Directorate of Contact & Mobilization
                 </span>
               </div>
             </Link>
@@ -82,17 +72,17 @@ export default function Header() {
             </Link>
 
             <Link
-              href="/biography"
+              href="/about"
               className="text-sm font-medium text-gray-600 transition-colors hover:text-[#008751]"
             >
-              Biography
+              About Us
             </Link>
 
             <Link
-              href="/manifesto"
+              href="/structure"
               className="text-sm font-medium text-gray-600 transition-colors hover:text-[#008751]"
             >
-              Our Agenda
+              Our Structure
             </Link>
 
             <Link
@@ -200,8 +190,8 @@ export default function Header() {
             <div className="flex flex-col gap-1">
               {[
                 ["Home", "/"],
-                ["Biography", "/biography"],
-                ["Our Agenda", "/manifesto"],
+                ["About Us", "/about"],
+                ["Our Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
                 ["Contact", "/contact"],

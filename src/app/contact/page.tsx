@@ -13,10 +13,10 @@ export default function ContactPage() {
             <div className="flex items-start space-x-4">
               <MapPin className="h-6 w-6 text-apc-primary mt-1" />
               <div>
-                <h3 className="font-semibold text-gray-900">Campaign Office</h3>
+                <h3 className="font-semibold text-gray-900">DCM Secretariat</h3>
                 <p className="text-gray-600">
-                  No. 15 Independence Layout, Agbani, Nkanu West LGA, Enugu
-                  State
+                  Directorate of Contact and Mobilization Secretariat,
+                  Independence Layout, Enugu, Enugu State
                 </p>
               </div>
             </div>
@@ -31,7 +31,7 @@ export default function ContactPage() {
               <Mail className="h-6 w-6 text-apc-primary mt-1" />
               <div>
                 <h3 className="font-semibold text-gray-900">Email</h3>
-                <p className="text-gray-600">contact@ifeanyi4nkanu.ng</p>
+                <p className="text-gray-600">contact@dcmenugu.org</p>
               </div>
             </div>
           </div>

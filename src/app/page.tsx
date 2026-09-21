@@ -79,106 +79,86 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      {/* Election Countdown */}
-      <ElectionCountdown />
-
       {/* =========================================================
           HERO SECTION
       ========================================================= */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-green-900 via-green-800 to-green-950 text-white">
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white">
         <div className="absolute inset-0 bg-black/40" />
 
-        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-32 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-28 lg:px-8">
           <div className="grid items-center gap-12 md:grid-cols-2">
             {/* Hero Content */}
             <div>
-              <div className="mb-6 inline-block rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium backdrop-blur-sm">
-                PDP Governorship Candidate • Enugu State • 2027
+              <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-sm font-semibold tracking-wide text-emerald-200 backdrop-blur-sm">
+                Directorate of Contact and Mobilization • Enugu State
               </div>
 
-              <h1 className="mb-6 text-4xl font-bold leading-tight md:text-6xl">
-                A New Direction
-                <br />
-                <span className="text-green-300">for Enugu State</span>
+              <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl">
+                DCM Enugu
               </h1>
 
-              <p className="mb-8 text-lg text-gray-200 md:text-xl">
-                A vision for a safer, stronger and more prosperous Enugu,
-                driven by responsible leadership, economic opportunity,
-                infrastructure development and inclusive governance.
+              <p className="mb-6 text-2xl font-semibold text-emerald-300 md:text-3xl">
+                Mobilizing for Good Governance
+              </p>
+
+              <p className="mb-8 text-base text-gray-200 leading-relaxed md:text-lg">
+                Building durable stakeholder relationships and coordinating grassroots participation to advance good governance, community engagement, and civic development across all 17 LGAs of Enugu State.
               </p>
 
               <div className="flex flex-col gap-4 sm:flex-row">
                 <Link
-                  href="/volunteer"
-                  className="inline-flex items-center justify-center rounded-lg bg-white px-8 py-4 font-semibold text-green-900 transition-colors hover:bg-gray-100"
+                  href="/about"
+                  className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-7 py-3.5 font-bold text-white shadow-lg transition-all hover:bg-emerald-600"
                 >
-                  Join the Movement
+                  Learn About DCM
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
 
                 <Link
-                  href="/manifesto"
-                  className="inline-flex items-center justify-center rounded-lg bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+                  href="/structure"
+                  className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-white/10 px-7 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
                 >
-                  Our Agenda
+                  Our Structure
                 </Link>
               </div>
             </div>
 
-            {/* Vision */}
+            {/* Contact vs Mobilization Highlight Card */}
             <div className="hidden md:block">
-              <div className="rounded-2xl border border-white/20 bg-white/10 p-8 backdrop-blur-md">
-                <h3 className="mb-6 text-2xl font-bold">
-                  Our Priorities
+              <div className="rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl">
+                <h3 className="mb-6 text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
+                  Contact vs. Mobilization
                 </h3>
 
-                <ul className="space-y-5">
-                  <li className="flex items-start space-x-3">
-                    <Target className="mt-1 h-6 w-6 flex-shrink-0 text-green-300" />
-
+                <div className="space-y-6">
+                  <div className="flex items-start space-x-4">
+                    <div className="mt-1 rounded-lg bg-emerald-500/20 p-2.5 text-emerald-300 border border-emerald-400/30">
+                      <Users className="h-6 w-6" />
+                    </div>
                     <div>
-                      <h4 className="font-semibold">
-                        Economic Development
+                      <h4 className="font-bold text-lg text-emerald-200">
+                        Contact
                       </h4>
-
-                      <p className="text-sm text-gray-300">
-                        Creating an environment for investment, enterprise,
-                        industry and sustainable economic growth.
+                      <p className="text-sm text-gray-300 mt-1 leading-relaxed">
+                        Who do we need to engage, and how do we maintain enduring, respectful relationships with community, religious, professional, youth, and women leaders?
                       </p>
                     </div>
-                  </li>
+                  </div>
 
-                  <li className="flex items-start space-x-3">
-                    <Users className="mt-1 h-6 w-6 flex-shrink-0 text-green-300" />
-
+                  <div className="flex items-start space-x-4">
+                    <div className="mt-1 rounded-lg bg-emerald-500/20 p-2.5 text-emerald-300 border border-emerald-400/30">
+                      <Target className="h-6 w-6" />
+                    </div>
                     <div>
-                      <h4 className="font-semibold">
-                        Youth & Employment
+                      <h4 className="font-bold text-lg text-emerald-200">
+                        Mobilization
                       </h4>
-
-                      <p className="text-sm text-gray-300">
-                        Expanding opportunities for young people through
-                        skills, enterprise and job creation.
+                      <p className="text-sm text-gray-300 mt-1 leading-relaxed">
+                        How do we organize participants so they can actively and lawfully take part in consultative meetings, outreach, and civic development activities?
                       </p>
                     </div>
-                  </li>
-
-                  <li className="flex items-start space-x-3">
-                    <Heart className="mt-1 h-6 w-6 flex-shrink-0 text-green-300" />
-
-                    <div>
-                      <h4 className="font-semibold">
-                        People-Centred Governance
-                      </h4>
-
-                      <p className="text-sm text-gray-300">
-                        Building a government that listens, engages and
-                        delivers for communities across Enugu State.
-                      </p>
-                    </div>
-                  </li>
-                </ul>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -186,99 +166,176 @@ export default function HomePage() {
       </section>
 
       {/* =========================================================
-          CANDIDATE INTRODUCTION
+          ABOUT DCM SECTION
       ========================================================= */}
       <section className="bg-white py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-12 md:grid-cols-2">
-            {/* Candidate Image */}
-            <div className="relative">
-              <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-gradient-to-br from-green-900/10 to-green-700/10">
-                <Image
-                  src="/images/candidate.jpeg"
-                  alt="Chief Uche Geoffrey Nnaji"
-                  fill
-                  priority
-                  className="object-cover"
-                  sizes="(max-width: 768px) 100vw, 50vw"
-                />
+          <div className="max-w-3xl mx-auto text-center mb-12">
+            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
+              Identity & Purpose
+            </p>
+            <h2 className="mt-2 text-3xl font-bold text-gray-900 sm:text-4xl">
+              Directorate of Contact and Mobilization
+            </h2>
+            <p className="mt-4 text-lg text-gray-600">
+              DCM Enugu serves as a relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure.
+            </p>
+          </div>
 
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+          <div className="grid gap-8 md:grid-cols-3">
+            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+              <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
+                <Users className="h-6 w-6" />
               </div>
-            </div>
-
-            {/* Candidate Information */}
-            <div>
-              <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-green-700">
-                Meet the Candidate
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Stakeholder Contact</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Maintaining proactive, respectful relationships with traditional rulers, religious leaders, professional associations, civil-society groups, youth, and women organizations.
               </p>
-
-              <h2 className="mb-6 text-3xl font-bold text-green-900 md:text-4xl">
-                Chief Uche Geoffrey Nnaji
-              </h2>
-
-              <div className="space-y-4 text-gray-600">
-                <p className="text-lg">
-                  A businessman, public servant and former Minister of
-                  Innovation, Science and Technology, Chief Uche Geoffrey
-                  Nnaji is the Peoples Democratic Party candidate for
-                  Governor of Enugu State in the 2027 election.
-                </p>
-
-                <p>
-                  His campaign is focused on building a stronger and more
-                  productive Enugu State through improved infrastructure,
-                  economic development, investment, employment opportunities
-                  and people-centred governance.
-                </p>
-
-                <p>
-                  The campaign also emphasises direct engagement with the
-                  people and a commitment to measurable governance and
-                  development across all parts of Enugu State.
-                </p>
-
-                <div className="mt-8 grid grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-900">
-                      17
-                    </div>
-
-                    <div className="text-sm text-gray-500">
-                      LGAs
-                    </div>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-900">
-                      2027
-                    </div>
-
-                    <div className="text-sm text-gray-500">
-                      Governorship Election
-                    </div>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-900">
-                      PDP
-                    </div>
-
-                    <div className="text-sm text-gray-500">
-                      Political Platform
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <Link
-                href="/biography"
-                className="mt-8 inline-flex items-center font-semibold text-green-900 transition-colors hover:text-green-700"
-              >
-                Read Full Biography
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
             </div>
+
+            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+              <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
+                <Target className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Grassroots Outreach</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Establishing direct contact with local communities across all wards and LGAs to effectively communicate organizational positions, initiatives, and programs.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+              <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
+                <Heart className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Coordination & Feedback</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Collecting genuine community feedback and concerns to relay to leadership while ensuring seamless, synchronized efforts across all organizational tiers.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+          CORE RESPONSIBILITIES
+      ========================================================= */}
+      <section className="bg-gray-100/70 py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">
+              Core Responsibilities
+            </h2>
+            <p className="mt-3 text-base text-gray-600">
+              Our key pillars for relationship management and grassroots coordination
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                title: "Stakeholder Contact",
+                desc: "Maintain relationship with community, religious, youth, women, and professional groups.",
+              },
+              {
+                title: "Mobilization",
+                desc: "Organize and coordinate members for meetings, consultations, rallies, and lawful activities.",
+              },
+              {
+                title: "Grassroots Outreach",
+                desc: "Communicate organizational programs directly to local structures and communities.",
+              },
+              {
+                title: "Stakeholder Mapping",
+                desc: "Identify important groups and individuals across wards, LGAs, and zones.",
+              },
+              {
+                title: "Coordination",
+                desc: "Synchronize activities across all organizational levels to avoid duplication of efforts.",
+              },
+              {
+                title: "Feedback Mechanism",
+                desc: "Collect community concerns and ideas and communicate them directly to leadership.",
+              },
+              {
+                title: "Event Logistics",
+                desc: "Coordinate invitations, protocol, liaison, and transportation for official events.",
+              },
+              {
+                title: "Records & Reporting",
+                desc: "Maintain accurate stakeholder contacts and produce structured outreach reports.",
+              },
+              {
+                title: "Conflict Management",
+                desc: "Help maintain constructive relationships and escalate disputes appropriately.",
+              },
+            ].map((item, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl bg-white border border-gray-200/80 p-6 shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-extrabold text-emerald-800">
+                    {idx + 1}
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
+                </div>
+                <p className="text-sm text-gray-600 leading-relaxed pl-10">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* =========================================================
+          ORGANIZATIONAL HIERARCHY
+      ========================================================= */}
+      <section className="bg-white py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
+              Organizational Hierarchy
+            </p>
+            <h2 className="mt-2 text-3xl font-bold text-gray-900 sm:text-4xl">
+              DCM Organizational Structure
+            </h2>
+            <p className="mt-3 text-gray-600">
+              A structured network reaching every corner of Enugu State
+            </p>
+          </div>
+
+          <div className="flex flex-col md:flex-row justify-center items-center gap-4 max-w-5xl mx-auto">
+            {[
+              { level: "State Executive", role: "State Oversight & Strategy" },
+              { level: "Zonal Coordinators", role: "Senatorial Zone Alignment" },
+              { level: "LGA Coordinators", role: "17 LGA Coordination" },
+              { level: "Ward Coordinators", role: "Ward Level Engagement" },
+              { level: "Community Teams", role: "Grassroots Unit Mobilization" },
+            ].map((step, idx, arr) => (
+              <div key={idx} className="flex flex-col md:flex-row items-center w-full md:w-auto">
+                <div className="flex-1 min-w-[170px] rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-center shadow-sm">
+                  <span className="block text-xs font-bold uppercase text-emerald-700 mb-1">
+                    Tier {idx + 1}
+                  </span>
+                  <h4 className="font-extrabold text-gray-900 text-sm">{step.level}</h4>
+                  <p className="text-xs text-gray-500 mt-1">{step.role}</p>
+                </div>
+                {idx < arr.length - 1 && (
+                  <div className="py-2 md:py-0 md:px-2 text-emerald-600 font-bold">
+                    <span className="md:hidden">↓</span>
+                    <span className="hidden md:inline">→</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-10">
+            <Link
+              href="/structure"
+              className="inline-flex items-center text-sm font-bold text-emerald-700 hover:text-emerald-800"
+            >
+              Explore Our Full Structure Members →
+            </Link>
           </div>
         </div>
       </section>
@@ -341,9 +398,9 @@ export default function HomePage() {
                       />
                     </div>
                   ) : (
-                    <div className="relative flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br from-green-900/10 to-green-700/10">
-                      <span className="text-2xl font-bold text-green-900/20">
-                        Nwakabeiya 2027
+                    <div className="relative flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br from-emerald-900/10 to-emerald-700/10">
+                      <span className="text-2xl font-bold text-emerald-900/20">
+                        DCM Enugu
                       </span>
                     </div>
                   )}
@@ -458,30 +515,29 @@ export default function HomePage() {
       {/* =========================================================
           CTA
       ========================================================= */}
-      <section className="bg-gradient-to-br from-green-900 to-green-950 py-16 text-white">
+      <section className="bg-gradient-to-br from-emerald-950 to-green-950 py-16 text-white">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-          <h2 className="mb-6 text-3xl font-bold md:text-4xl">
-            Join the Movement for a Better Enugu
+          <h2 className="mb-4 text-3xl font-bold md:text-4xl">
+            Mobilizing for Good Governance
           </h2>
 
-          <p className="mb-8 text-xl text-gray-200">
-            Stay connected, participate in campaign activities and be part
-            of the conversation about the future of Enugu State.
+          <p className="mb-8 text-lg text-emerald-100/90 max-w-2xl mx-auto">
+            Get involved with DCM Enugu. Connect with community coordinators, stay updated on grassroots activities, and help build constructive stakeholder engagement across Enugu State.
           </p>
 
           <div className="flex flex-col justify-center gap-4 sm:flex-row">
             <Link
               href="/volunteer"
-              className="inline-flex items-center justify-center rounded-lg bg-white px-8 py-4 font-semibold text-green-900 transition-colors hover:bg-gray-100"
+              className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-8 py-4 font-bold text-white transition-colors hover:bg-emerald-600 shadow-lg"
             >
-              Become a Volunteer
+              Get Involved / Volunteer
             </Link>
 
             <Link
-              href="/portal/dashboard"
+              href="/contact"
               className="inline-flex items-center justify-center rounded-lg bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
             >
-              Member Portal
+              Contact DCM Secretariat
             </Link>
           </div>
         </div>

@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Uche-Ndi-Enugu 2027 | Governorship",
-  description: "Building a brighter future for Ndi Enugu",
+  title: "DCM Enugu — Directorate of Contact and Mobilization",
+  description: "Directorate of Contact and Mobilization — Mobilizing for Good Governance in Enugu State.",
 };
 
 export default function RootLayout({

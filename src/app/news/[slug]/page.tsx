@@ -8,6 +8,8 @@ import Link from "next/link";
 
 import { Calendar, Tag, ArrowLeft, User, MessageCircle } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getNewsArticleBySlug } from "@/lib/firebase/firestore";
@@ -117,7 +119,7 @@ export async function generateMetadata({
       title: article.title,
       description,
       url: articleUrl,
-      siteName: "Ifeanyi 2027 Campaign News",
+      siteName: "DCM Enugu News",
       type: "article",
 
       ...(imageUrl && {
