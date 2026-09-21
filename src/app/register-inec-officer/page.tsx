@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Loader2,
   ArrowLeft,
-  Building2,
+  UserPlus,
+  Briefcase,
 } from "lucide-react";
 
 import Header from "@/components/layout/Header";
@@ -31,6 +32,8 @@ export default function RegisterInecOfficerPage() {
     ward: "",
     gender: "",
     qualification: "",
+    submittedByName: "",
+    submittedByPosition: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -47,9 +50,11 @@ export default function RegisterInecOfficerPage() {
       !formData.lga ||
       !formData.ward.trim() ||
       !formData.gender ||
-      !formData.qualification
+      !formData.qualification ||
+      !formData.submittedByName.trim() ||
+      !formData.submittedByPosition.trim()
     ) {
-      setError("Please fill out all required fields before submitting.");
+      setError("Please fill out all compulsory fields (including Submitted By details) before submitting.");
       return;
     }
 
@@ -64,10 +69,12 @@ export default function RegisterInecOfficerPage() {
         ward: "",
         gender: "",
         qualification: "",
+        submittedByName: "",
+        submittedByPosition: "",
       });
     } catch (err: any) {
       console.error("Failed to submit INEC officer registration:", err);
-      setError("Failed to submit your registration. Please try again.");
+      setError("Failed to submit registration. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -98,7 +105,7 @@ export default function RegisterInecOfficerPage() {
             Register as an INEC Officer
           </h1>
           <p className="mt-2 text-base text-gray-600 max-w-xl mx-auto">
-            Directate of Contact and Mobilization (DCM Enugu) registration portal for INEC Officers across all 17 Local Government Areas of Enugu State.
+            Directorate of Contact and Mobilization (DCM Enugu) registration portal for INEC Officers across all 17 Local Government Areas of Enugu State.
           </p>
         </div>
 
@@ -111,12 +118,12 @@ export default function RegisterInecOfficerPage() {
 
             <h2 className="text-2xl font-bold text-gray-900">Registration Successful!</h2>
             <p className="text-sm text-gray-600 mt-2 max-w-lg mx-auto">
-              Thank you, <span className="font-bold text-gray-900">{submittedOfficer.fullName}</span>. Your details have been successfully received and submitted to the DCM Enugu Secretariat database.
+              Thank you! Details for <span className="font-bold text-gray-900">{submittedOfficer.fullName}</span> have been successfully registered under <span className="font-bold text-emerald-800">{submittedOfficer.submittedByName} ({submittedOfficer.submittedByPosition})</span>.
             </p>
 
             <div className="mt-6 bg-emerald-50/70 rounded-2xl p-6 text-left border border-emerald-100 space-y-3 max-w-md mx-auto text-sm text-gray-700">
               <div className="flex justify-between border-b border-emerald-200/60 pb-2">
-                <span className="text-xs font-bold uppercase text-emerald-800">Full Name</span>
+                <span className="text-xs font-bold uppercase text-emerald-800">Officer Name</span>
                 <span className="font-bold text-gray-900">{submittedOfficer.fullName}</span>
               </div>
               <div className="flex justify-between border-b border-emerald-200/60 pb-2">
@@ -131,9 +138,13 @@ export default function RegisterInecOfficerPage() {
                 <span className="text-xs font-bold uppercase text-emerald-800">Gender</span>
                 <span className="font-semibold text-gray-900">{submittedOfficer.gender}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between border-b border-emerald-200/60 pb-2">
                 <span className="text-xs font-bold uppercase text-emerald-800">Qualification</span>
                 <span className="font-semibold text-gray-900">{submittedOfficer.qualification}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs font-bold uppercase text-emerald-800">Submitted By</span>
+                <span className="font-bold text-emerald-900">{submittedOfficer.submittedByName} ({submittedOfficer.submittedByPosition})</span>
               </div>
             </div>
 
@@ -162,141 +173,201 @@ export default function RegisterInecOfficerPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Full Name */}
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* SECTION 1: CANDIDATE INFORMATION */}
               <div>
-                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                  Full Name <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <User className="h-5 w-5" />
-                  </div>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Chief Chidozie Okafor"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
-                  />
+                <div className="border-b border-gray-200 pb-3 mb-6 flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-emerald-700" />
+                  <h2 className="text-lg font-bold text-gray-900">INEC Officer Candidate Information</h2>
                 </div>
-              </div>
 
-              {/* Phone & Gender Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* Phone Number */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                    Phone Number <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                      <Phone className="h-5 w-5" />
+                <div className="space-y-6">
+                  {/* Full Name */}
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                      Full Name of Candidate <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                        <User className="h-5 w-5" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Chief Chidozie Okafor"
+                        value={formData.fullName}
+                        onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
+                      />
                     </div>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="e.g. 08012345678"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
-                    />
                   </div>
-                </div>
 
-                {/* Gender */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                    Gender <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={formData.gender}
-                    onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
-                  >
-                    <option value="">Select Gender</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* LGA & Ward Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* LGA Dropdown */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                    Enugu State LGA <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      required
-                      value={formData.lga}
-                      onChange={(e) => setFormData({ ...formData, lga: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
-                    >
-                      <option value="">Select Local Government Area</option>
-                      {ENUGU_LGAS.map((lga) => (
-                        <option key={lga} value={lga}>
-                          {lga} LGA
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Ward */}
-                <div>
-                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                    Ward <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                      <MapPin className="h-5 w-5" />
+                  {/* Phone & Gender Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* Phone Number */}
+                    <div>
+                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                          <Phone className="h-5 w-5" />
+                        </div>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="e.g. 08012345678"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                          className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
+                        />
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Ward 02 / Amechi"
-                      value={formData.ward}
-                      onChange={(e) => setFormData({ ...formData, ward: e.target.value })}
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
-                    />
+
+                    {/* Gender */}
+                    <div>
+                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                        Gender <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formData.gender}
+                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
+                      >
+                        <option value="">Select Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* LGA & Ward Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* LGA Dropdown */}
+                    <div>
+                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                        Enugu State LGA <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={formData.lga}
+                        onChange={(e) => setFormData({ ...formData, lga: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
+                      >
+                        <option value="">Select Local Government Area</option>
+                        {ENUGU_LGAS.map((lga) => (
+                          <option key={lga} value={lga}>
+                            {lga} LGA
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Ward */}
+                    <div>
+                      <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                        Ward <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                          <MapPin className="h-5 w-5" />
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Ward 02 / Amechi"
+                          value={formData.ward}
+                          onChange={(e) => setFormData({ ...formData, ward: e.target.value })}
+                          className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Qualification Dropdown - Includes explicit B.Sc and HND */}
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
+                      Qualification <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                        <GraduationCap className="h-5 w-5" />
+                      </div>
+                      <select
+                        required
+                        value={formData.qualification}
+                        onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
+                      >
+                        <option value="">Select Qualification</option>
+                        <option value="B.Sc">B.Sc (Bachelor of Science / Arts / Ed)</option>
+                        <option value="HND">HND (Higher National Diploma)</option>
+                        <option value="OND / NCE">OND / NCE (Diploma)</option>
+                        <option value="SSCE / WASSCE / O'Level">SSCE / WASSCE / O'Level</option>
+                        <option value="Master's Degree (M.Sc / MBA)">Master's Degree (M.Sc / MBA)</option>
+                        <option value="Doctorate / PhD">Doctorate / PhD</option>
+                        <option value="Others / Professional Certification">Others / Professional Certification</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Qualification */}
-              <div>
-                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 mb-2">
-                  Qualification <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <GraduationCap className="h-5 w-5" />
+              {/* SECTION 2: SUBMITTED BY (COMPULSORY) */}
+              <div className="bg-emerald-50/60 rounded-2xl p-6 border border-emerald-200">
+                <div className="border-b border-emerald-200 pb-3 mb-6 flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-emerald-800" />
+                  <h2 className="text-base font-bold text-emerald-950">Submitted By (Registrar Information)</h2>
+                  <span className="text-xs font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Compulsory</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Submitted By Name */}
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-emerald-900 mb-2">
+                      Your Name (Submitted By) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-600">
+                        <User className="h-5 w-5" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Hon. Anthony Nnaji"
+                        value={formData.submittedByName}
+                        onChange={(e) => setFormData({ ...formData, submittedByName: e.target.value })}
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-emerald-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
+                      />
+                    </div>
                   </div>
-                  <select
-                    required
-                    value={formData.qualification}
-                    onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
-                  >
-                    <option value="">Select Highest Qualification</option>
-                    <option value="SSCE / WASSCE / O'Level">SSCE / WASSCE / O'Level</option>
-                    <option value="NCE / OND">NCE / OND</option>
-                    <option value="HND / B.Sc / B.Ed / B.Tech">HND / B.Sc / B.Ed / B.Tech (Bachelor's Degree)</option>
-                    <option value="Master's Degree (M.Sc / M.Ed / MBA)">Master's Degree (M.Sc / M.Ed / MBA)</option>
-                    <option value="Doctorate / PhD">Doctorate / PhD</option>
-                    <option value="Others / Technical Diploma">Others / Technical Diploma</option>
-                  </select>
+
+                  {/* Submitted By Position */}
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-emerald-900 mb-2">
+                      Your Position / Designation <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-600">
+                        <Briefcase className="h-5 w-5" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. LGA Coordinator / Ward Coordinator / Volunteer"
+                        value={formData.submittedByPosition}
+                        onChange={(e) => setFormData({ ...formData, submittedByPosition: e.target.value })}
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-emerald-300 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 text-gray-900 text-sm shadow-sm transition-all bg-white"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* Submit CTA */}
-              <div className="pt-4">
+              <div className="pt-2">
                 <button
                   type="submit"
                   disabled={loading}
@@ -315,7 +386,7 @@ export default function RegisterInecOfficerPage() {
                   )}
                 </button>
                 <p className="text-center text-xs text-gray-400 mt-3">
-                  Open to all eligible citizens. Submitted data is officially stored in the DCM Enugu database.
+                  All submissions are linked and grouped by the registrar in the DCM Enugu Admin database.
                 </p>
               </div>
             </form>

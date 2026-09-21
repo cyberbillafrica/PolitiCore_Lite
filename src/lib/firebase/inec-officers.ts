@@ -19,6 +19,8 @@ export interface InecOfficer {
   ward: string;
   gender: string;
   qualification: string;
+  submittedByName: string;
+  submittedByPosition: string;
   createdAt?: Timestamp | Date | string | any;
 }
 
@@ -44,7 +46,6 @@ export const ENUGU_LGAS = [
 
 const COLLECTION_NAME = "inec_officers";
 
-// Local storage key for fallback / demo offline store
 const LOCAL_STORE_KEY = "dcm_enugu_inec_officers_local";
 
 function getLocalOfficers(): InecOfficer[] {
@@ -84,7 +85,6 @@ export async function registerInecOfficer(
   try {
     const colRef = collection(db, COLLECTION_NAME);
 
-    // Timeout promise to prevent UI hanging when firebase demo config is used offline
     const addPromise = addDoc(colRef, {
       ...data,
       createdAt: serverTimestamp(),
@@ -129,11 +129,12 @@ export async function getAllInecOfficers(): Promise<InecOfficer[]> {
         ward: data.ward || "",
         gender: data.gender || "",
         qualification: data.qualification || "",
+        submittedByName: data.submittedByName || "Direct Public Registration",
+        submittedByPosition: data.submittedByPosition || "N/A",
         createdAt: data.createdAt,
       };
     });
 
-    // Merge firestore items with local items without duplicates
     const allIds = new Set(firestoreItems.map((f: InecOfficer) => f.id));
     const uniqueLocal = localItems.filter((l) => !allIds.has(l.id));
 
