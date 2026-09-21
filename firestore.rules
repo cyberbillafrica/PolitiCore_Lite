@@ -257,6 +257,20 @@ service cloud.firestore {
 
 
     // ============================================================
+    // INEC OFFICER REGISTRATIONS
+    // ============================================================
+
+    match /inec_officers/{officerId} {
+
+      allow read: if isAdmin();
+
+      allow create: if true;
+
+      allow update, delete: if isAdmin();
+    }
+
+
+    // ============================================================
     // TASK SUBMISSIONS
     // ============================================================
 
