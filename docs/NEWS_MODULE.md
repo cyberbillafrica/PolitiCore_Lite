@@ -5,7 +5,7 @@ The News module provides an end-to-end CMS and public news portal for the Ifeany
 
 ---
 
-## Architecture & Data Flow
+# Architecture & Data Flow
 
 ```
                      ┌───────────────────────┐
