@@ -7,6 +7,7 @@ import {
   SiteSettings,
   DEFAULT_SITE_SETTINGS,
 } from "@/lib/firebase/site-settings";
+import { toast } from "sonner";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -62,10 +63,11 @@ export default function AdminSettingsPage() {
       const updated = await updateSiteSettings(settings);
       setSettings(updated);
       setSavedSuccess(true);
+      toast.success("Site Settings saved successfully!");
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to save site settings:", err);
-      alert("Failed to save settings. Please try again.");
+      toast.error("Failed to save settings. Please try again.");
     } finally {
       setSaving(false);
     }

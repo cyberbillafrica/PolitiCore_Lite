@@ -30,7 +30,9 @@ import {
   Flag,
   Network,
   Image,
+  BookOpen,
 } from "lucide-react";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -94,6 +96,12 @@ const navigation: NavItem[] = [
     name: "Profile",
     href: "/portal/profile",
     icon: Users,
+  },
+
+  {
+    name: "User Guide & Manual",
+    href: "/portal/guide",
+    icon: BookOpen,
   },
 
   {
@@ -796,28 +804,37 @@ export default function PortalLayout({
       {/* Main Content */}
 
       <div className="lg:pl-72">
-        <div className="sticky top-0 z-40 border-b bg-white lg:hidden">
-          <div className="flex h-16 items-center justify-between px-4">
-            <Link href="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                DCM
-              </div>
-
-              <span className="font-bold text-emerald-800">
-                DCM ENUGU
-              </span>
-            </Link>
-
+        {/* Top Desktop & Mobile Header Bar with Bell Notification System */}
+        <header className="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 sm:px-6 h-16 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-2 hover:bg-gray-100"
+              className="rounded-lg p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
               aria-label="Open navigation"
             >
               <Menu className="h-6 w-6" />
             </button>
+
+            <Link href="/" className="flex items-center space-x-2 lg:hidden">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
+                DCM
+              </div>
+              <span className="font-bold text-emerald-800 dark:text-emerald-400">
+                DCM ENUGU
+              </span>
+            </Link>
+
+            <h2 className="hidden lg:block text-sm font-extrabold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
+              Directorate Member Portal
+            </h2>
           </div>
-        </div>
+
+          <div className="flex items-center gap-3">
+            {/* Central Notification Bell Drawer */}
+            <NotificationBell profile={profile} />
+          </div>
+        </header>
 
         <main className="p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
@@ -842,19 +859,6 @@ function UserPanel({
   loggingOut: boolean;
   logoutError: string | null;
 }) {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-
-  useEffect(() => {
-    if (!profile) return;
-
-    getUserAnnouncements(profile)
-      .then(setAnnouncements)
-      .catch((error) => {
-        console.error("Failed to load announcements:", error);
-        setAnnouncements([]);
-      });
-  }, [profile]);
-
   return (
     <div>
       <div className="mb-3 flex items-center gap-3">
@@ -914,29 +918,6 @@ function UserPanel({
         <p className="mb-2 text-xs text-red-600" role="alert">
           {logoutError}
         </p>
-      )}
-
-      {announcements.length > 0 && (
-        <div className="mb-3 space-y-2 border-t border-gray-100 pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-            Announcements
-          </p>
-
-          {announcements.slice(0, 2).map((announcement) => (
-            <div
-              key={announcement.id}
-              className="rounded-lg bg-apc-light/50 p-2"
-            >
-              <p className="text-xs font-medium text-gray-800">
-                {announcement.title}
-              </p>
-
-              <p className="mt-1 line-clamp-2 text-xs text-gray-600">
-                {announcement.content}
-              </p>
-            </div>
-          ))}
-        </div>
       )}
 
       <button

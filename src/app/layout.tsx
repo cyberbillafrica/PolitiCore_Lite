@@ -5,6 +5,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { MaintenanceGuard } from "@/components/providers/MaintenanceGuard";
+import { ToastProvider } from "@/components/providers/ToastProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -26,6 +27,7 @@ export default function RootLayout({
         <AuthProvider>
           <ThemeProvider>
             <MaintenanceGuard>{children}</MaintenanceGuard>
+            <ToastProvider />
           </ThemeProvider>
         </AuthProvider>
       </body>
