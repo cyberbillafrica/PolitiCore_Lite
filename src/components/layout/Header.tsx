@@ -35,31 +35,31 @@ export default function Header() {
       </div>
 
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-[76px] items-center justify-between">
+        <div className="flex h-[76px] items-center justify-between gap-2">
           {/* Brand */}
-          <div className="shrink-0">
-            <Link href="/" onClick={closeMenu} className="group flex items-center gap-3">
+          <div className="min-w-0 flex-1 sm:flex-none">
+            <Link href="/" onClick={closeMenu} className="group flex items-center gap-2 sm:gap-3">
               {settings.logoUrl ? (
-                <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white p-1 shadow-sm">
+                <div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800 bg-white p-1 shadow-sm">
                   <img src={settings.logoUrl} alt={settings.brandName} className="h-full w-full object-contain" />
                 </div>
               ) : (
-                <div className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-emerald-700 text-white font-extrabold shadow-sm transition-all duration-300 group-hover:shadow-md">
+                <div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-emerald-700 text-white font-extrabold shadow-sm transition-all duration-300 group-hover:shadow-md text-sm sm:text-base">
                   DCM
                 </div>
               )}
 
-              <div className="leading-none">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg font-extrabold tracking-tight text-[#008751] sm:text-xl">
+              <div className="leading-none min-w-0">
+                <div className="flex items-center gap-1 truncate">
+                  <span className="text-base sm:text-lg font-extrabold tracking-tight text-[#008751]">
                     {settings.brandName.split(" ")[0]}
                   </span>
-                  <span className="text-lg font-extrabold text-gray-800 dark:text-gray-100 sm:text-xl">
+                  <span className="text-base sm:text-lg font-extrabold text-gray-800 dark:text-gray-100">
                     {settings.brandName.split(" ").slice(1).join(" ")}
                   </span>
                 </div>
 
-                <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400 sm:text-[11px]">
+                <span className="mt-0.5 block truncate text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.1em] sm:tracking-[0.14em] text-gray-500 dark:text-gray-400">
                   {settings.brandTagline}
                 </span>
               </div>
@@ -133,9 +133,10 @@ export default function Header() {
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex items-center gap-2 md:hidden">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2 md:hidden">
             <button
               onClick={toggleTheme}
+              aria-label="Toggle dark mode"
               className="p-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               {theme === "dark" ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5 text-indigo-600" />}
@@ -143,7 +144,8 @@ export default function Header() {
 
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="rounded-xl p-2 text-gray-600 dark:text-gray-300 hover:bg-green-50 dark:hover:bg-gray-800 hover:text-[#008751]"
+              aria-label={isOpen ? "Close menu" : "Open menu"}
+              className="rounded-xl p-2 text-gray-700 dark:text-gray-200 hover:bg-green-50 dark:hover:bg-gray-800 hover:text-[#008751] bg-gray-100/80 dark:bg-gray-800/80"
             >
               {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
