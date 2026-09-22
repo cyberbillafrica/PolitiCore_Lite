@@ -17,11 +17,11 @@ import {
 
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
-import ElectionCountdown from "@/components/home/ElectionCountdown";
 
 import { getPublishedNews } from "@/lib/firebase/firestore";
 import { getCurrentTenant } from "@/lib/firebase/tenants";
 import { getPublishedEvents } from "@/lib/firebase/portal-content";
+import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 
 import type { NewsArticle, EventData } from "@/types";
 
@@ -29,13 +29,19 @@ export default function HomePage() {
   const [latestNews, setLatestNews] = useState<NewsArticle[]>([]);
   const [events, setEvents] = useState<EventData[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
 
   useEffect(() => {
     async function loadHomepageData() {
       try {
         setNewsLoading(true);
 
-        const tenant = await getCurrentTenant();
+        const [tenant, siteData] = await Promise.all([
+          getCurrentTenant(),
+          getSiteSettings(),
+        ]);
+
+        setSettings(siteData);
 
         const newsData = await getPublishedNews(3);
         const eventsData = await getPublishedEvents(tenant.id);
@@ -76,41 +82,52 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 max-w-full overflow-x-hidden text-gray-900 dark:text-gray-100 transition-colors duration-200">
       <Header />
 
       {/* =========================================================
-          HERO SECTION
+          HERO SECTION (DYNAMIC BACKGROUND & COPY)
       ========================================================= */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white">
-        <div className="absolute inset-0 bg-black/40" />
+      <section
+        className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full"
+        style={
+          settings.heroImageUrl
+            ? {
+                backgroundImage: `linear-gradient(to bottom right, rgba(6, 44, 28, 0.88), rgba(2, 28, 18, 0.92)), url('${settings.heroImageUrl}')`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : undefined
+        }
+      >
+        <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
         <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-28 lg:px-8">
           <div className="grid items-center gap-12 md:grid-cols-2">
             {/* Hero Content */}
             <div>
-              <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-sm font-semibold tracking-wide text-emerald-200 backdrop-blur-sm">
-                Directorate of Contact and Mobilization • Enugu State
+              <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
+                {settings.headerNotice || "Directorate of Contact and Mobilization • Enugu State"}
               </div>
 
-              <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl">
-                DCM Enugu
+              <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl tracking-tight">
+                {settings.heroTitle}
               </h1>
 
               <p className="mb-6 text-2xl font-semibold text-emerald-300 md:text-3xl">
-                Mobilizing for Good Governance
+                {settings.heroTagline}
               </p>
 
-              <p className="mb-8 text-base text-gray-200 leading-relaxed md:text-lg">
-                Building durable stakeholder relationships and coordinating grassroots participation to advance good governance, community engagement, and civic development across all 17 LGAs of Enugu State.
+              <p className="mb-8 text-base text-gray-200 leading-relaxed md:text-lg max-w-xl">
+                {settings.heroDescription}
               </p>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
-                  href="/register-inec-officer"
+                  href={settings.heroCtaLink || "/register-inec-officer"}
                   className="inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-600 px-7 py-3.5 font-black text-gray-950 shadow-xl transition-all border border-amber-400"
                 >
-                  Register as INEC Officer
+                  {settings.heroCtaText || "Register as INEC Officer"}
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
 
@@ -175,47 +192,47 @@ export default function HomePage() {
       {/* =========================================================
           ABOUT DCM SECTION
       ========================================================= */}
-      <section className="bg-white py-16">
+      <section className="bg-white dark:bg-gray-900 py-16 transition-colors duration-200">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center mb-12">
-            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
+            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               Identity & Purpose
             </p>
-            <h2 className="mt-2 text-3xl font-bold text-gray-900 sm:text-4xl">
+            <h2 className="mt-2 text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl">
               Directorate of Contact and Mobilization
             </h2>
-            <p className="mt-4 text-lg text-gray-600">
+            <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
               DCM Enugu serves as a relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure.
             </p>
           </div>
 
           <div className="grid gap-8 md:grid-cols-3">
-            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-emerald-50/50 dark:bg-gray-800/60 p-6 shadow-sm">
               <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
                 <Users className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Stakeholder Contact</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Stakeholder Contact</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                 Maintaining proactive, respectful relationships with traditional rulers, religious leaders, professional associations, civil-society groups, youth, and women organizations.
               </p>
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-emerald-50/50 dark:bg-gray-800/60 p-6 shadow-sm">
               <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
                 <Target className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Grassroots Outreach</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Grassroots Outreach</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                 Establishing direct contact with local communities across all wards and LGAs to effectively communicate organizational positions, initiatives, and programs.
               </p>
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-emerald-50/50 p-6 shadow-sm">
+            <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-emerald-50/50 dark:bg-gray-800/60 p-6 shadow-sm">
               <div className="mb-4 inline-block rounded-lg bg-emerald-700 p-3 text-white">
                 <Heart className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Coordination & Feedback</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Coordination & Feedback</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                 Collecting genuine community feedback and concerns to relay to leadership while ensuring seamless, synchronized efforts across all organizational tiers.
               </p>
             </div>
@@ -226,13 +243,13 @@ export default function HomePage() {
       {/* =========================================================
           CORE RESPONSIBILITIES
       ========================================================= */}
-      <section className="bg-gray-100/70 py-16">
+      <section className="bg-gray-100/70 dark:bg-gray-950 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 sm:text-4xl">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl">
               Core Responsibilities
             </h2>
-            <p className="mt-3 text-base text-gray-600">
+            <p className="mt-3 text-base text-gray-600 dark:text-gray-300">
               Our key pillars for relationship management and grassroots coordination
             </p>
           </div>
@@ -278,15 +295,15 @@ export default function HomePage() {
             ].map((item, idx) => (
               <div
                 key={idx}
-                className="rounded-xl bg-white border border-gray-200/80 p-6 shadow-sm hover:shadow-md transition-shadow"
+                className="rounded-xl bg-white dark:bg-gray-900 border border-gray-200/80 dark:border-gray-800 p-6 shadow-sm hover:shadow-md transition-shadow"
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-extrabold text-emerald-800">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950 text-xs font-extrabold text-emerald-800 dark:text-emerald-300">
                     {idx + 1}
                   </div>
-                  <h3 className="font-bold text-gray-900 text-base">{item.title}</h3>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-base">{item.title}</h3>
                 </div>
-                <p className="text-sm text-gray-600 leading-relaxed pl-10">{item.desc}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed pl-10">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -296,16 +313,16 @@ export default function HomePage() {
       {/* =========================================================
           ORGANIZATIONAL HIERARCHY
       ========================================================= */}
-      <section className="bg-white py-16">
+      <section className="bg-white dark:bg-gray-900 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700">
+            <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               Organizational Hierarchy
             </p>
-            <h2 className="mt-2 text-3xl font-bold text-gray-900 sm:text-4xl">
+            <h2 className="mt-2 text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl">
               DCM Organizational Structure
             </h2>
-            <p className="mt-3 text-gray-600">
+            <p className="mt-3 text-gray-600 dark:text-gray-300">
               A structured network reaching every corner of Enugu State
             </p>
           </div>
@@ -319,15 +336,15 @@ export default function HomePage() {
               { level: "Community Teams", role: "Grassroots Unit Mobilization" },
             ].map((step, idx, arr) => (
               <div key={idx} className="flex flex-col md:flex-row items-center w-full md:w-auto">
-                <div className="flex-1 min-w-[170px] rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 text-center shadow-sm">
-                  <span className="block text-xs font-bold uppercase text-emerald-700 mb-1">
+                <div className="flex-1 min-w-[170px] rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/60 dark:bg-gray-800 p-4 text-center shadow-sm">
+                  <span className="block text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400 mb-1">
                     Tier {idx + 1}
                   </span>
-                  <h4 className="font-extrabold text-gray-900 text-sm">{step.level}</h4>
-                  <p className="text-xs text-gray-500 mt-1">{step.role}</p>
+                  <h4 className="font-extrabold text-gray-900 dark:text-white text-sm">{step.level}</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{step.role}</p>
                 </div>
                 {idx < arr.length - 1 && (
-                  <div className="py-2 md:py-0 md:px-2 text-emerald-600 font-bold">
+                  <div className="py-2 md:py-0 md:px-2 text-emerald-600 dark:text-emerald-400 font-bold">
                     <span className="md:hidden">↓</span>
                     <span className="hidden md:inline">→</span>
                   </div>
@@ -339,7 +356,7 @@ export default function HomePage() {
           <div className="text-center mt-10">
             <Link
               href="/structure"
-              className="inline-flex items-center text-sm font-bold text-emerald-700 hover:text-emerald-800"
+              className="inline-flex items-center text-sm font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800"
             >
               Explore Our Full Structure Members →
             </Link>
@@ -348,18 +365,18 @@ export default function HomePage() {
       </section>
 
       {/* =========================================================
-          LATEST NEWS — DYNAMIC CONTENT PRESERVED
+          LATEST NEWS
       ========================================================= */}
-      <section className="bg-gray-50 py-16">
+      <section className="bg-gray-50 dark:bg-gray-950 py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-12 flex items-center justify-between">
-            <h2 className="text-3xl font-bold text-green-900 md:text-4xl">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white md:text-4xl">
               Latest News
             </h2>
 
             <Link
               href="/news"
-              className="font-semibold text-green-900 transition-colors hover:text-green-700"
+              className="font-semibold text-emerald-700 dark:text-emerald-400 transition-colors hover:text-emerald-800"
             >
               View All →
             </Link>
@@ -367,22 +384,14 @@ export default function HomePage() {
 
           {newsLoading ? (
             <div className="flex min-h-[200px] items-center justify-center gap-3 text-gray-500">
-              <Loader2 className="h-6 w-6 animate-spin text-green-800" />
-
-              <p className="text-sm font-medium">
-                Loading campaign updates…
-              </p>
+              <Loader2 className="h-6 w-6 animate-spin text-emerald-700" />
+              <p className="text-sm font-medium">Loading updates...</p>
             </div>
           ) : latestNews.length === 0 ? (
-            <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
-              <FileText className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-
-              <p className="text-base font-medium text-gray-700">
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-8 text-center shadow-sm">
+              <FileText className="mx-auto mb-2 h-8 w-8 text-gray-300 dark:text-gray-600" />
+              <p className="text-base font-medium text-gray-700 dark:text-gray-300">
                 No published news articles yet.
-              </p>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Check back soon for news and updates from the campaign team.
               </p>
             </div>
           ) : (
@@ -391,7 +400,7 @@ export default function HomePage() {
                 <Link
                   key={article.id}
                   href={`/news/${article.slug}`}
-                  className="group flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+                  className="group flex flex-col overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
                 >
                   {article.featured_image ? (
                     <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
@@ -406,40 +415,29 @@ export default function HomePage() {
                     </div>
                   ) : (
                     <div className="relative flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br from-emerald-900/10 to-emerald-700/10">
-                      <span className="text-2xl font-bold text-emerald-900/20">
+                      <span className="text-2xl font-bold text-emerald-900/20 dark:text-emerald-400/20">
                         DCM Enugu
                       </span>
                     </div>
                   )}
 
                   <div className="flex flex-1 flex-col p-6">
-                    <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+                    <div className="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5 text-green-800" />
-
-                        {formatDate(
-                          article.published_at || article.created_at
-                        )}
+                        <Calendar className="h-3.5 w-3.5 text-emerald-700" />
+                        {formatDate(article.published_at || article.created_at)}
                       </span>
-
-                      {article.category && (
-                        <span className="flex items-center gap-1 rounded bg-green-900/10 px-2 py-0.5 font-medium text-green-900">
-                          <Tag className="h-3 w-3" />
-
-                          {article.category}
-                        </span>
-                      )}
                     </div>
 
-                    <h3 className="mb-2 line-clamp-2 text-lg font-bold text-gray-900 transition-colors group-hover:text-green-800">
+                    <h3 className="mb-2 line-clamp-2 text-lg font-bold text-gray-900 dark:text-white transition-colors group-hover:text-emerald-700">
                       {article.title}
                     </h3>
 
-                    <p className="mb-4 line-clamp-3 flex-1 text-sm leading-relaxed text-gray-600">
+                    <p className="mb-4 line-clamp-3 flex-1 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
                       {article.excerpt || article.content}
                     </p>
 
-                    <div className="inline-flex items-center text-sm font-semibold text-green-900">
+                    <div className="inline-flex items-center text-sm font-semibold text-emerald-700 dark:text-emerald-400">
                       Read story
                       <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
                     </div>
@@ -452,77 +450,9 @@ export default function HomePage() {
       </section>
 
       {/* =========================================================
-          UPCOMING EVENTS — DYNAMIC CONTENT PRESERVED
-      ========================================================= */}
-      <section className="bg-white py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-12 text-3xl font-bold text-green-900 md:text-4xl">
-            Upcoming Events
-          </h2>
-
-          {events.length === 0 ? (
-            <div className="rounded-2xl bg-gray-50 p-8 text-center">
-              <Calendar className="mx-auto mb-3 h-8 w-8 text-gray-300" />
-
-              <p className="text-base font-medium text-gray-700">
-                No upcoming events at the moment.
-              </p>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Check back soon for campaign events and community engagements.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-8 md:grid-cols-3">
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className="rounded-xl bg-gray-50 p-6 transition-shadow hover:shadow-md"
-                >
-                  <div className="mb-4 flex items-center space-x-2 text-green-800">
-                    <Calendar className="h-5 w-5" />
-
-                    <span className="font-medium">
-                      {formatDate(event.date)}
-                    </span>
-                  </div>
-
-                  <h3 className="mb-3 text-xl font-semibold text-green-900">
-                    {event.title}
-                  </h3>
-
-                  <div className="space-y-2 text-gray-600">
-                    <div className="flex items-center space-x-2">
-                      <MapPin className="h-4 w-4" />
-
-                      <span className="text-sm">{event.venue}</span>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm font-medium">
-                        {event.ward} Ward
-                      </span>
-                    </div>
-
-                    <div className="text-sm text-gray-500">
-                      {event.time}
-                    </div>
-                  </div>
-
-                  <button className="mt-4 w-full rounded-lg bg-green-900 px-4 py-2 text-white transition-colors hover:bg-green-950">
-                    RSVP
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* =========================================================
           CTA
       ========================================================= */}
-      <section className="bg-gradient-to-br from-emerald-950 to-green-950 py-16 text-white">
+      <section className="bg-gradient-to-br from-emerald-950 to-green-950 py-16 text-white max-w-full">
         <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
           <h2 className="mb-4 text-3xl font-bold md:text-4xl">
             Mobilizing for Good Governance
@@ -534,10 +464,10 @@ export default function HomePage() {
 
           <div className="flex flex-col justify-center gap-4 sm:flex-row">
             <Link
-              href="/volunteer"
+              href="/register-inec-officer"
               className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-8 py-4 font-bold text-white transition-colors hover:bg-emerald-600 shadow-lg"
             >
-              Get Involved / Volunteer
+              Register as INEC Officer
             </Link>
 
             <Link
