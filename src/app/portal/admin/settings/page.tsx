@@ -25,6 +25,9 @@ import {
   Phone,
   Mail,
   MapPin,
+  ShieldAlert,
+  Power,
+  Monitor,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -33,7 +36,8 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<"homepage" | "branding" | "header_footer" | "theme">("homepage");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"homepage" | "branding" | "header_footer" | "theme" | "maintenance">("homepage");
 
   useEffect(() => {
     async function loadSettings() {
@@ -189,6 +193,19 @@ export default function AdminSettingsPage() {
         >
           {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           Theme Mode ({theme.toUpperCase()})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("maintenance")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "maintenance"
+              ? "bg-amber-600 text-white shadow-sm"
+              : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+          }`}
+        >
+          <ShieldAlert className="h-4 w-4" />
+          Maintenance Mode {settings.maintenanceMode && "(ACTIVE)"}
         </button>
       </div>
 
@@ -544,7 +561,140 @@ export default function AdminSettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* TAB 5: MAINTENANCE MODE */}
+        {activeTab === "maintenance" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800 border-amber-200 dark:border-amber-900/50">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800 bg-amber-50/50 dark:bg-amber-950/20">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                Maintenance Mode Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-200 dark:border-amber-800 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                  Temporarily replace the public application with a maintenance experience for visitors.
+                  Administrators remain authorized to access the Settings Control Center to manage or disable maintenance mode.
+                </p>
+              </div>
+
+              {/* Maintenance Toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+                <div>
+                  <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                    <Power className={`h-4 w-4 ${settings.maintenanceMode ? "text-red-500" : "text-gray-400"}`} />
+                    Maintenance Mode Status
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Currently {settings.maintenanceMode ? "ENABLED (Visitors will see selected maintenance view)" : "DISABLED (Normal public interface active)"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!settings.maintenanceMode) {
+                      setShowConfirmModal(true);
+                    } else {
+                      setSettings({ ...settings, maintenanceMode: false });
+                    }
+                  }}
+                  className={`px-5 py-2.5 rounded-xl font-black text-xs transition-all shadow-sm flex items-center gap-2 ${
+                    settings.maintenanceMode
+                      ? "bg-red-600 text-white hover:bg-red-700"
+                      : "bg-emerald-700 text-white hover:bg-emerald-800"
+                  }`}
+                >
+                  <Power className="h-4 w-4" />
+                  Maintenance Mode: {settings.maintenanceMode ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              {/* Visitor Screen Selection (When ON or configurable) */}
+              <div className="space-y-3 pt-2">
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                  Visitor Screen Experience
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Option 1: Maintenance Page */}
+                  <div
+                    onClick={() => setSettings({ ...settings, maintenanceScreen: "page" })}
+                    className={`cursor-pointer rounded-2xl p-5 border-2 transition-all ${
+                      settings.maintenanceScreen === "page"
+                        ? "border-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/30 text-gray-900 dark:text-white shadow-sm"
+                        : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <Monitor className="h-5 w-5 text-emerald-700 dark:text-emerald-400" />
+                      <h4 className="font-extrabold text-sm">Maintenance Page</h4>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                      Polished, centered card featuring the DCM Enugu logo, app name, and a clear "We'll be back soon" message.
+                    </p>
+                  </div>
+
+                  {/* Option 2: Dark Blue Screen */}
+                  <div
+                    onClick={() => setSettings({ ...settings, maintenanceScreen: "dark_blue" })}
+                    className={`cursor-pointer rounded-2xl p-5 border-2 transition-all ${
+                      settings.maintenanceScreen === "dark_blue"
+                        ? "border-emerald-600 bg-slate-900 text-white shadow-sm"
+                        : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="h-4 w-4 rounded-full bg-slate-900 border border-slate-600 shrink-0" />
+                      <h4 className="font-extrabold text-sm">Dark Blue Screen</h4>
+                    </div>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Minimal full viewport deep navy screen with no header, navigation, or public cards displayed.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </form>
+
+      {/* Confirmation Modal for Enabling Maintenance Mode */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <ShieldAlert className="h-8 w-8 shrink-0" />
+              <h3 className="text-lg font-extrabold text-gray-900 dark:text-white">Enable Maintenance Mode?</h3>
+            </div>
+            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+              Enabling maintenance mode will replace public pages with the selected screen.
+              Authorized administrators will still be able to sign in and access the control center.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSettings({ ...settings, maintenanceMode: true });
+                  setShowConfirmModal(false);
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+              >
+                Confirm & Enable
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

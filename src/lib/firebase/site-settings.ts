@@ -24,6 +24,10 @@ export interface SiteSettings {
   footerEmail: string;
   copyrightText: string;
 
+  // Maintenance Mode Settings
+  maintenanceMode: boolean;
+  maintenanceScreen: "page" | "dark_blue";
+
   updatedAt?: any;
 }
 
@@ -46,6 +50,9 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   footerPhone: "+234 800 000 0000",
   footerEmail: "contact@dcmenugu.org",
   copyrightText: "© 2026 DCM Enugu (Directorate of Contact and Mobilization). All rights reserved.",
+
+  maintenanceMode: false,
+  maintenanceScreen: "page",
 };
 
 const COLLECTION_NAME = "site_settings";
