@@ -57,7 +57,7 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
               </div>
             ) : (
               <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-black flex items-center justify-center text-2xl shadow-lg">
-                DCM
+                PC
               </div>
             )}
           </div>
@@ -68,7 +68,7 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
               <Wrench className="h-3.5 w-3.5 animate-pulse" /> Maintenance Mode Active
             </span>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              {settings.brandName || "DCM ENUGU"}
+              {settings.brandName || "POLITICORE"}
             </h1>
           </div>
 
@@ -84,7 +84,7 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
 
           {/* Subtitle / Copyright Footer */}
           <div className="pt-6 border-t border-slate-800/80 text-xs text-slate-500 font-medium">
-            {settings.brandTagline || "DIRECTORATE OF CONTACT & MOBILIZATION"}
+            {settings.brandTagline || "POLITICAL OPERATIONS PLATFORM"}
           </div>
         </div>
       </div>

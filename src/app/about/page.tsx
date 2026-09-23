@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { Users, Target, CheckCircle2, ArrowRight, ShieldCheck, Layers } from "lucide-react";
+import { Users, Target, CheckCircle2, ArrowRight } from "lucide-react";
 
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
@@ -18,19 +18,19 @@ export async function generateMetadata(): Promise<Metadata> {
 
     if (!aboutData || aboutData.status !== "published") {
       return {
-        title: "About Us | DCM Enugu — Directorate of Contact and Mobilization",
-        description: "Learn about DCM Enugu, our core responsibilities, stakeholder engagement, and grassroots mobilization structure.",
+        title: "About Us | PolitiCore — Political Operations Platform",
+        description: "Learn about PolitiCore, our core capabilities, stakeholder management, field operations, and campaign coordination platform.",
       };
     }
 
     return {
-      title: `About Us | DCM Enugu`,
-      description: aboutData.about?.slice(0, 160) || "Directorate of Contact and Mobilization Enugu State",
+      title: `About Us | PolitiCore`,
+      description: aboutData.about?.slice(0, 160) || "PolitiCore Political Operations & Campaign Platform",
     };
   } catch (error) {
     return {
-      title: "About Us | DCM Enugu — Directorate of Contact and Mobilization",
-      description: "Learn about DCM Enugu, our core responsibilities, stakeholder engagement, and grassroots mobilization structure.",
+      title: "About Us | PolitiCore — Political Operations Platform",
+      description: "Learn about PolitiCore, our core capabilities, stakeholder management, field operations, and campaign coordination platform.",
     };
   }
 }
@@ -123,7 +123,7 @@ export default async function AboutUsPage() {
                 <h3 className="text-xl font-bold text-white">1. Contact</h3>
               </div>
               <p className="text-sm font-semibold text-emerald-200 mb-2">
-                "Who do we need to engage, and how do we maintain those relationships?"
+                &quot;Who do we need to engage, and how do we maintain those relationships?&quot;
               </p>
               <p className="text-sm text-gray-200 leading-relaxed">
                 Contact focuses on proactive stakeholder relationship management. We identify, reach out to, and build lasting, respectful partnerships with traditional rulers, religious leaders, professional associations, youth/women groups, and civil-society organizations.
@@ -138,7 +138,7 @@ export default async function AboutUsPage() {
                 <h3 className="text-xl font-bold text-white">2. Mobilization</h3>
               </div>
               <p className="text-sm font-semibold text-emerald-200 mb-2">
-                "How do we organize people who have chosen to participate?"
+                &quot;How do we organize people who have chosen to participate?&quot;
               </p>
               <p className="text-sm text-gray-200 leading-relaxed">
                 Mobilization coordinates participants so they can actively and lawfully take part in meetings, consultations, rallies, community forums, and civic development activities across Enugu State.

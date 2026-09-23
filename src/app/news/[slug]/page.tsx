@@ -13,7 +13,6 @@ export const dynamic = "force-dynamic";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getNewsArticleBySlug } from "@/lib/firebase/firestore";
-import type { NewsArticle } from "@/types";
 
 interface PageProps {
   params: Promise<{
@@ -22,7 +21,7 @@ interface PageProps {
 }
 
 const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://ifeanyichukwu-2027.vercel.app/";
+  process.env.NEXT_PUBLIC_SITE_URL || "https://politicore.org";
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -33,8 +32,8 @@ function formatDate(rawTimestamp: any) {
 
   let date: Date;
 
-  if (rawTimestamp.seconds) {
-    date = new Date(rawTimestamp.seconds * 1000);
+  if (typeof rawTimestamp === "object" && rawTimestamp !== null && "seconds" in rawTimestamp) {
+    date = new Date((rawTimestamp as { seconds: number }).seconds * 1000);
   } else if (
     typeof rawTimestamp === "string" ||
     typeof rawTimestamp === "number"
@@ -119,7 +118,7 @@ export async function generateMetadata({
       title: article.title,
       description,
       url: articleUrl,
-      siteName: "DCM Enugu News",
+      siteName: "PolitiCore News",
       type: "article",
 
       ...(imageUrl && {

@@ -144,7 +144,7 @@ export function NotificationBell({ profile }: { profile: UserProfile | null }) {
           {/* Footer */}
           <div className="p-3 bg-gray-50 dark:bg-gray-800/40 border-t border-gray-100 dark:border-gray-800 text-center">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">
-              DCM Enugu Central Broadcast System
+              PolitiCore Central Broadcast System
             </span>
           </div>
         </div>

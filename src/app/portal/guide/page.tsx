@@ -4,15 +4,11 @@ import { useState } from "react";
 import {
   BookOpen,
   Settings,
-  Users,
   Vote,
   ShieldCheck,
   Megaphone,
   CheckSquare,
-  HelpCircle,
-  FileText,
   Building2,
-  ChevronRight,
   Layers,
   Sparkles,
 } from "lucide-react";
@@ -29,14 +25,14 @@ export default function UserGuidePage() {
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs font-bold tracking-wide uppercase mb-3">
-            <BookOpen className="h-4 w-4 text-emerald-200" /> DCM Enugu Platform Manual
+            <BookOpen className="h-4 w-4 text-emerald-200" /> PolitiCore Platform Manual
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight">
             System User Guide & Operations Manual
           </h1>
           <p className="mt-2 text-sm sm:text-base text-emerald-100/90 leading-relaxed">
-            Welcome to the comprehensive operational manual for DCM Enugu (Directorate of Contact and Mobilization).
-            Learn how to navigate organizational structures, manage field reports, control site settings, and process INEC officer registrations.
+            Welcome to the comprehensive operational manual for PolitiCore (Political Operations & Campaign Intelligence Platform).
+            Learn how to navigate organizational structures, manage field reports, control site settings, and process officer registrations.
           </p>
         </div>
       </div>
@@ -77,13 +73,13 @@ export default function UserGuidePage() {
             <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
               <Building2 className="h-7 w-7 text-emerald-700 dark:text-emerald-400" />
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">DCM Enugu Purpose & Architecture</h2>
-                <p className="text-xs text-gray-500">Directorate of Contact and Mobilization — Mobilizing for Good Governance</p>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">PolitiCore Purpose & Architecture</h2>
+                <p className="text-xs text-gray-500">PolitiCore — Political Operations & Campaign Platform</p>
               </div>
             </div>
 
             <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-              DCM Enugu serves as the primary relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure across Enugu State.
+              PolitiCore serves as the primary relationship-management, stakeholder-engagement, field outreach, campaign intelligence, and operational coordination platform across all organizational levels.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
@@ -220,7 +216,7 @@ export default function UserGuidePage() {
                   <Megaphone className="h-4 w-4 text-emerald-600" /> Notification Bell System
                 </h3>
                 <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                  Located on the top header bar, the Notification Bell aggregates all directorate announcements and broadcasts with unread counters and "Mark all read" capabilities.
+                  Located on the top header bar, the Notification Bell aggregates all directorate announcements and broadcasts with unread counters and &quot;Mark all read&quot; capabilities.
                 </p>
               </div>
 

@@ -11,8 +11,8 @@ import { getCurrentTenant } from "@/lib/firebase/tenants";
 import { getStructureMembers, StructureMember } from "@/lib/firebase/structure";
 
 export const metadata: Metadata = {
-  title: "Our Structure | DCM Enugu — Directorate of Contact and Mobilization",
-  description: "Explore the organizational structure and members of DCM Enugu across State, Zonal, and Local Government Area levels.",
+  title: "Organization Structure | PolitiCore Operations Platform",
+  description: "Explore the organizational structure and officers of PolitiCore across Executive, Regional, Zonal, District, and Local Area levels.",
 };
 
 export default async function OurStructurePage() {
@@ -44,16 +44,16 @@ export default async function OurStructurePage() {
         {/* Hero */}
         <section className="text-center mb-14">
           <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold uppercase tracking-wider mb-3">
-            Directorate Hierarchy & Leadership
+            Platform Hierarchy & Leadership
           </span>
           <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 tracking-tight">
             Our Organizational Structure
           </h1>
           <p className="mt-3 text-lg text-emerald-700 font-medium">
-            DCM Enugu Structure Members
+            PolitiCore Organization Officers
           </p>
           <p className="mt-2 max-w-2xl mx-auto text-gray-600">
-            Coordinating grassroots mobilization and stakeholder engagement across State, Senatorial Zone, and Local Government Area levels in Enugu State.
+            Coordinating grassroots mobilization, stakeholder engagement, and campaign intelligence across Executive, Zonal, District, and Local Area levels.
           </p>
         </section>
 
