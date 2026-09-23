@@ -24,16 +24,22 @@ service cloud.firestore {
       ).data;
     }
 
-    function callerTenantId() {
-      return userExists()
-        ? callerProfile().tenant_id
-        : null;
-    }
-
     function callerRole() {
       return userExists()
         ? callerProfile().access_role
         : null;
+    }
+
+    function callerTenantId() {
+      return userExists()
+        && callerProfile().tenant_id != null
+        ? callerProfile().tenant_id
+        : "politicore-default";
+    }
+
+    function sameTenant(data) {
+      return userExists()
+        && (data.tenant_id == null || data.tenant_id == callerTenantId());
     }
 
 
@@ -90,19 +96,6 @@ service cloud.firestore {
     }
 
 
-    // ============================================================
-    // TENANT
-    // ============================================================
-
-    function sameTenant(data) {
-      return userExists()
-        && data.tenant_id == callerTenantId();
-    }
-
-    function requestedSameTenant(data) {
-      return userExists()
-        && data.tenant_id == callerTenantId();
-    }
 
 
     // ============================================================

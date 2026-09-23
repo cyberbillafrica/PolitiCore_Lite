@@ -2,6 +2,7 @@
 
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
+import { CURRENT_TENANT_ID } from "./tenants";
 import type {
   PortalContent,
   PortalContentData,
@@ -10,12 +11,14 @@ import type {
 } from "@/types";
 
 const COLLECTION = "portal_content";
+const DEFAULT_ID = CURRENT_TENANT_ID;
 
 export async function getPortalContent(
-  tenantId: string,
+  tenantId?: string,
 ): Promise<PortalContent[]> {
+  const id = tenantId || DEFAULT_ID;
   try {
-    const ref = doc(db, COLLECTION, tenantId);
+    const ref = doc(db, COLLECTION, id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return [];
     const data = snap.data() as PortalContentData;
@@ -27,14 +30,15 @@ export async function getPortalContent(
 }
 
 export async function savePortalContent(
-  tenantId: string,
   items: PortalContent[],
+  tenantId?: string,
 ): Promise<void> {
-  const ref = doc(db, COLLECTION, tenantId);
+  const id = tenantId || DEFAULT_ID;
+  const ref = doc(db, COLLECTION, id);
   await setDoc(
     ref,
     {
-      tenant_id: tenantId,
+      tenant_id: id,
       items,
       updated_at: serverTimestamp(),
     },
@@ -45,7 +49,7 @@ export async function savePortalContent(
 // ─── ANNOUNCEMENTS ───
 
 export async function getAnnouncements(
-  tenantId: string,
+  tenantId?: string,
 ): Promise<Announcement[]> {
   const items = await getPortalContent(tenantId);
   return items.filter(
@@ -54,8 +58,8 @@ export async function getAnnouncements(
 }
 
 export async function addAnnouncement(
-  tenantId: string,
   announcement: Omit<Announcement, "id" | "created_at" | "updated_at">,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   const newItem: Announcement = {
@@ -65,13 +69,13 @@ export async function addAnnouncement(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-  await savePortalContent(tenantId, [newItem, ...items]);
+  await savePortalContent([newItem, ...items], tenantId);
 }
 
 export async function updateAnnouncement(
-  tenantId: string,
   announcementId: string,
   updates: Partial<Omit<Announcement, "id" | "type" | "created_at">>,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   const updated = items.map((item) =>
@@ -79,24 +83,24 @@ export async function updateAnnouncement(
       ? { ...item, ...updates, updated_at: new Date().toISOString() }
       : item,
   );
-  await savePortalContent(tenantId, updated);
+  await savePortalContent(updated, tenantId);
 }
 
 export async function deleteAnnouncement(
-  tenantId: string,
   announcementId: string,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   await savePortalContent(
-    tenantId,
     items.filter((item) => item.id !== announcementId),
+    tenantId,
   );
 }
 
 // ─── EVENT ───
 
 export async function getPublishedEvents(
-  tenantId: string,
+  tenantId?: string,
 ): Promise<EventData[]> {
   const items = await getPortalContent(tenantId);
   return items
@@ -108,8 +112,8 @@ export async function getPublishedEvents(
 }
 
 export async function addEvent(
-  tenantId: string,
   event: Omit<EventData, "id" | "type" | "created_at" | "updated_at">,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   const newItem: EventData = {
@@ -119,13 +123,13 @@ export async function addEvent(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-  await savePortalContent(tenantId, [newItem, ...items]);
+  await savePortalContent([newItem, ...items], tenantId);
 }
 
 export async function updateEvent(
-  tenantId: string,
   eventId: string,
   updates: Partial<Omit<EventData, "id" | "type" | "created_at">>,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   const updated = items.map((item) =>
@@ -133,16 +137,16 @@ export async function updateEvent(
       ? { ...item, ...updates, updated_at: new Date().toISOString() }
       : item,
   );
-  await savePortalContent(tenantId, updated);
+  await savePortalContent(updated, tenantId);
 }
 
 export async function deleteEvent(
-  tenantId: string,
   eventId: string,
+  tenantId?: string,
 ): Promise<void> {
   const items = await getPortalContent(tenantId);
   await savePortalContent(
-    tenantId,
     items.filter((item) => item.id !== eventId),
+    tenantId,
   );
 }

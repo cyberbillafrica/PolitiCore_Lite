@@ -45,7 +45,7 @@ export default function Header() {
                 </div>
               ) : (
                 <div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-emerald-700 text-white font-extrabold shadow-sm transition-all duration-300 group-hover:shadow-md text-sm sm:text-base">
-                  DCM
+                  PC
                 </div>
               )}
 
@@ -75,7 +75,7 @@ export default function Header() {
               About Us
             </Link>
             <Link href="/structure" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-[#008751] dark:hover:text-emerald-400">
-              Our Structure
+              Organization Structure
             </Link>
             <Link href="/news" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-[#008751] dark:hover:text-emerald-400">
               News
@@ -159,7 +159,7 @@ export default function Header() {
               {[
                 ["Home", "/"],
                 ["About Us", "/about"],
-                ["Our Structure", "/structure"],
+                ["Organization Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
                 ["Contact", "/contact"],

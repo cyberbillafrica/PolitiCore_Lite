@@ -22,7 +22,6 @@ import {
   Upload,
   AlertCircle,
   Loader2,
-  Type,
   Phone,
   Mail,
   MapPin,
@@ -393,7 +392,7 @@ export default function AdminSettingsPage() {
                     </div>
                   ) : (
                     <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-extrabold flex items-center justify-center text-xl shadow-md">
-                      DCM
+                      PC
                     </div>
                   )}
 
@@ -635,7 +634,7 @@ export default function AdminSettingsPage() {
                       <h4 className="font-extrabold text-sm">Maintenance Page</h4>
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                      Polished, centered card featuring the DCM Enugu logo, app name, and a clear "We'll be back soon" message.
+                      Polished, centered card featuring the PolitiCore logo, app name, and a clear &quot;We&apos;ll be back soon&quot; message.
                     </p>
                   </div>
 

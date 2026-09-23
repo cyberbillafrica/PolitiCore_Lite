@@ -32,24 +32,24 @@ export interface SiteSettings {
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  heroTitle: "DCM ENUGU",
-  heroTagline: "Directorate of Contact and Mobilization",
+  heroTitle: "POLITICORE LITE",
+  heroTagline: "Political Operations & Campaign Intelligence Platform",
   heroDescription:
-    "Serving as a relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure across Enugu State.",
-  heroCtaText: "Register as INEC Officer",
-  heroCtaLink: "/register-inec-officer",
+    "Bringing political organization, stakeholders, grassroots outreach, field operations, communications, events, reporting, and organizational coordination into one coherent system.",
+  heroCtaText: "Explore Platform Features",
+  heroCtaLink: "/about",
   heroImageUrl: "",
 
-  brandName: "DCM ENUGU",
-  brandTagline: "DIRECTORATE OF CONTACT & MOBILIZATION",
+  brandName: "POLITICORE",
+  brandTagline: "POLITICAL OPERATIONS PLATFORM",
   logoUrl: "",
 
-  headerNotice: "Mobilizing for Good Governance in Enugu State",
+  headerNotice: "Powering Modern Political Operations & Field Campaigns",
 
-  footerAddress: "DCM Secretariat, Independence Layout, Enugu State, Nigeria",
-  footerPhone: "+234 800 000 0000",
-  footerEmail: "contact@dcmenugu.org",
-  copyrightText: "© 2026 DCM Enugu (Directorate of Contact and Mobilization). All rights reserved.",
+  footerAddress: "PolitiCore Operations Center, Headquarters",
+  footerPhone: "+234 800 765 4842",
+  footerEmail: "contact@politicore.org",
+  copyrightText: "© 2026 PolitiCore Platform. CyberBill Africa. All rights reserved.",
 
   maintenanceMode: false,
   maintenanceScreen: "page",
@@ -57,7 +57,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
 
 const COLLECTION_NAME = "site_settings";
 const DOC_ID = "general";
-const LOCAL_STORAGE_KEY = "dcm_enugu_site_settings";
+const LOCAL_STORAGE_KEY = "politicore_site_settings";
 
 export async function getSiteSettings(): Promise<SiteSettings> {
   if (typeof window !== "undefined") {

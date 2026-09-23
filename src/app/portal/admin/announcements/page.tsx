@@ -184,12 +184,10 @@ export default function AdminAnnouncementsPage() {
 
     try {
       if (isEditing && editingId) {
-        await updateAnnouncement(tenantId, editingId, {
-          ...announcementForm,
-        });
+        await updateAnnouncement(editingId, announcementForm);
         setSuccess("Announcement updated successfully!");
       } else {
-        await addAnnouncement(tenantId, {
+        await addAnnouncement({
           type: "announcement",
           ...announcementForm,
         });
@@ -225,10 +223,10 @@ export default function AdminAnnouncementsPage() {
 
     try {
       if (isEditing && editingId) {
-        await updateEvent(tenantId, editingId, eventForm);
+        await updateEvent(editingId, eventForm);
         setSuccess("Event updated successfully!");
       } else {
-        await addEvent(tenantId, eventForm);
+        await addEvent(eventForm);
         setSuccess("Event added successfully!");
       }
       resetForms();
@@ -249,9 +247,9 @@ export default function AdminAnnouncementsPage() {
       if (!item) return;
 
       if (item.type === "announcement") {
-        await deleteAnnouncement(tenantId, id);
+        await deleteAnnouncement(id);
       } else {
-        await deleteEvent(tenantId, id);
+        await deleteEvent(id);
       }
       await loadContent();
       setSuccess("Deleted successfully.");
