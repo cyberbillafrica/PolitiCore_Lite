@@ -76,8 +76,52 @@ export function useScopedCampaignMembers(
    */
 
   useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
+    let isMounted = true;
+
+    async function execute() {
+      if (!assignment) {
+        if (isMounted) {
+          setMembers([]);
+          setError(null);
+          setScopeSupported(true);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const result = await getScopedCampaignMembers(assignment);
+        if (isMounted) {
+          setMembers(result.members);
+          setScopeSupported(result.scopeSupported);
+          if (!result.scopeSupported) {
+            setError(
+              result.message ?? "This organizational scope is not yet supported.",
+            );
+          } else {
+            setError(null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load scoped campaign members:", err);
+        if (isMounted) {
+          setMembers([]);
+          setScopeSupported(false);
+          setError("Unable to load campaign members for this area.");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    execute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [assignment]);
 
   /*
    * ----------------------------------------------------------

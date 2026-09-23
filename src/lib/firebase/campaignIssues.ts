@@ -133,12 +133,20 @@ export async function createCampaignIssue(data: {
 export async function getScopedCampaignIssues(
   assignment: OrganizationalAssignment,
 ): Promise<CampaignIssue[]> {
-  const q = query(
-    collection(db, "issues"),
-    where("scope_type", "==", assignment.scope_type),
-    where("scope_id", "==", assignment.scope_id),
-    orderBy("created_at", "desc"),
-  );
+  const q = assignment.tenant_id
+    ? query(
+        collection(db, "issues"),
+        where("tenant_id", "==", assignment.tenant_id),
+        where("scope_type", "==", assignment.scope_type),
+        where("scope_id", "==", assignment.scope_id),
+        orderBy("created_at", "desc"),
+      )
+    : query(
+        collection(db, "issues"),
+        where("scope_type", "==", assignment.scope_type),
+        where("scope_id", "==", assignment.scope_id),
+        orderBy("created_at", "desc"),
+      );
 
   const snapshot = await getDocs(q);
 

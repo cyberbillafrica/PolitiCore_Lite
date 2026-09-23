@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 import { Wrench } from "lucide-react";
 
@@ -51,8 +52,8 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
           {/* Logo */}
           <div className="flex justify-center">
             {settings.logoUrl ? (
-              <div className="h-16 w-16 rounded-2xl bg-slate-800 border border-slate-700 p-2 flex items-center justify-center shadow-md">
-                <img src={settings.logoUrl} alt={settings.brandName} className="h-full w-full object-contain" />
+              <div className="relative h-16 w-16 rounded-2xl bg-slate-800 border border-slate-700 p-2 flex items-center justify-center shadow-md">
+                <Image src={settings.logoUrl} alt={settings.brandName || "Brand Logo"} fill className="object-contain p-2" />
               </div>
             ) : (
               <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-black flex items-center justify-center text-2xl shadow-lg">
@@ -74,10 +75,10 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
           {/* Messages */}
           <div className="space-y-3 pt-2">
             <h2 className="text-lg sm:text-xl font-bold text-slate-200">
-              We're currently performing scheduled maintenance
+              We&apos;re currently performing scheduled maintenance
             </h2>
             <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
-              We'll be back online soon. Thank you for your patience while we improve your experience.
+              We&apos;ll be back online soon. Thank you for your patience while we improve your experience.
             </p>
           </div>
 

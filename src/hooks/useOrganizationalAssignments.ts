@@ -49,8 +49,10 @@ export function useOrganizationalAssignments() {
    * ------------------------------------------------------------
    */
 
+  const userId = user?.uid;
+
   const loadAssignments = useCallback(async () => {
-    if (!user?.uid) {
+    if (!userId) {
       setAssignments([]);
       setLoading(false);
       return;
@@ -60,7 +62,7 @@ export function useOrganizationalAssignments() {
       setLoading(true);
       setError(null);
 
-      const results = await getActiveOrganizationalAssignments(user.uid);
+      const results = await getActiveOrganizationalAssignments(userId);
 
       setAssignments(results);
     } catch (err) {
@@ -71,7 +73,7 @@ export function useOrganizationalAssignments() {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid]);
+  }, [userId]);
 
   /*
    * ------------------------------------------------------------
@@ -84,8 +86,42 @@ export function useOrganizationalAssignments() {
       return;
     }
 
-    loadAssignments();
-  }, [authLoading, loadAssignments]);
+    let isMounted = true;
+
+    async function execute() {
+      if (!userId) {
+        if (isMounted) {
+          setAssignments([]);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const results = await getActiveOrganizationalAssignments(userId);
+        if (isMounted) {
+          setAssignments(results);
+          setError(null);
+        }
+      } catch (err) {
+        console.error("Failed to load organizational assignments:", err);
+        if (isMounted) {
+          setAssignments([]);
+          setError("Unable to load your organizational assignments.");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    execute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authLoading, userId]);
 
   /*
    * ------------------------------------------------------------
