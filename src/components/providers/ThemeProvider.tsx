@@ -19,23 +19,26 @@ const ThemeContext = createContext<ThemeContextType>({
 const THEME_STORAGE_KEY = "dcm_enugu_theme_preference";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("light");
-
-  useEffect(() => {
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "light";
     try {
       const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
       if (saved === "light" || saved === "dark") {
-        setThemeState(saved);
-        if (saved === "dark") {
-          document.documentElement.classList.add("dark");
-        } else {
-          document.documentElement.classList.remove("dark");
-        }
+        return saved;
       }
     } catch {
       // Ignore localStorage error
     }
-  }, []);
+    return "light";
+  });
+
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);

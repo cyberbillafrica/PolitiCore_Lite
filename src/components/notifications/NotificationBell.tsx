@@ -1,14 +1,25 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Bell, Megaphone, CheckCircle2, ChevronRight, X } from "lucide-react";
+import { Bell, Megaphone, CheckCircle2 } from "lucide-react";
 import { getUserAnnouncements } from "@/lib/firebase/firestore";
-import type { Announcement } from "@/types";
+import type { Announcement, UserProfile } from "@/types";
 
-export function NotificationBell({ profile }: { profile: any }) {
+export function NotificationBell({ profile }: { profile: UserProfile | null }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [open, setOpen] = useState(false);
-  const [readIds, setReadIds] = useState<string[]>([]);
+  const [readIds, setReadIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = localStorage.getItem("dcm_read_notifications");
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {
+      // Ignore parse error
+    }
+    return [];
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,18 +30,6 @@ export function NotificationBell({ profile }: { profile: any }) {
         console.error("Failed to fetch notifications:", err);
       });
   }, [profile]);
-
-  // Load read status from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("dcm_read_notifications");
-      if (stored) {
-        setReadIds(JSON.parse(stored));
-      }
-    } catch {
-      // Ignore parse error
-    }
-  }, []);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -130,7 +129,7 @@ export function NotificationBell({ profile }: { profile: any }) {
                         {item.title}
                       </h4>
                       <span className="text-[10px] text-gray-400 shrink-0">
-                        {(item as any).target_type ? (item as any).target_type.toUpperCase() : "ALL"}
+                        {(item as unknown as { target_type?: string }).target_type ? (item as unknown as { target_type?: string }).target_type!.toUpperCase() : "ALL"}
                       </span>
                     </div>
                     <p className="text-xs text-gray-600 dark:text-gray-300 mt-1.5 leading-relaxed line-clamp-3">
