@@ -49,10 +49,7 @@ export function isSocialMember(profile: UserProfile | null): boolean {
 export function isCampaignMemberAdmin(profile: UserProfile | null): boolean {
   if (!profile) return false;
 
-  const isAdminRole =
-    profile.access_role === "admin" ||
-    profile.access_role === "tenant_super_admin" ||
-    profile.access_role === "platform_super_admin";
+  const isAdminRole = profile.access_role === "admin";
 
   return isAdminRole && isCampaignMember(profile);
 }
@@ -318,10 +315,7 @@ export function hasPermission(
    * This is deliberate so the new organizational layer does
    * not break the existing admin functionality.
    */
-  const isAdminRole =
-    profile.access_role === "admin" ||
-    profile.access_role === "tenant_super_admin" ||
-    profile.access_role === "platform_super_admin";
+  const isAdminRole = profile.access_role === "admin";
 
   if (isAdminRole) {
     const campaignActivityPermissions = [

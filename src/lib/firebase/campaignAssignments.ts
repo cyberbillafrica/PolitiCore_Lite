@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
+import { CURRENT_TENANT_ID } from "@/lib/firebase/tenants";
 
 /*
  * ============================================================
@@ -120,15 +121,13 @@ function mapAssignment(
  */
 
 export async function getAllCampaignAssignments(
-  tenantId: string,
+  tenantId?: string,
 ): Promise<CampaignAssignment[]> {
-  if (!tenantId) {
-    return [];
-  }
+  const targetTenantId = tenantId || CURRENT_TENANT_ID;
 
   const q = query(
     collection(db, COLLECTION),
-    where("tenant_id", "==", tenantId),
+    where("tenant_id", "==", targetTenantId),
     orderBy("created_at", "desc"),
   );
 
@@ -201,17 +200,21 @@ export async function getMyCampaignAssignments(
  */
 
 export async function getScopedCampaignAssignments(
-  tenantId: string,
-  scopeType: string,
-  scopeId: string,
+  tenantIdOrScopeType: string,
+  scopeTypeOrId: string,
+  scopeIdParam?: string,
 ): Promise<CampaignAssignment[]> {
-  if (!tenantId || !scopeType || !scopeId) {
+  const scopeType = scopeIdParam ? scopeTypeOrId : tenantIdOrScopeType;
+  const scopeId = scopeIdParam ? scopeIdParam : scopeTypeOrId;
+  const targetTenantId = scopeIdParam ? tenantIdOrScopeType : CURRENT_TENANT_ID;
+
+  if (!scopeType || !scopeId) {
     return [];
   }
 
   const q = query(
     collection(db, COLLECTION),
-    where("tenant_id", "==", tenantId),
+    where("tenant_id", "==", targetTenantId),
     where("scope_type", "==", scopeType),
     where("scope_id", "==", scopeId),
     orderBy("created_at", "desc"),

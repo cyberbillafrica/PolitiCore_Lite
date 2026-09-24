@@ -27,8 +27,8 @@ const DEFAULT_ABOUT: Omit<
   BiographyData,
   "tenant_id" | "created_at" | "updated_at"
 > = {
-  full_name: "DCM Enugu Directorate",
-  title: "Directorate of Contact and Mobilization",
+  full_name: "PolitiCore Operations Secretariat",
+  title: "Political Operations & Campaign Intelligence Platform",
   about: "",
   image_url: null,
   stats: {
@@ -114,8 +114,8 @@ export default function AdminAboutPage() {
       const tenant = await getCurrentTenant();
       await updateBiography(tenant.id, {
         ...aboutData,
-        full_name: aboutData.full_name || "DCM Enugu Directorate",
-        title: aboutData.title || "Directorate of Contact and Mobilization",
+        full_name: aboutData.full_name || "PolitiCore Operations Secretariat",
+        title: aboutData.title || "Political Operations & Campaign Intelligence Platform",
         status,
       });
       setSuccess(

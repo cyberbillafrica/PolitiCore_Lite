@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getUserAnnouncements } from "@/lib/firebase/firestore";
-
 import {
   LayoutDashboard,
   Users,
@@ -27,7 +25,6 @@ import {
   Map,
   BriefcaseBusiness,
   CalendarDays,
-  Flag,
   Network,
   Image,
   BookOpen,
@@ -38,9 +35,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
 import { getElectoralLocation } from "@/lib/constants";
+import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 
 import type { Ward, PollingUnit } from "@/data/electoral";
-import type { Permission, Announcement } from "@/types";
+import type { Permission, UserProfile } from "@/types";
 
 type NavLeaf = {
   name: string;
@@ -119,13 +117,13 @@ const navigation: NavItem[] = [
   },
 
   {
-    name: "Directorate Operations",
+    name: "Political Operations",
     icon: BriefcaseBusiness,
     group: "campaign",
 
     children: [
       {
-        name: "Directorate Dashboard",
+        name: "Operations Dashboard",
         href: "/portal/dashboard",
         icon: LayoutDashboard,
         permission: "view_dashboard",
@@ -290,7 +288,6 @@ export default function PortalLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
-
   const pathname = usePathname();
   const router = useRouter();
 
@@ -731,11 +728,11 @@ export default function PortalLayout({
               onClick={() => setSidebarOpen(false)}
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                DCM
+                PC
               </div>
 
               <span className="text-lg font-bold text-emerald-800">
-                DCM ENUGU
+                POLITICORE
               </span>
             </Link>
 
@@ -774,11 +771,11 @@ export default function PortalLayout({
           <div className="flex h-16 shrink-0 items-center border-b px-6">
             <Link href="/" className="flex items-center space-x-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                DCM
+                PC
               </div>
 
               <span className="text-lg font-bold text-emerald-800">
-                DCM ENUGU
+                POLITICORE
               </span>
             </Link>
           </div>
@@ -818,15 +815,15 @@ export default function PortalLayout({
 
             <Link href="/" className="flex items-center space-x-2 lg:hidden">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                DCM
+                PC
               </div>
               <span className="font-bold text-emerald-800 dark:text-emerald-400">
-                DCM ENUGU
+                POLITICORE
               </span>
             </Link>
 
             <h2 className="hidden lg:block text-sm font-extrabold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
-              Directorate Member Portal
+              PolitiCore Operations Portal
             </h2>
           </div>
 
@@ -845,7 +842,6 @@ export default function PortalLayout({
 function UserPanel({
   userName,
   roleLabel,
-  profile,
   electoralLocation,
   onLogout,
   loggingOut,
@@ -853,7 +849,7 @@ function UserPanel({
 }: {
   userName: string;
   roleLabel: string;
-  profile: any;
+  profile: UserProfile | null;
   electoralLocation: ElectoralLocation | null;
   onLogout: () => void;
   loggingOut: boolean;

@@ -94,10 +94,7 @@ export default function CampaignAssignmentsPage() {
   const primaryScope = getPrimaryOrganizationalScope(assignments);
   const primaryAssignment = primaryScope.assignment;
 
-  const isAdmin =
-    profile?.access_role === "admin" ||
-    profile?.access_role === "tenant_super_admin" ||
-    profile?.access_role === "platform_super_admin";
+  const isAdmin = profile?.access_role === "admin";
 
   const canViewAssignments = hasPermission("view_assignments");
   const canCreateAssignments = hasPermission("create_assignment");

@@ -9,8 +9,6 @@ import {
   Users,
   Target,
   Heart,
-  MapPin,
-  Tag,
   Loader2,
   FileText,
 } from "lucide-react";
@@ -63,8 +61,8 @@ export default function HomePage() {
 
     let date: Date;
 
-    if (rawTimestamp.seconds) {
-      date = new Date(rawTimestamp.seconds * 1000);
+    if (typeof rawTimestamp === "object" && rawTimestamp !== null && "seconds" in rawTimestamp) {
+      date = new Date((rawTimestamp as { seconds: number }).seconds * 1000);
     } else if (
       typeof rawTimestamp === "string" ||
       typeof rawTimestamp === "number"
@@ -107,7 +105,7 @@ export default function HomePage() {
             {/* Hero Content */}
             <div>
               <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
-                {settings.headerNotice || "Directorate of Contact and Mobilization • Enugu State"}
+                {settings.headerNotice || "PolitiCore • Political Operations & Campaign Platform"}
               </div>
 
               <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl tracking-tight">
@@ -124,10 +122,10 @@ export default function HomePage() {
 
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
-                  href={settings.heroCtaLink || "/register-inec-officer"}
+                  href={settings.heroCtaLink || "/about"}
                   className="inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-600 px-7 py-3.5 font-black text-gray-950 shadow-xl transition-all border border-amber-400"
                 >
-                  {settings.heroCtaText || "Register as INEC Officer"}
+                  {settings.heroCtaText || "Explore Features"}
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
 
@@ -135,23 +133,23 @@ export default function HomePage() {
                   href="/about"
                   className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-6 py-3.5 font-bold text-white shadow-lg transition-all hover:bg-emerald-600"
                 >
-                  Learn About DCM
+                  Learn About PolitiCore
                 </Link>
 
                 <Link
                   href="/structure"
                   className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-6 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
                 >
-                  Our Structure
+                  Organization Structure
                 </Link>
               </div>
             </div>
 
-            {/* Contact vs Mobilization Highlight Card */}
+          {/* Operations & Intelligence Highlight Card */}
             <div className="hidden md:block">
               <div className="rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl">
                 <h3 className="mb-6 text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
-                  Contact vs. Mobilization
+                Operations & Intelligence
                 </h3>
 
                 <div className="space-y-6">
@@ -161,10 +159,10 @@ export default function HomePage() {
                     </div>
                     <div>
                       <h4 className="font-bold text-lg text-emerald-200">
-                        Contact
+                      Stakeholder Relations
                       </h4>
                       <p className="text-sm text-gray-300 mt-1 leading-relaxed">
-                        Who do we need to engage, and how do we maintain enduring, respectful relationships with community, religious, professional, youth, and women leaders?
+                      Maintain long-term relationships with key community, political, religious, professional, youth, and grassroots leaders in one centralized platform.
                       </p>
                     </div>
                   </div>
@@ -175,10 +173,10 @@ export default function HomePage() {
                     </div>
                     <div>
                       <h4 className="font-bold text-lg text-emerald-200">
-                        Mobilization
+                      Field Operations & Tasks
                       </h4>
                       <p className="text-sm text-gray-300 mt-1 leading-relaxed">
-                        How do we organize participants so they can actively and lawfully take part in consultative meetings, outreach, and civic development activities?
+                      Deploy field officers, assign tasks across geographical zones, track mobilization reports, and measure operational progress in real time.
                       </p>
                     </div>
                   </div>
@@ -190,19 +188,19 @@ export default function HomePage() {
       </section>
 
       {/* =========================================================
-          ABOUT DCM SECTION
+          ABOUT POLITICORE SECTION
       ========================================================= */}
       <section className="bg-white dark:bg-gray-900 py-16 transition-colors duration-200">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center mb-12">
             <p className="text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Identity & Purpose
+              Identity & Platform Capabilities
             </p>
             <h2 className="mt-2 text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl">
-              Directorate of Contact and Mobilization
+              PolitiCore Operations Platform
             </h2>
             <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
-              DCM Enugu serves as a relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure.
+              PolitiCore centralizes political organization, stakeholders, grassroots outreach, field operations, communications, events, and operational reporting.
             </p>
           </div>
 
@@ -464,17 +462,17 @@ export default function HomePage() {
 
           <div className="flex flex-col justify-center gap-4 sm:flex-row">
             <Link
-              href="/register-inec-officer"
+              href="/portal/dashboard"
               className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-8 py-4 font-bold text-white transition-colors hover:bg-emerald-600 shadow-lg"
             >
-              Register as INEC Officer
+              Access Operations Portal
             </Link>
 
             <Link
               href="/contact"
               className="inline-flex items-center justify-center rounded-lg bg-white/10 px-8 py-4 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
             >
-              Contact DCM Secretariat
+              Contact Operations Center
             </Link>
           </div>
         </div>

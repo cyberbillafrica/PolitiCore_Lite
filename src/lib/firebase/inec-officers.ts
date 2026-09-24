@@ -73,7 +73,7 @@ export const MARITAL_STATUSES = [
 
 const COLLECTION_NAME = "inec_officers";
 
-const LOCAL_STORE_KEY = "dcm_enugu_inec_officers_local";
+const LOCAL_STORE_KEY = "politicore_inec_officers_local";
 
 function getLocalOfficers(): InecOfficer[] {
   if (typeof window === "undefined") return [];
@@ -166,7 +166,7 @@ export async function getAllInecOfficers(): Promise<InecOfficer[]> {
         phone: data.phone || "",
         address: data.address || "",
         nin: data.nin || "",
-        state: data.state || "Enugu State",
+        state: data.state || "Default State",
         lga: data.lga || "",
         ward: data.ward || "",
         gender: data.gender || "",

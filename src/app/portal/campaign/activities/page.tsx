@@ -123,10 +123,7 @@ export default function CampaignActivitiesPage() {
   const { user, profile, assignments, accessLoading, hasPermission } =
     useAuth();
 
-  const isAdmin =
-    profile?.access_role === "admin" ||
-    profile?.access_role === "tenant_super_admin" ||
-    profile?.access_role === "platform_super_admin";
+  const isAdmin = profile?.access_role === "admin";
 
   const canViewCampaignActivities = hasPermission("view_activities");
   const canCreateCampaignActivity = hasPermission("create_activity");

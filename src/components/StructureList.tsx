@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { MapPin, Phone, Mail, ShieldCheck, Layers, Building2, ExternalLink } from "lucide-react";
+import { MapPin, ShieldCheck, Layers, Building2, ExternalLink } from "lucide-react";
 import { StructureMember } from "@/lib/firebase/structure";
 import StructureMemberModal from "./StructureMemberModal";
 
@@ -142,7 +142,7 @@ function MemberCard({
                 {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
               </div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/60">
-                DCM Enugu Secretariat
+                PolitiCore Secretariat
               </span>
             </div>
           )}
@@ -175,7 +175,7 @@ function MemberCard({
 
           {member.altTitle && (
             <p className="text-xs font-medium text-emerald-900/80 bg-emerald-50 border border-emerald-200/80 rounded-lg p-2.5 mt-2.5 leading-relaxed italic">
-              "{member.altTitle}"
+              &quot;{member.altTitle}&quot;
             </p>
           )}
 
@@ -204,7 +204,7 @@ function EmptyStateLevel({ levelName }: { levelName: string }) {
         No {levelName} currently published in this category.
       </p>
       <p className="text-xs text-gray-400 mt-1">
-        Coordinators are regularly added by the DCM Enugu secretariat.
+        Coordinators are regularly added by the PolitiCore operations secretariat.
       </p>
     </div>
   );

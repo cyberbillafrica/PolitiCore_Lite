@@ -12,8 +12,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "DCM Enugu — Directorate of Contact and Mobilization",
-  description: "Directorate of Contact and Mobilization — Mobilizing for Good Governance in Enugu State.",
+  title: "PolitiCore — Political Operations & Campaign Intelligence Platform",
+  description: "PolitiCore — Centralizing political organization, field operations, stakeholder coordination, and campaign intelligence into one coherent platform.",
 };
 
 export default function RootLayout({

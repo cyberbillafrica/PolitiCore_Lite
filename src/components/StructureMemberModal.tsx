@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { X, Phone, Mail, MapPin, Building2, Layers, ShieldCheck, Maximize2, Minimize2 } from "lucide-react";
+import { X, Phone, Mail, MapPin, Building2, Layers, ShieldCheck, Maximize2 } from "lucide-react";
 import { StructureMember } from "@/lib/firebase/structure";
 
 interface StructureMemberModalProps {
@@ -118,7 +118,7 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
                   {initials}
                 </div>
                 <span className="text-xs font-bold uppercase tracking-widest text-emerald-300/80">
-                  DCM Enugu Secretariat
+                  PolitiCore Secretariat
                 </span>
               </div>
             )}
@@ -159,7 +159,7 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
 
               {member.altTitle && (
                 <div className="mt-3 bg-emerald-50/80 border border-emerald-200/90 rounded-xl p-3.5 text-sm font-medium text-emerald-950 italic">
-                  "{member.altTitle}"
+                  &quot;{member.altTitle}&quot;
                 </div>
               )}
             </div>
@@ -215,7 +215,7 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
           {/* Footer Actions */}
           <div className="p-4 sm:px-8 bg-gray-50 border-t border-gray-100 flex items-center justify-between shrink-0">
             <span className="text-xs text-gray-400 font-medium hidden sm:inline">
-              Directorate of Contact and Mobilization
+              PolitiCore Political Operations Platform
             </span>
             <button
               onClick={onClose}

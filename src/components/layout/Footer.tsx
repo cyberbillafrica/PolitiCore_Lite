@@ -33,7 +33,7 @@ export default function Footer() {
                 </div>
               ) : (
                 <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#008751] text-white text-xl font-extrabold shadow-lg">
-                  DCM
+                  PC
                 </div>
               )}
 
@@ -62,10 +62,10 @@ export default function Footer() {
             {/* Tagline statement */}
             <div className="mt-7 border-l-2 border-[#008751] pl-4">
               <p className="text-sm font-semibold leading-6 text-white/90">
-                Mobilizing for Good Governance
+                Data-Driven Political Organization
               </p>
               <p className="mt-1 text-xs leading-5 text-white/40">
-                Fostering constructive stakeholder relationships and grassroots coordination across Enugu.
+                Centralizing campaign intelligence, stakeholder coordination, and field operations in one system.
               </p>
             </div>
           </div>
@@ -78,7 +78,7 @@ export default function Footer() {
             <ul className="space-y-3.5">
               {[
                 ["About Us", "/about"],
-                ["Our Structure", "/structure"],
+                ["Organization Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
                 ["Contact", "/contact"],
@@ -104,8 +104,8 @@ export default function Footer() {
             </h4>
             <ul className="space-y-3.5">
               {[
-                ["Register as INEC Officer", "/register-inec-officer"],
-                ["Member Portal", "/portal/dashboard"],
+                ["Electoral / Field Officer Portal", "/register-inec-officer"],
+                ["Operations Portal", "/portal/dashboard"],
                 ["User Guide & Manual", "/documentation"],
                 ["Contact Us", "/contact"],
               ].map(([label, href]) => (
@@ -137,7 +137,7 @@ export default function Footer() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-white/35">
-                    DCM Secretariat
+                    PolitiCore Operations Center
                   </p>
                   <p className="mt-1 text-sm leading-5 text-white/65">
                     {settings.footerAddress}

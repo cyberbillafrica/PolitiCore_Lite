@@ -2,6 +2,14 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
 
 export interface SiteSettings {
+  // Organization Metadata
+  organizationName: string;
+  organizationShortName: string;
+  organizationDescription: string;
+  organizationType: string;
+  country: string;
+  stateRegion: string;
+
   // Hero Section
   heroTitle: string;
   heroTagline: string;
@@ -10,10 +18,12 @@ export interface SiteSettings {
   heroCtaLink: string;
   heroImageUrl: string;
 
-  // Branding & Logo
+  // Branding & Colors
   brandName: string;
   brandTagline: string;
   logoUrl: string;
+  primaryColor?: string;
+  secondaryColor?: string;
 
   // Header & Navigation
   headerNotice?: string;
@@ -24,6 +34,32 @@ export interface SiteSettings {
   footerEmail: string;
   copyrightText: string;
 
+  // Geographic Structure Configuration
+  senatorialZones?: string[];
+  lgas?: string[];
+
+  // Active Enabled Modules Toggles
+  enabledModules: {
+    socialTasks: boolean;
+    leaderboard: boolean;
+    campaignCouncil: boolean;
+    electionOperations: boolean;
+    news: boolean;
+    gallery: boolean;
+    structure: boolean;
+    inecOfficers: boolean;
+    announcements: boolean;
+  };
+
+  // Custom Terminology Labels
+  terminology: {
+    memberLabel: string;
+    coordinatorLabel: string;
+    lgaLabel: string;
+    wardLabel: string;
+    campaignLabel: string;
+  };
+
   // Maintenance Mode Settings
   maintenanceMode: boolean;
   maintenanceScreen: "page" | "dark_blue";
@@ -32,24 +68,65 @@ export interface SiteSettings {
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  heroTitle: "DCM ENUGU",
-  heroTagline: "Directorate of Contact and Mobilization",
+  organizationName: "PolitiCore Operations Platform",
+  organizationShortName: "PolitiCore",
+  organizationDescription: "Centralizing political organization, stakeholders, grassroots outreach, field operations, communications, events, and operational reporting.",
+  organizationType: "Political Campaign & Operations",
+  country: "Nigeria",
+  stateRegion: "Enugu State",
+
+  heroTitle: "POLITICORE LITE",
+  heroTagline: "Political Operations & Campaign Intelligence Platform",
   heroDescription:
-    "Serving as a relationship-management, stakeholder-engagement, grassroots outreach, coordination, and mobilization structure across Enugu State.",
-  heroCtaText: "Register as INEC Officer",
-  heroCtaLink: "/register-inec-officer",
+    "Bringing political organization, stakeholders, grassroots outreach, field operations, communications, events, reporting, and organizational coordination into one coherent system.",
+  heroCtaText: "Explore Platform Features",
+  heroCtaLink: "/about",
   heroImageUrl: "",
 
-  brandName: "DCM ENUGU",
-  brandTagline: "DIRECTORATE OF CONTACT & MOBILIZATION",
+  brandName: "POLITICORE",
+  brandTagline: "POLITICAL OPERATIONS PLATFORM",
   logoUrl: "",
+  primaryColor: "#008751",
+  secondaryColor: "#f59e0b",
 
-  headerNotice: "Mobilizing for Good Governance in Enugu State",
+  headerNotice: "Powering Modern Political Operations & Field Campaigns",
 
-  footerAddress: "DCM Secretariat, Independence Layout, Enugu State, Nigeria",
-  footerPhone: "+234 800 000 0000",
-  footerEmail: "contact@dcmenugu.org",
-  copyrightText: "© 2026 DCM Enugu (Directorate of Contact and Mobilization). All rights reserved.",
+  footerAddress: "PolitiCore Operations Center, Headquarters",
+  footerPhone: "+234 800 765 4842",
+  footerEmail: "contact@politicore.org",
+  copyrightText: "© 2026 PolitiCore Platform. CyberBill Africa. All rights reserved.",
+
+  senatorialZones: [
+    "Enugu East Senatorial Zone",
+    "Enugu West Senatorial Zone",
+    "Enugu North Senatorial Zone",
+  ],
+
+  lgas: [
+    "Aninri", "Awgu", "Enugu East", "Enugu North", "Enugu South",
+    "Ezeagu", "Igbo Etiti", "Igbo Eze North", "Igbo Eze South", "Isi Uzo",
+    "Nkanu East", "Nkanu West", "Nsukka", "Oji River", "Udenu", "Udi", "Uzo Uwani"
+  ],
+
+  enabledModules: {
+    socialTasks: true,
+    leaderboard: true,
+    campaignCouncil: true,
+    electionOperations: true,
+    news: true,
+    gallery: true,
+    structure: true,
+    inecOfficers: true,
+    announcements: true,
+  },
+
+  terminology: {
+    memberLabel: "Member",
+    coordinatorLabel: "Coordinator",
+    lgaLabel: "LGA / District",
+    wardLabel: "Ward",
+    campaignLabel: "Political Operations",
+  },
 
   maintenanceMode: false,
   maintenanceScreen: "page",
@@ -57,7 +134,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
 
 const COLLECTION_NAME = "site_settings";
 const DOC_ID = "general";
-const LOCAL_STORAGE_KEY = "dcm_enugu_site_settings";
+const LOCAL_STORAGE_KEY = "politicore_site_settings";
 
 export async function getSiteSettings(): Promise<SiteSettings> {
   if (typeof window !== "undefined") {

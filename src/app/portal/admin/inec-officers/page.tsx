@@ -161,7 +161,7 @@ export default function AdminInecOfficersPage() {
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `DCM_Enugu_INEC_Officers_${new Date().toISOString().slice(0, 10)}.csv`
+      `PolitiCore_INEC_Officers_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -178,7 +178,7 @@ export default function AdminInecOfficersPage() {
       {/* Print-Only Header */}
       <div className="hidden print:block mb-8 text-center border-b-2 border-emerald-800 pb-4">
         <h1 className="text-2xl font-black text-gray-900">
-          DCM ENUGU — DIRECTORATE OF CONTACT & MOBILIZATION
+          POLITICORE — POLITICAL OPERATIONS PLATFORM
         </h1>
         <p className="text-sm font-bold text-emerald-800">
           INEC AD-HOC OFFICERS APPLICANT ROSTER
@@ -197,7 +197,7 @@ export default function AdminInecOfficersPage() {
             INEC Officers Applications
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            Manage INEC Ad-hoc officer applications across all 17 LGAs of Enugu State.
+            Manage Electoral & Ad-hoc field officer applications across all operational LGAs and Districts.
           </p>
         </div>
 
@@ -524,7 +524,7 @@ export default function AdminInecOfficersPage() {
 
             {/* Modal Footer */}
             <div className="bg-gray-100 px-6 py-4 flex items-center justify-between">
-              <span className="text-xs text-gray-500 font-medium">DCM Enugu Admin Verification Portal</span>
+              <span className="text-xs text-gray-500 font-medium">PolitiCore Admin Verification Portal</span>
               <button
                 onClick={() => setSelectedOfficerModal(null)}
                 className="px-5 py-2 rounded-xl bg-gray-800 hover:bg-gray-900 text-white text-xs font-bold transition-colors"

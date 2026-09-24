@@ -22,13 +22,18 @@ import {
   Upload,
   AlertCircle,
   Loader2,
-  Type,
   Phone,
   Mail,
   MapPin,
   ShieldAlert,
   Power,
   Monitor,
+  Building2,
+  Map,
+  ToggleLeft,
+  Tag,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -38,7 +43,11 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"homepage" | "branding" | "header_footer" | "theme" | "maintenance">("homepage");
+  const [newZone, setNewZone] = useState("");
+  const [newLga, setNewLga] = useState("");
+  const [activeTab, setActiveTab] = useState<
+    "organization" | "homepage" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance"
+  >("organization");
 
   useEffect(() => {
     async function loadSettings() {
@@ -145,73 +154,128 @@ export default function AdminSettingsPage() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-800 pb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab("homepage")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "homepage"
-              ? "bg-emerald-700 text-white shadow-sm"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-          }`}
-        >
-          <Layout className="h-4 w-4" />
-          Homepage Hero
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("branding")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "branding"
-              ? "bg-emerald-700 text-white shadow-sm"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-          }`}
-        >
-          <ImageIcon className="h-4 w-4" />
-          Logo & Branding
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("header_footer")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "header_footer"
-              ? "bg-emerald-700 text-white shadow-sm"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-          }`}
-        >
-          <Globe className="h-4 w-4" />
-          Header & Footer
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("theme")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "theme"
-              ? "bg-emerald-700 text-white shadow-sm"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-          }`}
-        >
-          {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-          Theme Mode ({theme.toUpperCase()})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("maintenance")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "maintenance"
-              ? "bg-amber-600 text-white shadow-sm"
-              : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
-          }`}
-        >
-          <ShieldAlert className="h-4 w-4" />
-          Maintenance Mode {settings.maintenanceMode && "(ACTIVE)"}
-        </button>
+        {[
+          { id: "organization", label: "Organization Info", icon: Building2 },
+          { id: "homepage", label: "Homepage Hero", icon: Layout },
+          { id: "branding", label: "Logo & Branding", icon: ImageIcon },
+          { id: "geography", label: "Geographic Hierarchy", icon: Map },
+          { id: "modules", label: "Active Modules", icon: ToggleLeft },
+          { id: "terminology", label: "Custom Labels", icon: Tag },
+          { id: "header_footer", label: "Header & Footer", icon: Globe },
+          { id: "theme", label: `Theme (${theme.toUpperCase()})`, icon: theme === "dark" ? Moon : Sun },
+          { id: "maintenance", label: `Maintenance ${settings.maintenanceMode ? "(ACTIVE)" : ""}`, icon: ShieldAlert },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id as "organization" | "homepage" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance")}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                tab.id === "maintenance" && settings.maintenanceMode
+                  ? "bg-amber-600 text-white shadow-sm"
+                  : isActive
+                  ? "bg-emerald-700 text-white shadow-sm"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        {/* TAB 0: ORGANIZATION METADATA */}
+        {activeTab === "organization" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-emerald-700" />
+                Organization Metadata & Single-Tenant Context
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Organization Name
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.organizationName || ""}
+                    onChange={(e) => setSettings({ ...settings, organizationName: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Short Name / Abbreviation
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.organizationShortName || ""}
+                    onChange={(e) => setSettings({ ...settings, organizationShortName: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                  Organization Description & Mandate
+                </label>
+                <textarea
+                  rows={3}
+                  value={settings.organizationDescription || ""}
+                  onChange={(e) => setSettings({ ...settings, organizationDescription: e.target.value })}
+                  className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Organization Type
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.organizationType || ""}
+                    onChange={(e) => setSettings({ ...settings, organizationType: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Country
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.country || ""}
+                    onChange={(e) => setSettings({ ...settings, country: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    State / Region
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.stateRegion || ""}
+                    onChange={(e) => setSettings({ ...settings, stateRegion: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {/* TAB 1: HOMEPAGE HERO SETTINGS */}
         {activeTab === "homepage" && (
           <Card className="dark:bg-gray-900 dark:border-gray-800">
@@ -393,7 +457,7 @@ export default function AdminSettingsPage() {
                     </div>
                   ) : (
                     <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-extrabold flex items-center justify-center text-xl shadow-md">
-                      DCM
+                      PC
                     </div>
                   )}
 
@@ -500,6 +564,266 @@ export default function AdminSettingsPage() {
                   onChange={(e) => setSettings({ ...settings, copyrightText: e.target.value })}
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
                 />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* TAB GEOGRAPHY */}
+        {activeTab === "geography" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Map className="h-5 w-5 text-emerald-700" />
+                Geographic Hierarchy & Zone Management
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              {/* Senatorial Zones */}
+              <div>
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-3">
+                  Senatorial Zones / Regions
+                </label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(settings.senatorialZones || []).map((zone, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-900 dark:text-emerald-200"
+                    >
+                      {zone}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (settings.senatorialZones || []).filter((_, i) => i !== idx);
+                          setSettings({ ...settings, senatorialZones: updated });
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add new Zone..."
+                    value={newZone}
+                    onChange={(e) => setNewZone(e.target.value)}
+                    className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 text-xs text-gray-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newZone.trim()) {
+                        setSettings({
+                          ...settings,
+                          senatorialZones: [...(settings.senatorialZones || []), newZone.trim()],
+                        });
+                        setNewZone("");
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </button>
+                </div>
+              </div>
+
+              {/* LGAs */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-3">
+                  Local Government Areas / Districts
+                </label>
+                <div className="flex flex-wrap gap-2 mb-3 max-h-48 overflow-y-auto">
+                  {(settings.lgas || []).map((lga, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-800 dark:text-gray-200"
+                    >
+                      {lga}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (settings.lgas || []).filter((_, i) => i !== idx);
+                          setSettings({ ...settings, lgas: updated });
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add new LGA / District..."
+                    value={newLga}
+                    onChange={(e) => setNewLga(e.target.value)}
+                    className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 text-xs text-gray-900 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newLga.trim()) {
+                        setSettings({
+                          ...settings,
+                          lgas: [...(settings.lgas || []), newLga.trim()],
+                        });
+                        setNewLga("");
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* TAB MODULES */}
+        {activeTab === "modules" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <ToggleLeft className="h-5 w-5 text-emerald-700" />
+                Active Application Module Toggles
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Enable or disable operational modules across the platform interface and portal navigation.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                {[
+                  { key: "campaignCouncil", label: "Political Operations Council" },
+                  { key: "electionOperations", label: "Electoral / Field Officer Operations" },
+                  { key: "socialTasks", label: "Social Member Tasks" },
+                  { key: "leaderboard", label: "Leaderboard & Points" },
+                  { key: "news", label: "News & Articles" },
+                  { key: "gallery", label: "Media Gallery" },
+                  { key: "structure", label: "Organization Structure" },
+                  { key: "inecOfficers", label: "Field Officers Roster" },
+                  { key: "announcements", label: "Announcements & Broadcasts" },
+                ].map((mod) => {
+                  const isEnabled = settings.enabledModules?.[mod.key as keyof typeof settings.enabledModules] ?? true;
+                  return (
+                    <div
+                      key={mod.key}
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700"
+                    >
+                      <span className="text-xs font-extrabold text-gray-900 dark:text-white">
+                        {mod.label}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettings({
+                            ...settings,
+                            enabledModules: {
+                              ...settings.enabledModules,
+                              [mod.key]: !isEnabled,
+                            },
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                          isEnabled
+                            ? "bg-emerald-700 text-white"
+                            : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {isEnabled ? "ENABLED" : "DISABLED"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* TAB TERMINOLOGY */}
+        {activeTab === "terminology" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Tag className="h-5 w-5 text-emerald-700" />
+                Custom Terminology & Labels
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Member Label
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.terminology?.memberLabel || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        terminology: { ...settings.terminology, memberLabel: e.target.value },
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Coordinator Label
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.terminology?.coordinatorLabel || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        terminology: { ...settings.terminology, coordinatorLabel: e.target.value },
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    LGA / District Label
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.terminology?.lgaLabel || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        terminology: { ...settings.terminology, lgaLabel: e.target.value },
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Ward Label
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.terminology?.wardLabel || ""}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        terminology: { ...settings.terminology, wardLabel: e.target.value },
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -635,7 +959,7 @@ export default function AdminSettingsPage() {
                       <h4 className="font-extrabold text-sm">Maintenance Page</h4>
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                      Polished, centered card featuring the DCM Enugu logo, app name, and a clear "We'll be back soon" message.
+                      Polished, centered card featuring the PolitiCore logo, app name, and a clear &quot;We&apos;ll be back soon&quot; message.
                     </p>
                   </div>
 

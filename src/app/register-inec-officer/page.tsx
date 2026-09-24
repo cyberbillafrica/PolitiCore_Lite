@@ -147,7 +147,7 @@ export default function RegisterInecOfficerPage() {
             Register as an INEC Officer
           </h1>
           <p className="mt-2 text-base text-gray-600 max-w-xl mx-auto">
-            Directorate of Contact and Mobilization (DCM Enugu) registration portal for INEC Ad-hoc Officers across all 17 Local Government Areas of Enugu State.
+            PolitiCore registration portal for Electoral & Ad-hoc Field Officers across all organizational Local Government Areas and Districts.
           </p>
         </div>
 

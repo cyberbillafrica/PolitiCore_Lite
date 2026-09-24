@@ -17,7 +17,6 @@ import {
 
 import { db } from "./config";
 import { getAnnouncements as getPortalAnnouncements } from "./portal-content";
-import { getCurrentTenant } from "./tenants";
 
 
 // ============================================================
@@ -505,11 +504,10 @@ export async function deleteNewsArticle(id: string): Promise<void> {
 
 
 /**
- * Get announcements for the current tenant, filtered by user scope
+ * Get announcements for the current organization, filtered by user scope
  */
 export async function getUserAnnouncements(userProfile: any): Promise<Announcement[]> {
-  const tenant = await getCurrentTenant();
-  const allAnnouncements = await getPortalAnnouncements(tenant.id);
+  const allAnnouncements = await getPortalAnnouncements();
   
   // Filter by scope
   return allAnnouncements.filter((announcement) => {
