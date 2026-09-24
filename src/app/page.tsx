@@ -84,26 +84,15 @@ export default function HomePage() {
       <Header />
 
       {/* =========================================================
-          HERO SECTION (DYNAMIC BACKGROUND & COPY)
+          HERO SECTION (DYNAMIC SIDE CANDIDATE IMAGE)
       ========================================================= */}
-      <section
-        className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full"
-        style={
-          settings.heroImageUrl
-            ? {
-                backgroundImage: `linear-gradient(to bottom right, rgba(6, 44, 28, 0.88), rgba(2, 28, 18, 0.92)), url('${settings.heroImageUrl}')`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
-            : undefined
-        }
-      >
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full">
         <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
-        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-28 lg:px-8">
-          <div className="grid items-center gap-12 md:grid-cols-2">
-            {/* Hero Content */}
-            <div>
+        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-24 lg:px-8">
+          <div className="grid items-center gap-12 md:grid-cols-12">
+            {/* Hero Content Column */}
+            <div className="md:col-span-7">
               <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
                 {settings.headerNotice || "PolitiCore • Political Operations & Campaign Platform"}
               </div>
@@ -122,66 +111,79 @@ export default function HomePage() {
 
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
-                  href={settings.heroCtaLink || "/about"}
+                  href="/biography"
                   className="inline-flex items-center justify-center rounded-xl bg-amber-500 hover:bg-amber-600 px-7 py-3.5 font-black text-gray-950 shadow-xl transition-all border border-amber-400"
                 >
-                  {settings.heroCtaText || "Explore Features"}
+                  Candidate Biography
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
 
                 <Link
-                  href="/about"
+                  href="/manifesto"
                   className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-6 py-3.5 font-bold text-white shadow-lg transition-all hover:bg-emerald-600"
                 >
-                  Learn About PolitiCore
+                  Campaign Manifesto
                 </Link>
 
                 <Link
                   href="/structure"
                   className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-6 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
                 >
-                  Organization Structure
+                  Campaign Structure
                 </Link>
               </div>
             </div>
 
-          {/* Operations & Intelligence Highlight Card */}
-            <div className="hidden md:block">
-              <div className="rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl">
-                <h3 className="mb-6 text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
-                Operations & Intelligence
-                </h3>
+            {/* Candidate Side Image / Highlight Column */}
+            <div className="md:col-span-5 flex justify-center">
+              {settings.heroImageUrl ? (
+                <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border-4 border-emerald-500/30 bg-gray-900">
+                  <Image
+                    src={settings.heroImageUrl}
+                    alt={settings.heroTitle}
+                    fill
+                    unoptimized
+                    priority
+                    className="object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="w-full max-w-md rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl space-y-6">
+                  <h3 className="text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
+                    Campaign Operations & Intelligence
+                  </h3>
 
-                <div className="space-y-6">
-                  <div className="flex items-start space-x-4">
-                    <div className="mt-1 rounded-lg bg-emerald-500/20 p-2.5 text-emerald-300 border border-emerald-400/30">
-                      <Users className="h-6 w-6" />
+                  <div className="space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
+                        <Users className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-emerald-200">
+                          Stakeholder Engagement
+                        </h4>
+                        <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                          Centralize leadership relationships, grassroots networks, and field coordination.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-lg text-emerald-200">
-                      Stakeholder Relations
-                      </h4>
-                      <p className="text-sm text-gray-300 mt-1 leading-relaxed">
-                      Maintain long-term relationships with key community, political, religious, professional, youth, and grassroots leaders in one centralized platform.
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="flex items-start space-x-4">
-                    <div className="mt-1 rounded-lg bg-emerald-500/20 p-2.5 text-emerald-300 border border-emerald-400/30">
-                      <Target className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-lg text-emerald-200">
-                      Field Operations & Tasks
-                      </h4>
-                      <p className="text-sm text-gray-300 mt-1 leading-relaxed">
-                      Deploy field officers, assign tasks across geographical zones, track mobilization reports, and measure operational progress in real time.
-                      </p>
+                    <div className="flex items-start space-x-3">
+                      <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
+                        <Target className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-emerald-200">
+                          Field Operations & Tasks
+                        </h4>
+                        <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                          Deploy coordinators and track real-time field reports across all geographical zones.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
