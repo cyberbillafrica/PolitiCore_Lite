@@ -1,169 +1,189 @@
-import type { Metadata } from "next";
+// src/app/manifesto/page.tsx
 
-export const dynamic = "force-dynamic";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle2, Download, ArrowRight } from "lucide-react";
+import { Download, ArrowRight, CheckCircle2 } from "lucide-react";
 
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
-import { getManifesto } from "@/lib/firebase/manifesto";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import ShareButtons from "@/components/ShareButtons";
 
+import { getManifesto } from "@/lib/firebase/manifesto";
+import { getCurrentTenant } from "@/lib/firebase/tenants";
+
+// ─────────────────────────────────────────────
+// METADATA
+// ─────────────────────────────────────────────
+
 export async function generateMetadata(): Promise<Metadata> {
-  try {
-    const tenant = await getCurrentTenant();
-    const manifestoData = await getManifesto(tenant.id);
+  const tenant = await getCurrentTenant();
+  const manifesto = await getManifesto(tenant.id);
 
-    if (!manifestoData || manifestoData.status !== "published") {
-      return {
-        title: "Campaign Manifesto | PolitiCore Platform",
-        description: "Explore our strategic manifesto, policy commitments, governance vision, and development blueprint.",
-      };
-    }
-
+  if (!manifesto || manifesto.status !== "published") {
     return {
-      title: `${manifestoData.title || "Campaign Manifesto"} | PolitiCore`,
-      description: manifestoData.subtitle || "Campaign policy commitments and governance vision.",
-    };
-  } catch (error) {
-    return {
-      title: "Campaign Manifesto | PolitiCore Platform",
-      description: "Explore our strategic manifesto, policy commitments, governance vision, and development blueprint.",
+      title: "Manifesto | Campaign",
+      description: "Our vision and commitments for progress.",
     };
   }
+
+  return {
+    title: `${manifesto.title} | ${manifesto.candidate_name}`,
+    description: manifesto.subtitle || manifesto.introduction?.slice(0, 160),
+  };
 }
 
-export default async function ManifestoPage() {
-  let manifesto = null;
+// ─────────────────────────────────────────────
+// PAGE
+// ─────────────────────────────────────────────
 
-  try {
-    const tenant = await getCurrentTenant();
-    const data = await getManifesto(tenant.id);
-    if (data && data.status === "published") {
-      manifesto = data;
-    }
-  } catch (err) {
-    console.error("Error loading manifesto page data:", err);
+export default async function ManifestoPage() {
+  const tenant = await getCurrentTenant();
+  const manifesto = await getManifesto(tenant.id);
+
+  if (!manifesto || manifesto.status !== "published") {
+    return <ManifestoComingSoon />;
   }
+
+  const {
+    title,
+    subtitle,
+    introduction,
+    sections,
+    closing,
+    call_to_action,
+    call_to_action_link,
+    candidate_name,
+    candidate_title,
+    pdf_url,
+  } = manifesto;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-12 sm:px-6 lg:px-8">
-        {/* Breadcrumb */}
-        <nav className="mb-6 text-sm text-gray-500">
-          <Link href="/" className="hover:text-emerald-700">Home</Link>
-          <span className="mx-2">/</span>
-          <span className="text-gray-800 font-medium">Campaign Manifesto</span>
-        </nav>
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-12 sm:px-6 lg:px-8">
+        {/* ─── HERO ─── */}
+        <section className="text-center mb-12">
+          <p className="text-sm font-semibold uppercase tracking-wider text-apc-primary">
+            {candidate_title}
+          </p>
 
-        {/* Hero Banner */}
-        <section className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-green-950 text-white rounded-3xl p-8 sm:p-12 mb-12 shadow-xl relative overflow-hidden">
-          <div className="relative z-10 max-w-3xl">
-            <span className="inline-block px-3.5 py-1.5 bg-white/10 border border-white/20 text-emerald-200 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
-              Official Policy Blueprint & Commitments
-            </span>
-            <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
-              {manifesto?.title || "Campaign Manifesto & Action Plan"}
-            </h1>
-            <p className="mt-3 text-lg sm:text-xl font-semibold text-emerald-200">
-              {manifesto?.subtitle || "Building a Transparent, Accountable, and Prosperous Future"}
-            </p>
-            <p className="mt-4 text-sm sm:text-base text-gray-200 leading-relaxed">
-              {manifesto?.introduction || "Our manifesto represents a solemn contract with the people—driven by actionable policy pillars, measurable economic development, security, and civic empowerment."}
-            </p>
+          <h1 className="mt-3 text-4xl sm:text-5xl font-bold text-gray-900">
+            {title}
+          </h1>
 
-            {manifesto?.pdf_url && (
-              <div className="mt-6 pt-4 border-t border-white/10">
-                <a
-                  href={manifesto.pdf_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-gray-950 px-6 py-3 rounded-xl font-black text-sm shadow-lg transition-all"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Full Manifesto Document (PDF)
-                </a>
-              </div>
-            )}
-          </div>
+          <p className="mt-4 max-w-3xl mx-auto text-lg text-gray-600">
+            {subtitle}
+          </p>
+
+          <p className="mt-3 text-sm text-gray-500">{candidate_name}</p>
+
+          {pdf_url && (
+            <a
+              href={pdf_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-apc-primary px-6 py-3 text-sm font-semibold text-white hover:bg-apc-dark transition-colors"
+            >
+              <Download className="h-5 w-5" />
+              Download Manifesto (PDF)
+            </a>
+          )}
         </section>
 
-        {/* Strategic Policy Sections */}
-        {manifesto && manifesto.sections && manifesto.sections.length > 0 ? (
-          <section className="mb-12 space-y-8">
-            <div className="text-center max-w-2xl mx-auto mb-8">
-              <h2 className="text-3xl font-extrabold text-gray-900">
-                Core Policy Pillars
-              </h2>
-              <p className="text-sm text-gray-600 mt-2">
-                Detailed development commitments and action programs
-              </p>
-            </div>
+        {/* ─── INTRODUCTION ─── */}
+        <section className="mb-12 rounded-2xl bg-white border border-gray-100 p-8 shadow-sm">
+          <p className="text-lg leading-relaxed text-gray-700">
+            {introduction}
+          </p>
+        </section>
 
-            <div className="grid gap-8 md:grid-cols-2">
-              {manifesto.sections.map((section, idx) => (
-                <div
-                  key={section.id || idx}
-                  className="bg-white rounded-3xl border border-gray-200 p-8 shadow-sm hover:shadow-md transition-shadow space-y-4"
-                >
-                  <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800 text-lg font-black">
-                      {idx + 1}
-                    </span>
-                    <h3 className="text-xl font-bold text-gray-900">
-                      {section.title}
-                    </h3>
-                  </div>
-
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    {section.description}
-                  </p>
-
-                  {section.points && section.points.length > 0 && (
-                    <ul className="space-y-2.5 pt-2">
-                      {section.points.map((pt, pIdx) => (
-                        <li key={pIdx} className="flex items-start gap-2.5 text-xs sm:text-sm text-gray-700">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                          <span>{pt}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="bg-white rounded-3xl border border-gray-200 p-8 text-center mb-12">
-            <p className="text-gray-500 text-sm">
-              Manifesto policy sections are currently being updated by the campaign team.
-            </p>
-          </section>
-        )}
-
-        {/* Closing Call to Action */}
-        {manifesto?.closing && (
-          <section className="bg-emerald-50 rounded-3xl border border-emerald-200 p-8 sm:p-10 mb-12 text-center">
-            <h3 className="text-xl font-bold text-gray-900 mb-3">Together We Can Achieve More</h3>
-            <p className="text-sm text-gray-700 max-w-2xl mx-auto leading-relaxed mb-6">
-              {manifesto.closing}
-            </p>
-
-            <Link
-              href={manifesto.call_to_action_link || "/volunteer"}
-              className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-8 py-3.5 rounded-xl font-bold text-sm shadow-md transition-all"
+        {/* ─── SECTIONS ─── */}
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {sections.map((section) => (
+            <div
+              key={section.id}
+              className="rounded-xl bg-white border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow"
             >
-              {manifesto.call_to_action || "Join Our Campaign Today"}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </section>
-        )}
+              {section.icon && (
+                <div className="mb-3 text-3xl">{section.icon}</div>
+              )}
 
-        {/* Share Section */}
+              <h2 className="text-xl font-semibold text-apc-primary">
+                {section.title}
+              </h2>
+
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                {section.description}
+              </p>
+
+              <ul className="mt-5 space-y-3">
+                {section.points.map((point, index) => (
+                  <li
+                    key={index}
+                    className="flex items-start gap-2 text-sm text-gray-700"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-apc-green" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* ─── CLOSING ─── */}
+        <section className="mt-12 rounded-2xl bg-apc-primary/5 border border-apc-primary/10 p-8 text-center">
+          <p className="mx-auto max-w-3xl text-lg font-medium text-gray-800">
+            {closing}
+          </p>
+
+          {call_to_action_link && (
+            <Link
+              href={call_to_action_link}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-apc-green px-8 py-3 font-semibold text-white hover:bg-green-700 transition-colors"
+            >
+              {call_to_action}
+              <ArrowRight className="h-5 w-5" />
+            </Link>
+          )}
+        </section>
+
+        {/* ─── SHARE ─── */}
         <ShareButtons />
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// COMING SOON
+// ─────────────────────────────────────────────
+
+function ManifestoComingSoon() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Header />
+
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="text-center max-w-2xl">
+          <div className="text-6xl mb-6">📋</div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Manifesto Coming Soon
+          </h1>
+          <p className="mt-3 text-gray-600 max-w-md mx-auto">
+            Our vision and commitments for Nkanu West will be published shortly.
+            Check back for updates.
+          </p>
+          <Link
+            href="/"
+            className="mt-6 inline-flex items-center gap-2 text-apc-primary font-semibold hover:underline"
+          >
+            ← Back to Home
+          </Link>
+        </div>
       </main>
 
       <Footer />
