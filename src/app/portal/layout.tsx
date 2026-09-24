@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
 import { getElectoralLocation } from "@/lib/constants";
+import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 
 import type { Ward, PollingUnit } from "@/data/electoral";
 import type { Permission, UserProfile } from "@/types";
@@ -287,7 +288,6 @@ export default function PortalLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
-
   const pathname = usePathname();
   const router = useRouter();
 

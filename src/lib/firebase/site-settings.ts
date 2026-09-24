@@ -2,6 +2,14 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
 
 export interface SiteSettings {
+  // Organization Metadata
+  organizationName: string;
+  organizationShortName: string;
+  organizationDescription: string;
+  organizationType: string;
+  country: string;
+  stateRegion: string;
+
   // Hero Section
   heroTitle: string;
   heroTagline: string;
@@ -10,10 +18,12 @@ export interface SiteSettings {
   heroCtaLink: string;
   heroImageUrl: string;
 
-  // Branding & Logo
+  // Branding & Colors
   brandName: string;
   brandTagline: string;
   logoUrl: string;
+  primaryColor?: string;
+  secondaryColor?: string;
 
   // Header & Navigation
   headerNotice?: string;
@@ -24,6 +34,32 @@ export interface SiteSettings {
   footerEmail: string;
   copyrightText: string;
 
+  // Geographic Structure Configuration
+  senatorialZones?: string[];
+  lgas?: string[];
+
+  // Active Enabled Modules Toggles
+  enabledModules: {
+    socialTasks: boolean;
+    leaderboard: boolean;
+    campaignCouncil: boolean;
+    electionOperations: boolean;
+    news: boolean;
+    gallery: boolean;
+    structure: boolean;
+    inecOfficers: boolean;
+    announcements: boolean;
+  };
+
+  // Custom Terminology Labels
+  terminology: {
+    memberLabel: string;
+    coordinatorLabel: string;
+    lgaLabel: string;
+    wardLabel: string;
+    campaignLabel: string;
+  };
+
   // Maintenance Mode Settings
   maintenanceMode: boolean;
   maintenanceScreen: "page" | "dark_blue";
@@ -32,6 +68,13 @@ export interface SiteSettings {
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  organizationName: "PolitiCore Operations Platform",
+  organizationShortName: "PolitiCore",
+  organizationDescription: "Centralizing political organization, stakeholders, grassroots outreach, field operations, communications, events, and operational reporting.",
+  organizationType: "Political Campaign & Operations",
+  country: "Nigeria",
+  stateRegion: "Enugu State",
+
   heroTitle: "POLITICORE LITE",
   heroTagline: "Political Operations & Campaign Intelligence Platform",
   heroDescription:
@@ -43,6 +86,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   brandName: "POLITICORE",
   brandTagline: "POLITICAL OPERATIONS PLATFORM",
   logoUrl: "",
+  primaryColor: "#008751",
+  secondaryColor: "#f59e0b",
 
   headerNotice: "Powering Modern Political Operations & Field Campaigns",
 
@@ -50,6 +95,38 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   footerPhone: "+234 800 765 4842",
   footerEmail: "contact@politicore.org",
   copyrightText: "© 2026 PolitiCore Platform. CyberBill Africa. All rights reserved.",
+
+  senatorialZones: [
+    "Enugu East Senatorial Zone",
+    "Enugu West Senatorial Zone",
+    "Enugu North Senatorial Zone",
+  ],
+
+  lgas: [
+    "Aninri", "Awgu", "Enugu East", "Enugu North", "Enugu South",
+    "Ezeagu", "Igbo Etiti", "Igbo Eze North", "Igbo Eze South", "Isi Uzo",
+    "Nkanu East", "Nkanu West", "Nsukka", "Oji River", "Udenu", "Udi", "Uzo Uwani"
+  ],
+
+  enabledModules: {
+    socialTasks: true,
+    leaderboard: true,
+    campaignCouncil: true,
+    electionOperations: true,
+    news: true,
+    gallery: true,
+    structure: true,
+    inecOfficers: true,
+    announcements: true,
+  },
+
+  terminology: {
+    memberLabel: "Member",
+    coordinatorLabel: "Coordinator",
+    lgaLabel: "LGA / District",
+    wardLabel: "Ward",
+    campaignLabel: "Political Operations",
+  },
 
   maintenanceMode: false,
   maintenanceScreen: "page",
