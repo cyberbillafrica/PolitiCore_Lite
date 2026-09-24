@@ -72,14 +72,14 @@ export default function Header() {
               Home
             </Link>
             <Link href="/biography" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-[#008751] dark:hover:text-emerald-400">
-              About Us / Biography
+              Biography
             </Link>
             <Link href="/manifesto" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-[#008751] dark:hover:text-emerald-400">
               Manifesto
             </Link>
             {settings.enabledModules?.structure !== false && (
               <Link href="/structure" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-[#008751] dark:hover:text-emerald-400">
-                Organization Structure
+                Council Structure
               </Link>
             )}
             {settings.enabledModules?.news !== false && (
@@ -167,9 +167,9 @@ export default function Header() {
             <div className="flex flex-col gap-1">
               {[
                 ["Home", "/"],
-                ["About Us / Biography", "/biography"],
+                ["Biography", "/biography"],
                 ["Manifesto", "/manifesto"],
-                ["Organization Structure", "/structure"],
+                ["Council Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
                 ["Contact", "/contact"],

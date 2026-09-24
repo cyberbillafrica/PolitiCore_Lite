@@ -221,6 +221,24 @@ const adminNavigation = [
   },
 
   {
+    name: "Biography",
+    href: "/portal/admin/biography",
+    icon: Users,
+  },
+
+  {
+    name: "Manifesto",
+    href: "/portal/admin/manifesto",
+    icon: FileText,
+  },
+
+  {
+    name: "Council Structure",
+    href: "/portal/admin/structure",
+    icon: UsersRound,
+  },
+
+  {
     name: "Members",
     href: "/portal/admin/members",
     icon: Users,
@@ -238,16 +256,6 @@ const adminNavigation = [
     icon: Newspaper,
   },
 
-  {
-    name: "About Us",
-    href: "/portal/admin/about",
-    icon: FileText,
-  },
-  {
-    name: "Our Structure",
-    href: "/portal/admin/structure",
-    icon: UsersRound,
-  },
   {
     name: "Gallery",
     href: "/portal/admin/gallery",
