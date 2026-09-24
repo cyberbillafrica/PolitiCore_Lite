@@ -12,9 +12,7 @@
 export type Role =
   | "admin"
   | "member"
-  | "election_officer"
-  | "tenant_super_admin"
-  | "platform_super_admin";
+  | "election_officer";
 
 // ============================================================
 // MEMBERSHIP TYPES
@@ -64,7 +62,7 @@ export type OrganizationalAssignmentStatus =
 export interface OrganizationalAssignment {
   id: string;
 
-  tenant_id: string;
+  tenant_id?: string;
 
   user_id: string;
 
@@ -195,7 +193,7 @@ export type Permission =
 export interface PermissionGrant {
   id: string;
 
-  tenant_id: string;
+  tenant_id?: string;
 
   user_id: string;
 
@@ -234,7 +232,7 @@ export type CampaignActivityStatus =
 export interface CampaignActivity {
   id: string;
 
-  tenant_id: string;
+  tenant_id?: string;
 
   title: string;
   description?: string;
@@ -341,7 +339,7 @@ export interface ManifestoSection {
 }
 
 export interface ManifestoData {
-  tenant_id: string;
+  tenant_id?: string;
   title: string;
   subtitle: string;
   introduction: string;
@@ -362,7 +360,7 @@ export interface ManifestoData {
 // ============================================================
 
 export interface BiographyData {
-  tenant_id: string;
+  tenant_id?: string;
   full_name: string;
   title: string; // e.g., "APC Candidate, Nkanu West"
   about: string; // Main biography text
@@ -396,7 +394,7 @@ export interface GalleryImage {
 }
 
 export interface GalleryData {
-  tenant_id: string;
+  tenant_id?: string;
   images: GalleryImage[];
   updated_at?: unknown;
 }
@@ -440,7 +438,7 @@ export interface EventData {
 export type PortalContent = Announcement | EventData;
 
 export interface PortalContentData {
-  tenant_id: string;
+  tenant_id?: string;
   items: PortalContent[];
   updated_at?: unknown;
 }

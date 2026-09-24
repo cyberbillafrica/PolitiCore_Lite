@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import {
   getStructureMembers,
   saveStructureMember,
@@ -74,8 +73,7 @@ export default function AdminStructurePage() {
     try {
       setLoading(true);
       setError(null);
-      const tenant = await getCurrentTenant();
-      const list = await getStructureMembers(tenant.id);
+      const list = await getStructureMembers();
       setMembers(list);
     } catch (err) {
       console.error("Failed to load structure members:", err);
@@ -142,8 +140,7 @@ export default function AdminStructurePage() {
     setSuccess(null);
 
     try {
-      const tenant = await getCurrentTenant();
-      await saveStructureMember(tenant.id, {
+      await saveStructureMember({
         id: formMember.id || "",
         name: formMember.name.trim(),
         position: formMember.position.trim(),
@@ -456,7 +453,7 @@ export default function AdminStructurePage() {
                   onChange={(e) =>
                     setFormMember({
                       ...formMember,
-                      level: e.target.value as any,
+                      level: e.target.value as "STATE" | "ZONAL" | "LGA",
                     })
                   }
                   className="w-full px-3 py-2 border rounded-lg text-sm bg-white"

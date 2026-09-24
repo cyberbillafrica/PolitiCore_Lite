@@ -335,12 +335,9 @@ service cloud.firestore {
 
       allow read: if true;
 
-      allow create, update: if isAdmin()
-        && tenantId == callerTenantId()
-        && request.resource.data.tenant_id == tenantId;
+      allow create, update: if isAdmin();
 
-      allow delete: if isAdmin()
-        && tenantId == callerTenantId();
+      allow delete: if isAdmin();
     }
 
 
@@ -354,12 +351,9 @@ service cloud.firestore {
         resource.data.status == "published"
         || isAdmin();
 
-      allow create, update: if isAdmin()
-        && tenantId == callerTenantId()
-        && request.resource.data.tenant_id == tenantId;
+      allow create, update: if isAdmin();
 
-      allow delete: if isAdmin()
-        && tenantId == callerTenantId();
+      allow delete: if isAdmin();
     }
 
 
@@ -371,12 +365,9 @@ service cloud.firestore {
 
       allow read: if true;
 
-      allow create, update: if isAdmin()
-        && tenantId == callerTenantId()
-        && request.resource.data.tenant_id == tenantId;
+      allow create, update: if isAdmin();
 
-      allow delete: if isAdmin()
-        && tenantId == callerTenantId();
+      allow delete: if isAdmin();
     }
 
 
@@ -388,12 +379,9 @@ service cloud.firestore {
 
       allow read: if true;
 
-      allow create, update: if isAdmin()
-        && tenantId == callerTenantId()
-        && request.resource.data.tenant_id == tenantId;
+      allow create, update: if isAdmin();
 
-      allow delete: if isAdmin()
-        && tenantId == callerTenantId();
+      allow delete: if isAdmin();
     }
 
 

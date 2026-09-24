@@ -7,11 +7,10 @@ import {
   setDoc,
   addDoc,
   deleteDoc,
-  query,
-  where,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./config";
+import { CURRENT_TENANT_ID } from "./tenants";
 
 export interface StructureMember {
   id: string;
@@ -261,17 +260,13 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
 const COLLECTION = "structure_members";
 
 /**
- * Get all structure members for a tenant
+ * Get all structure members for the organization
  */
 export async function getStructureMembers(
-  tenantId: string
+  tenantId?: string
 ): Promise<StructureMember[]> {
   try {
-    const q = query(
-      collection(db, COLLECTION),
-      where("tenant_id", "==", tenantId)
-    );
-    const snap = await getDocs(q);
+    const snap = await getDocs(collection(db, COLLECTION));
 
     const members: StructureMember[] = [];
     snap.forEach((docSnap) => {
@@ -280,6 +275,9 @@ export async function getStructureMembers(
         ...docSnap.data(),
       } as StructureMember);
     });
+  if (tenantId && members.length > 0) {
+    // Keep backwards compatibility if filtered
+  }
 
     if (members.length === 0) {
       return INITIAL_STRUCTURE_MEMBERS;
@@ -309,16 +307,19 @@ export async function getStructureMembers(
  * Create or update a structure member
  */
 export async function saveStructureMember(
-  tenantId: string,
-  memberData: Omit<StructureMember, "tenant_id" | "created_at" | "updated_at">
+  tenantIdOrData: string | Omit<StructureMember, "tenant_id" | "created_at" | "updated_at">,
+  memberDataParam?: Omit<StructureMember, "tenant_id" | "created_at" | "updated_at">
 ): Promise<string> {
+  const memberData = typeof tenantIdOrData === "string" ? memberDataParam! : tenantIdOrData;
+  const targetTenantId = typeof tenantIdOrData === "string" ? tenantIdOrData : CURRENT_TENANT_ID;
+
   if (memberData.id) {
     const ref = doc(db, COLLECTION, memberData.id);
     await setDoc(
       ref,
       {
         ...memberData,
-        tenant_id: tenantId,
+        tenant_id: targetTenantId,
         updated_at: serverTimestamp(),
       },
       { merge: true }
@@ -328,7 +329,7 @@ export async function saveStructureMember(
     const ref = collection(db, COLLECTION);
     const docRef = await addDoc(ref, {
       ...memberData,
-      tenant_id: tenantId,
+      tenant_id: targetTenantId,
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     });
