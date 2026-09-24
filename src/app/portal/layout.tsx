@@ -35,7 +35,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
 import { getElectoralLocation } from "@/lib/constants";
-import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 
 import type { Ward, PollingUnit } from "@/data/electoral";
 import type { Permission, UserProfile } from "@/types";
@@ -117,13 +116,13 @@ const navigation: NavItem[] = [
   },
 
   {
-    name: "Political Operations",
+    name: "Campaign Structure",
     icon: BriefcaseBusiness,
     group: "campaign",
 
     children: [
       {
-        name: "Operations Dashboard",
+        name: "Campaign Dashboard",
         href: "/portal/dashboard",
         icon: LayoutDashboard,
         permission: "view_dashboard",

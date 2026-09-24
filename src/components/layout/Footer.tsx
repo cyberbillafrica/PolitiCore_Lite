@@ -77,7 +77,8 @@ export default function Footer() {
             </h4>
             <ul className="space-y-3.5">
               {[
-                ["About Us", "/about"],
+                ["About Us / Biography", "/biography"],
+                ["Campaign Manifesto", "/manifesto"],
                 ["Organization Structure", "/structure"],
                 ["News", "/news"],
                 ["Gallery", "/gallery"],
