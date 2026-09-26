@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const igboEtitiElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — AKU I

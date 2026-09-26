@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const enuguSouthElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — AMECHI I

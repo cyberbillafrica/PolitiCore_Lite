@@ -1225,3 +1225,4 @@ function ActivityCard({
     </div>
   );
 }
+

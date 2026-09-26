@@ -147,3 +147,4 @@ export function getPrimaryOrganizationalScope(
     label: formatOrganizationalPosition(assignment.position),
   };
 }
+

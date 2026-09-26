@@ -362,3 +362,4 @@ export async function createCampaignActivity(
 
   return activityRef.id;
 }
+

@@ -244,3 +244,4 @@ export async function logOut() {
 export function onAuthStateChange(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
+

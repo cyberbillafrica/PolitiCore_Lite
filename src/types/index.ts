@@ -511,3 +511,4 @@ export interface PortalContentData {
   items: PortalContent[];
   updated_at?: unknown;
 }
+

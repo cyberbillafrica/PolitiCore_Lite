@@ -833,3 +833,4 @@ function getHierarchyLevels(assignment: OrganizationalAssignment): Array<{
     },
   ];
 }
+

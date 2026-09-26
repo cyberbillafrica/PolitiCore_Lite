@@ -532,3 +532,4 @@ function formatMembership(membership: string) {
     .replace("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
+

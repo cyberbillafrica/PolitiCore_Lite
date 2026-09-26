@@ -344,3 +344,4 @@ export async function deleteStructureMember(id: string): Promise<void> {
   const ref = doc(db, COLLECTION, id);
   await deleteDoc(ref);
 }
+

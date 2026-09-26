@@ -315,3 +315,4 @@ export async function getUserAssignmentsByScope(
     mapAssignment(assignmentDoc.id, assignmentDoc.data()),
   );
 }
+

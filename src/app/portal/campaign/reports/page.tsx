@@ -925,3 +925,4 @@ function ReportsLoading() {
     </div>
   );
 }
+

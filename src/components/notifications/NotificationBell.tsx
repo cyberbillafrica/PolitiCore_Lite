@@ -152,3 +152,4 @@ export function NotificationBell({ profile }: { profile: UserProfile | null }) {
     </div>
   );
 }
+

@@ -2,6 +2,8 @@ export interface PollingUnit {
   id: string;
   code: string;
   name: string;
+  /** Newly created/added polling unit (used by lgas/*.ts data files). */
+  isNew?: boolean;
 }
 
 export interface Ward {
@@ -1132,3 +1134,4 @@ export function getPollingUnitById(
 
   return undefined;
 }
+

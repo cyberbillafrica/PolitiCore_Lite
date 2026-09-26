@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const isiUzoElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — IKEM I

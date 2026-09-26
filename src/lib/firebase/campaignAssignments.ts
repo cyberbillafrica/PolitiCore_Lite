@@ -291,3 +291,4 @@ export async function deleteCampaignAssignment(
 ): Promise<void> {
   await deleteDoc(doc(db, COLLECTION, assignmentId));
 }
+

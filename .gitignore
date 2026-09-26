@@ -1,4 +1,3 @@
-```
 # Dependencies
 node_modules/
 
@@ -43,9 +42,10 @@ htmlcov/
 # Testing
 .jest/
 .nyc_output/
+test-results/
+playwright-report/
 
 # Package manager
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
-```

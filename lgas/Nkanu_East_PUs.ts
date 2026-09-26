@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const nkanuEastElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — AMECHI/IDODO/ORUKU

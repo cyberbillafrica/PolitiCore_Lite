@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const nsukkaElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — OGBOZALLA/IDI

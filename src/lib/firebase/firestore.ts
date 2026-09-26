@@ -581,3 +581,50 @@ export async function submitElectionResult(
     created_at: serverTimestamp(),
   });
 }
+
+// ============================================================
+// CONTACT MESSAGES
+// ============================================================
+
+export type ContactMessageStatus = "unread" | "read";
+
+export interface ContactMessageDoc {
+  id: string;
+
+  name: string;
+  email: string;
+  phone?: string | null;
+  message: string;
+
+  status: ContactMessageStatus;
+
+  created_at?: unknown;
+}
+
+/**
+ * Get all contact messages submitted through the public site,
+ * newest first.
+ */
+export async function getContactMessages(): Promise<ContactMessageDoc[]> {
+  const q = query(
+    collection(db, "contact_messages"),
+    orderBy("created_at", "desc"),
+  );
+
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ContactMessageDoc, "id">),
+  }));
+}
+
+/**
+ * Mark a contact message as read.
+ */
+export async function markContactMessageAsRead(messageId: string): Promise<void> {
+  await updateDoc(doc(db, "contact_messages", messageId), {
+    status: "read",
+  });
+}
+

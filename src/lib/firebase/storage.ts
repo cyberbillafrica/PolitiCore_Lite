@@ -10,3 +10,4 @@ export async function uploadFile(file: File, path: string): Promise<string> {
 export async function getFileURL(path: string): Promise<string> {
   return getDownloadURL(ref(storage, path));
 }
+

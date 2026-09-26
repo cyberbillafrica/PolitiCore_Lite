@@ -66,3 +66,4 @@ export async function removeGalleryImage(
     images: gallery.images.filter((img) => img.id !== imageId),
   });
 }
+

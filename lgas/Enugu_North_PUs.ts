@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const enuguNorthElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — ASATA TOWNSHIP

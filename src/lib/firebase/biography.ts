@@ -35,3 +35,4 @@ export async function updateBiography(
     { merge: true },
   );
 }
+

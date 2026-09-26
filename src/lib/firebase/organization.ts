@@ -70,3 +70,4 @@ export function getActivePermissionGrants(
 ): PermissionGrant[] {
   return grants;
 }
+

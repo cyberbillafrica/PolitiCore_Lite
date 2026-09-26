@@ -210,3 +210,4 @@ export async function deleteInecOfficer(id: string): Promise<void> {
     console.error("Error deleting INEC officer:", error);
   }
 }
+

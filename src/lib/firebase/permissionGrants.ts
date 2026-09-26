@@ -123,3 +123,4 @@ export async function deletePermissionGrant(grantId: string): Promise<void> {
 
   await deleteDoc(grantRef);
 }
+

@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const awguElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — AWGU I

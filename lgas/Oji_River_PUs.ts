@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const ojiRiverElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — OJI-RIVER I

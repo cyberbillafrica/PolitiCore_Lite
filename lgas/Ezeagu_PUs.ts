@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const ezeaguElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — OLO/AMAGU UMULOKPA I

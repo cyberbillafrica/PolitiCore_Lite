@@ -379,3 +379,4 @@ export function isCampaignCouncilMember(
 
   return getCampaignAssignments(assignments).length > 0;
 }
+

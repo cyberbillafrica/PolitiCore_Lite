@@ -230,3 +230,4 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
     </>
   );
 }
+

@@ -239,3 +239,4 @@ export async function updateMemberAccessRole(
     updated_at: serverTimestamp(),
   });
 }
+

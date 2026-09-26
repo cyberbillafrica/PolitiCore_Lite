@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const udiElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — UDI/AGBUDU

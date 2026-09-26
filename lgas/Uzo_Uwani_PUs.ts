@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const uzoUwaniElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — IGGA/ASABA

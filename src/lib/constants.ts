@@ -3,7 +3,6 @@ import { nkanuWestElectoralData } from "@/data/electoral";
 
 export const electoralWards = nkanuWestElectoralData;
 
-// Plain object — no LGA type yet
 export const fallbackLGA = {
   id: "nkanu-west",
   code: "NW",
@@ -30,12 +29,7 @@ export const membershipOptions: {
   },
 ];
 
-export const socialPlatforms = [
-  "facebook",
-  "x",
-  "instagram",
-  "tiktok",
-] as const;
+export const socialPlatforms = ["facebook", "x", "instagram", "tiktok"] as const;
 
 export const parties = [
   { id: "apc", name: "All Progressive Congress", color: "#1B4F72" },
@@ -65,7 +59,6 @@ export function getElectoralLocation(wardId?: string, pollingUnitId?: string) {
   return { ward, pollingUnit: pollingUnit ?? null };
 }
 
-// LGA accessors — stubbed until Firestore electoral data is wired up
 export async function getAllLGAs() {
   return [fallbackLGA];
 }

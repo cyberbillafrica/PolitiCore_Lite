@@ -45,3 +45,4 @@ export default function DashboardPage() {
   // Campaign members get the campaign dashboard.
   return <CampaignDashboard />;
 }
+

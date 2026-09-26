@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const aninriElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — ODUMA I

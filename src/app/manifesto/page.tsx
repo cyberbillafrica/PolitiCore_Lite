@@ -190,3 +190,4 @@ function ManifestoComingSoon() {
     </div>
   );
 }
+

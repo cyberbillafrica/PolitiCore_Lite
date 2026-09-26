@@ -1,3 +1,5 @@
+import type { Ward } from "@/data/electoral";
+
 export const nkanuWestElectoralData: Ward[] = [
   // ============================================================
   // WARD 01 — AGBANI
