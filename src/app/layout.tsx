@@ -13,7 +13,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "PolitiCore — Political Operations & Campaign Intelligence Platform",
-  description: "PolitiCore — Centralizing political organization, field operations, stakeholder coordination, and campaign intelligence into one coherent platform.",
+  description:
+    "PolitiCore — Centralizing political organization, field operations, stakeholder coordination, and campaign intelligence into one coherent platform.",
 };
 
 export default function RootLayout({
@@ -23,15 +24,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="max-w-full overflow-x-hidden">
-      <body className={`${inter.className} max-w-full overflow-x-hidden antialiased bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-200`}>
+      <body
+        className={`${inter.className} max-w-full overflow-x-hidden antialiased bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-200`}
+      >
         <AuthProvider>
           <ThemeProvider>
-            <MaintenanceGuard>{children}</MaintenanceGuard>
             <ToastProvider />
+            <MaintenanceGuard>{children}</MaintenanceGuard>
           </ThemeProvider>
         </AuthProvider>
       </body>
     </html>
   );
 }
-
