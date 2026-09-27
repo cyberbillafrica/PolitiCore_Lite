@@ -7,7 +7,6 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ShareButtons from "@/components/ShareButtons";
 import StructureList from "@/components/StructureList";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import { getStructureMembers, StructureMember } from "@/lib/firebase/structure";
 
 export const metadata: Metadata = {
@@ -19,8 +18,7 @@ export default async function OurStructurePage() {
   let members: StructureMember[] = [];
 
   try {
-    const tenant = await getCurrentTenant();
-    members = await getStructureMembers(tenant.id);
+    members = await getStructureMembers();
   } catch (err) {
     console.error("Error loading structure members:", err);
   }

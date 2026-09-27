@@ -43,7 +43,6 @@ function mapAssignment(
 ): OrganizationalAssignment {
   return {
     id,
-    tenant_id: String(data.tenant_id ?? ""),
     user_id: String(data.user_id ?? ""),
     position: data.position as OrganizationalPosition,
     scope_type: data.scope_type as ScopeType,
@@ -194,7 +193,6 @@ export async function getOrganizationalAssignment(
  */
 
 export async function createOrganizationalAssignment(data: {
-  tenant_id: string;
   user_id: string;
   position: OrganizationalPosition;
   scope_type: ScopeType;

@@ -36,7 +36,7 @@ import {
 } from "@/lib/firebase/campaignAssignments";
 
 import {
-  getAllCampaignMembersForTenant,
+  getAllCampaignMembers,
   getScopedCampaignMembers,
 } from "@/lib/firebase/campaignMembers";
 
@@ -159,8 +159,8 @@ export default function CampaignAssignmentsPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!profile?.tenant_id) {
-      setError("Tenant context is unavailable.");
+    if (!profile) {
+      setError("Your profile is still loading. Please try again.");
       return;
     }
 
@@ -174,7 +174,6 @@ export default function CampaignAssignmentsPage() {
     }
 
     const payload = {
-      tenant_id: profile.tenant_id,
       title,
       description: formDescription.trim() || undefined,
       assigned_to: assignedTo,
@@ -226,7 +225,7 @@ export default function CampaignAssignmentsPage() {
   }
 
   const loadAssigneeOptions = useCallback(async () => {
-    if (!profile?.tenant_id) {
+    if (!profile) {
       setMemberOptions([]);
       return;
     }
@@ -235,9 +234,7 @@ export default function CampaignAssignmentsPage() {
       setMemberOptionsLoading(true);
 
       if (isAdmin && canManageAssignments) {
-        const allMembers = await getAllCampaignMembersForTenant(
-          profile.tenant_id,
-        );
+        const allMembers = await getAllCampaignMembers();
         setMemberOptions(
           allMembers.map((member) => ({
             id: member.id,
@@ -271,7 +268,7 @@ export default function CampaignAssignmentsPage() {
     } finally {
       setMemberOptionsLoading(false);
     }
-  }, [canManageAssignments, isAdmin, primaryAssignment, profile?.tenant_id]);
+  }, [canManageAssignments, isAdmin, primaryAssignment, profile]);
 
   const loadAssignments = useCallback(async () => {
     if (!user?.uid || !profile) {
@@ -292,7 +289,7 @@ export default function CampaignAssignmentsPage() {
       );
       setMyAssignments(mine);
 
-      if (!canViewAssignments || !profile.tenant_id) {
+      if (!canViewAssignments) {
         setAreaAssignments([]);
         setAllAssignments([]);
         return;
@@ -301,7 +298,7 @@ export default function CampaignAssignmentsPage() {
       if (isAdmin && canManageAssignments) {
         setAreaLoading(true);
         try {
-          const all = await getAllCampaignAssignments(profile.tenant_id);
+          const all = await getAllCampaignAssignments();
           setAllAssignments(all);
           setAreaAssignments([]);
         } finally {
@@ -319,7 +316,6 @@ export default function CampaignAssignmentsPage() {
 
         try {
           const scoped = await getScopedCampaignAssignments(
-            profile.tenant_id,
             primaryAssignment.scope_type,
             primaryAssignment.scope_id,
           );
@@ -356,7 +352,7 @@ export default function CampaignAssignmentsPage() {
   }, [accessLoading, loadAssignments]);
 
   useEffect(() => {
-    if (!accessLoading && profile?.tenant_id) {
+    if (!accessLoading && profile) {
       void loadAssigneeOptions();
     }
   }, [accessLoading, loadAssigneeOptions]);
@@ -731,7 +727,7 @@ export default function CampaignAssignmentsPage() {
               </CardTitle>
               <p className="text-sm text-gray-500">
                 {isAdmin && canManageAssignments
-                  ? "Campaign-member admins can manage every assignment in the tenant."
+                  ? "Campaign-member admins can manage every assignment in the organization."
                   : "Operational assignments associated with your organization scope."}
               </p>
             </div>

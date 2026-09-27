@@ -47,11 +47,7 @@ function detectRole(profile: {
   membership_types?: string[] | null;
 }): Exclude<HelpRole, "all"> {
   const role = profile?.access_role ?? "";
-  if (
-    role === "admin" ||
-    role === "tenant_super_admin" ||
-    role === "platform_super_admin"
-  ) {
+  if (role === "admin") {
     return "admin";
   }
   if (role === "election_officer") return "election_officer";

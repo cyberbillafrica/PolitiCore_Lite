@@ -397,8 +397,6 @@ function IssueForm({
 
         location,
         evidence_url: evidenceUrl,
-
-        tenant_id: undefined,
       });
 
       setTitle("");

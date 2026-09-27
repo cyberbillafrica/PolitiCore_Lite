@@ -152,12 +152,11 @@ export default function CampaignReportsPage() {
        * can additionally load reports for that scope.
        */
 
-      if (canReview && primaryAssignment && profile.tenant_id) {
+      if (canReview && primaryAssignment) {
         setScopeLoading(true);
 
         try {
           const scoped = await getScopedCampaignReports(
-            profile.tenant_id,
             primaryAssignment.scope_type,
             primaryAssignment.scope_id,
           );
@@ -187,7 +186,7 @@ export default function CampaignReportsPage() {
   }, [
     accessLoading,
     user?.uid,
-    profile?.tenant_id,
+    profile,
     primaryAssignment?.id,
     canReview,
   ]);
@@ -226,7 +225,7 @@ export default function CampaignReportsPage() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!user?.uid || !profile?.tenant_id) {
+    if (!user?.uid || !profile) {
       return;
     }
 
@@ -254,8 +253,6 @@ export default function CampaignReportsPage() {
       setFormError("");
 
       await createCampaignFieldReport({
-        tenant_id: profile.tenant_id,
-
         submitted_by: user.uid,
 
         report_type: form.report_type,

@@ -384,7 +384,6 @@ export default function CampaignCoordinationPage() {
         });
       } else {
         await addDoc(collection(db, "organizational_assignments"), {
-          tenant_id: profile.tenant_id ?? "",
           user_id: selectedUserId,
           position: selectedPosition,
           scope_type: selectedScopeType,
@@ -472,7 +471,6 @@ export default function CampaignCoordinationPage() {
       setError(null);
 
       await addDoc(collection(db, "permission_grants"), {
-        tenant_id: profile.tenant_id ?? "",
         user_id: grantUserId,
         permission: grantPermission,
         granted: grantValue,

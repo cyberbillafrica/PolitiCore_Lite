@@ -30,18 +30,12 @@ service cloud.firestore {
         : null;
     }
 
-    function callerTenantId() {
+    function callerMemberships() {
       return userExists()
-        && callerProfile().tenant_id != null
-        ? callerProfile().tenant_id
-        : "politicore-default";
+        && callerProfile().membership_types is list
+        ? callerProfile().membership_types
+        : [];
     }
-
-    function sameTenant(data) {
-      return userExists()
-        && (data.tenant_id == null || data.tenant_id == callerTenantId());
-    }
-
 
     // ============================================================
     // ACCESS ROLES
@@ -66,25 +60,19 @@ service cloud.firestore {
       return isAdmin() || isElectionOfficer();
     }
 
-
     // ============================================================
     // MEMBERSHIP TYPES
     // ============================================================
 
     function isSocialMember() {
       return isMember()
-        && callerProfile().membership_types.hasAny([
-          "social_member"
-        ]);
+        && callerMemberships().hasAny(["social_member"]);
     }
 
     function isCampaignMember() {
       return isMember()
-        && callerProfile().membership_types.hasAny([
-          "campaign_member"
-        ]);
+        && callerMemberships().hasAny(["campaign_member"]);
     }
-
 
     // ============================================================
     // OWNERSHIP
@@ -95,21 +83,18 @@ service cloud.firestore {
         && request.auth.uid == userId;
     }
 
-
-
-
     // ============================================================
-    // SECURITY ACCESS INDEX
+    // SECURITY ACCESS INDEX (user_access)
     // ============================================================
 
     /*
      * Access ID format:
      *
-     * UID__permission__scope_type__scope_id
+     *   UID__permission__scope_type__scope_id
      *
      * Global:
      *
-     * UID__permission__global
+     *   UID__permission__global
      */
 
     function hasGlobalAccess(permission) {
@@ -125,11 +110,7 @@ service cloud.firestore {
         && get(
           /databases/$(database)/documents/user_access/
           $(request.auth.uid + "__" + permission + "__global")
-        ).data.user_id == request.auth.uid
-        && get(
-          /databases/$(database)/documents/user_access/
-          $(request.auth.uid + "__" + permission + "__global")
-        ).data.tenant_id == callerTenantId();
+        ).data.user_id == request.auth.uid;
     }
 
     function hasScopedAccess(permission, scopeType, scopeId) {
@@ -145,11 +126,7 @@ service cloud.firestore {
         && get(
           /databases/$(database)/documents/user_access/
           $(request.auth.uid + "__" + permission + "__" + scopeType + "__" + scopeId)
-        ).data.user_id == request.auth.uid
-        && get(
-          /databases/$(database)/documents/user_access/
-          $(request.auth.uid + "__" + permission + "__" + scopeType + "__" + scopeId)
-        ).data.tenant_id == callerTenantId();
+        ).data.user_id == request.auth.uid;
     }
 
     function hasAccess(permission, scopeType, scopeId) {
@@ -157,23 +134,15 @@ service cloud.firestore {
         || hasScopedAccess(permission, scopeType, scopeId);
     }
 
-
     // ============================================================
-    // ELECTION
+    // ELECTION ACTIVITY
     // ============================================================
 
-    function electionModeEnabled() {
-      return userExists()
-        && callerTenantId() != null
-        && exists(
-          /databases/$(database)/documents/tenants/
-          $(callerTenantId())
-        )
-        && get(
-          /databases/$(database)/documents/tenants/
-          $(callerTenantId())
-        ).data.election_mode_enabled == true;
-    }
+    /*
+     * Election mode gates SUBMISSIONS, never dashboard visibility
+     * for authorized roles. A member may only submit for the
+     * ward/polling unit where they are registered.
+     */
 
     function registeredAt(wardId, pollingUnitId) {
       return isMember()
@@ -186,7 +155,6 @@ service cloud.firestore {
         || registeredAt(wardId, pollingUnitId);
     }
 
-
     // ============================================================
     // USERS
     // ============================================================
@@ -194,12 +162,15 @@ service cloud.firestore {
     match /users/{userId} {
 
       /*
-       * Admins can manage users.
-       * Members can read/update only themselves.
+       * Signed-in users can read the user directory (leaderboard,
+       * member lists, dashboards). Unauthenticated visitors may
+       * not enumerate accounts.
        */
-      allow read: if isAdmin()
-        || isOwner(userId);
+      allow read: if isSignedIn();
 
+      /*
+       * Admins can manage users.
+       */
       allow create: if isAdmin();
 
       /*
@@ -214,13 +185,12 @@ service cloud.firestore {
         && request.resource.data.points == 0;
 
       /*
-       * Ordinary users may not alter security-sensitive fields.
+       * Ordinary users may update their own profile but may not
+       * alter security-sensitive fields.
        */
       allow update: if isOwner(userId)
         && request.resource.data.access_role
           == resource.data.access_role
-        && request.resource.data.tenant_id
-          == resource.data.tenant_id
         && request.resource.data.membership_types
           == resource.data.membership_types
         && request.resource.data.points
@@ -233,6 +203,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ============================================================
+    // SITE SETTINGS
+    // ============================================================
+
+    /*
+     * The root layout and the maintenance guard fetch
+     * site_settings/general for every visitor - including
+     * unauthenticated ones - so read must be public.
+     * Writes are admin-only.
+     */
+    match /site_settings/{settingsId} {
+      allow read: if true;
+
+      allow create, update, delete: if isAdmin();
+    }
 
     // ============================================================
     // SOCIAL MEDIA TASKS
@@ -248,7 +233,6 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-
     // ============================================================
     // INEC OFFICER REGISTRATIONS
     // ============================================================
@@ -261,7 +245,6 @@ service cloud.firestore {
 
       allow update, delete: if isAdmin();
     }
-
 
     // ============================================================
     // TASK SUBMISSIONS
@@ -295,7 +278,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-
     // ============================================================
     // NEWS
     // ============================================================
@@ -314,7 +296,6 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-
     // ============================================================
     // LEGACY EVENTS
     // ============================================================
@@ -326,64 +307,82 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-
     // ============================================================
-    // PUBLIC BIOGRAPHY
+    // PUBLIC CONTENT (SINGLE CAMPAIGN, FLAT DOCS)
     // ============================================================
 
-    match /biographies/{tenantId} {
+    /*
+     * The public site reads one fixed document per content type:
+     *
+     *   biographies/main
+     *   manifestos/main
+     *   galleries/main
+     *   portal_content/main
+     *
+     * Admins manage them. Manifesto additionally gates public
+     * reads on status == "published"; biography, gallery, and
+     * portal content are open reads by design.
+     */
 
+    match /biographies/{docId} {
       allow read: if true;
 
-      allow create, update: if isAdmin();
-
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
-
-    // ============================================================
-    // PUBLIC MANIFESTO
-    // ============================================================
-
-    match /manifestos/{tenantId} {
+    match /manifestos/{docId} {
 
       allow read: if
         resource.data.status == "published"
         || isAdmin();
 
-      allow create, update: if isAdmin();
-
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
-
-    // ============================================================
-    // PUBLIC GALLERY
-    // ============================================================
-
-    match /galleries/{tenantId} {
-
+    match /galleries/{docId} {
       allow read: if true;
 
-      allow create, update: if isAdmin();
-
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
-
-    // ============================================================
-    // PORTAL CONTENT
-    // ============================================================
-
-    match /portal_content/{tenantId} {
-
+    match /portal_content/{docId} {
       allow read: if true;
 
-      allow create, update: if isAdmin();
-
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
+    // ============================================================
+    // CONTACT MESSAGES (PUBLIC INBOX)
+    // ============================================================
+
+    match /contact_messages/{messageId} {
+
+      /*
+       * Anyone can submit a message through the public contact
+       * form. Only admins can read or manage the inbox.
+       */
+      allow create: if request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() < 200
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() < 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() < 5000;
+
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // APP CONFIG (config/app)
+    // ============================================================
+
+    match /config/{configId} {
+      allow read: if true;
+
+      allow write: if isAdmin();
+    }
 
     // ============================================================
     // ORGANIZATIONAL ASSIGNMENTS
@@ -393,18 +392,16 @@ service cloud.firestore {
 
       /*
        * A member may inspect their own assignments.
+       * Admins can read everything (member management).
        */
       allow read: if isAdmin()
         || (
           isSignedIn()
           && resource.data.user_id == request.auth.uid
-          && resource.data.tenant_id == callerTenantId()
         );
 
-      allow create, update, delete: if isAdmin()
-        && request.resource.data.tenant_id == callerTenantId();
+      allow create, update, delete: if isAdmin();
     }
-
 
     // ============================================================
     // PERMISSION GRANTS
@@ -416,21 +413,13 @@ service cloud.firestore {
         || (
           isSignedIn()
           && resource.data.user_id == request.auth.uid
-          && resource.data.tenant_id == callerTenantId()
         );
 
       allow create: if isAdmin()
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.granted_by == request.auth.uid;
 
-      allow update: if isAdmin()
-        && resource.data.tenant_id == callerTenantId()
-        && request.resource.data.tenant_id == callerTenantId();
-
-      allow delete: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow update, delete: if isAdmin();
     }
-
 
     // ============================================================
     // FIRESTORE SECURITY ACCESS INDEX
@@ -450,15 +439,12 @@ service cloud.firestore {
        * Only administrators can maintain it.
        */
       allow create, update: if isAdmin()
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.user_id is string
         && request.resource.data.permission is string
         && request.resource.data.allowed is bool;
 
-      allow delete: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow delete: if isAdmin();
     }
-
 
     // ============================================================
     // CAMPAIGN ACTIVITIES
@@ -467,15 +453,13 @@ service cloud.firestore {
     match /campaign_activities/{activityId} {
 
       /*
-       * Administrators can see all activities in their tenant.
+       * Administrators can see all activities.
        *
        * Non-admin users require effective activity access.
        */
-      allow read: if isAdmin()
-        && sameTenant(resource.data);
+      allow read: if isAdmin();
 
       allow read: if isSignedIn()
-        && sameTenant(resource.data)
         && hasAccess(
           "view_activities",
           resource.data.scope_type,
@@ -484,13 +468,11 @@ service cloud.firestore {
 
       /*
        * Creation must:
-       *   - belong to caller's tenant
        *   - identify caller as creator
        *   - use a valid scope
        *   - grant the caller create_activity authority
        */
       allow create: if isSignedIn()
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.created_by == request.auth.uid
         && hasAccess(
           "create_activity",
@@ -501,31 +483,24 @@ service cloud.firestore {
       /*
        * Admins or authorized scope managers can modify.
        */
-      allow update: if isAdmin()
-        && sameTenant(resource.data)
-        && request.resource.data.tenant_id == callerTenantId();
+      allow update: if isAdmin();
 
       allow update: if isSignedIn()
-        && sameTenant(resource.data)
-        && request.resource.data.tenant_id == callerTenantId()
         && hasAccess(
           "manage_activity",
           resource.data.scope_type,
           resource.data.scope_id
         );
 
-      allow delete: if isAdmin()
-        && sameTenant(resource.data);
+      allow delete: if isAdmin();
 
       allow delete: if isSignedIn()
-        && sameTenant(resource.data)
         && hasAccess(
           "manage_activity",
           resource.data.scope_type,
           resource.data.scope_id
         );
     }
-
 
     // ============================================================
     // CAMPAIGN ASSIGNMENTS
@@ -537,13 +512,10 @@ service cloud.firestore {
         || (
           isSignedIn()
           && resource.data.assigned_to == request.auth.uid
-          && resource.data.tenant_id == callerTenantId()
         );
 
-      allow create, update, delete: if isAdmin()
-        && request.resource.data.tenant_id == callerTenantId();
+      allow create, update, delete: if isAdmin();
     }
-
 
     // ============================================================
     // CAMPAIGN FIELD REPORTS
@@ -555,18 +527,17 @@ service cloud.firestore {
        * Users can always see their own reports.
        */
       allow read: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && resource.data.submitted_by == request.auth.uid;
 
       /*
+       * Admins can read all reports.
+       *
        * Coordinators/reviewers can read reports for scopes
        * they are authorized to review.
        */
-      allow read: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow read: if isAdmin();
 
       allow read: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && hasAccess(
           "review_field_report",
           resource.data.scope_type,
@@ -578,7 +549,6 @@ service cloud.firestore {
        * authorized organizational scope.
        */
       allow create: if isSignedIn()
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
         && hasAccess(
@@ -590,21 +560,17 @@ service cloud.firestore {
       /*
        * Review/update.
        */
-      allow update: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow update: if isAdmin();
 
       allow update: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && hasAccess(
           "review_field_report",
           resource.data.scope_type,
           resource.data.scope_id
         );
 
-      allow delete: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow delete: if isAdmin();
     }
-
 
     // ============================================================
     // CAMPAIGN ISSUES
@@ -612,15 +578,12 @@ service cloud.firestore {
 
     match /issues/{issueId} {
 
-      allow read: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow read: if isAdmin();
 
       allow read: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && resource.data.reported_by == request.auth.uid;
 
       allow read: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && hasAccess(
           "manage_issue",
           resource.data.scope_type,
@@ -628,7 +591,6 @@ service cloud.firestore {
         );
 
       allow create: if isSignedIn()
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.reported_by == request.auth.uid
         && request.resource.data.status == "reported"
         && request.resource.data.title is string
@@ -641,21 +603,17 @@ service cloud.firestore {
           request.resource.data.scope_id
         );
 
-      allow update: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow update: if isAdmin();
 
       allow update: if isSignedIn()
-        && resource.data.tenant_id == callerTenantId()
         && hasAccess(
           "manage_issue",
           resource.data.scope_type,
           resource.data.scope_id
         );
 
-      allow delete: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow delete: if isAdmin();
     }
-
 
     // ============================================================
     // ELECTION RESULTS
@@ -664,25 +622,15 @@ service cloud.firestore {
     match /election_results/{resultId} {
 
       /*
-       * Election records are tenant-owned.
-       *
-       * Dashboard visibility is separate from submission authority.
+       * Dashboard visibility for authorized election roles.
+       * Election mode gates submissions, never reads.
        */
-      allow read: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow read: if isAdminOrElectionOfficer();
 
       /*
-       * Election Officers can operate across all wards/PUs.
-       */
-      allow read: if isElectionOfficer()
-        && resource.data.tenant_id == callerTenantId();
-
-      /*
-       * Ordinary members should only be able to see their own
-       * submitted result, unless we explicitly decide otherwise.
+       * Ordinary members see their own submitted result.
        */
       allow read: if isMember()
-        && resource.data.tenant_id == callerTenantId()
         && resource.data.submitted_by == request.auth.uid;
 
       /*
@@ -690,61 +638,28 @@ service cloud.firestore {
        *
        * The deterministic document ID prevents a second submission.
        */
-      allow create: if electionModeEnabled()
-        && isSignedIn()
+      allow create: if isSignedIn()
         && !exists(
           /databases/$(database)/documents/election_results/$(resultId)
         )
-        && request.resource.data.tenant_id == callerTenantId()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.verified == false
         && resultId
           == request.resource.data.ward_id
              + "__"
              + request.resource.data.polling_unit_id
-        && (
-          isAdminOrElectionOfficer()
-          ||
-          (
-            isMember()
-            && request.resource.data.ward_id
-              == callerProfile().ward_id
-            && request.resource.data.polling_unit_id
-              == callerProfile().polling_unit_id
-          )
+        && canSubmitElectionActivity(
+          request.resource.data.ward_id,
+          request.resource.data.polling_unit_id
         );
 
       /*
        * Only administrators can verify/change election results.
        */
-      allow update: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow update: if isAdmin();
 
-      allow delete: if isAdmin()
-        && resource.data.tenant_id == callerTenantId();
+      allow delete: if isAdmin();
     }
-
-
-    // ============================================================
-    // TENANTS
-    // ============================================================
-
-    match /tenants/{tenantId} {
-
-      /*
-       * A tenant's public campaign information may be readable.
-       */
-      allow read: if true;
-
-      /*
-       * Tenant configuration is administrator-controlled.
-       */
-      allow create, update: if isAdmin()
-        && tenantId == callerTenantId();
-
-      allow delete: if false;
-    }
-
 
     // ============================================================
     // STRUCTURE MEMBERS
@@ -756,7 +671,6 @@ service cloud.firestore {
 
       allow create, update, delete: if isAdmin();
     }
-
 
     // ============================================================
     // DEFAULT DENY

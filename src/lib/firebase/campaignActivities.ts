@@ -12,7 +12,6 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
-import { CURRENT_TENANT_ID } from "./tenants";
 
 import type {
   CampaignActivity,
@@ -25,10 +24,6 @@ import type {
  * ============================================================
  * TYPES
  * ============================================================
- *
- * tenant_id is NEVER supplied by callers.
- *
- * The data layer always assigns the canonical tenant.
  */
 
 export interface CreateCampaignActivityInput {
@@ -101,7 +96,6 @@ export async function getAllCampaignActivities(): Promise<CampaignActivity[]> {
 
   const q = query(
     activityCollection,
-    where("tenant_id", "==", CURRENT_TENANT_ID),
     orderBy("date", "asc"),
   );
 
@@ -179,11 +173,6 @@ export async function getCampaignActivitiesForAssignments(
         activityCollection,
 
         /*
-         * Always restrict to the current tenant.
-         */
-        where("tenant_id", "==", CURRENT_TENANT_ID),
-
-        /*
          * Restrict to the user's authorized organizational scope.
          */
         where("scope_type", "==", scope_type),
@@ -228,19 +217,8 @@ export async function getCampaignActivitiesForAssignments(
 
 /*
  * ============================================================
- * CREATE CAMPAIGN ACTIVITY
+ * UPDATE CAMPAIGN ACTIVITY
  * ============================================================
- *
- * Callers NEVER provide tenant_id.
- *
- * The data layer owns tenant assignment:
- *
- * tenant_id: CURRENT_TENANT_ID
- *
- * This prevents the previous Firestore error:
- *
- * Unsupported field value: undefined
- * (found in field tenant_id)
  */
 
 export async function updateCampaignActivity(
@@ -303,11 +281,6 @@ export async function createCampaignActivity(
     created_by: input.created_by,
 
     organizer_id: input.organizer_id,
-
-    /*
-     * Tenant is always controlled here.
-     */
-    tenant_id: CURRENT_TENANT_ID,
 
     /*
      * Default status.

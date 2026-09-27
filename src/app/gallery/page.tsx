@@ -8,7 +8,6 @@ import { Camera } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getGallery } from "@/lib/firebase/gallery";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function GalleryPage() {
-  const tenant = await getCurrentTenant();
-  const gallery = await getGallery(tenant.id);
+  const gallery = await getGallery();
   const images = gallery?.images || [];
 
   return (

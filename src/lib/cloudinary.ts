@@ -6,7 +6,7 @@
  * - Gallery: "ifeanyi-2027/gallery"
  * - Candidate: "ifeanyi-2027/candidate"
  * - Campaign Members: "ifeanyi-2027/campaign-members"
- * - Manifestos: "ifeanyi-2027/candidate/{tenantId}/manifestos" (inside candidate)
+ * - Manifestos: "ifeanyi-2027/candidate/manifestos" (inside candidate)
  */
 
 export const CLOUDINARY_CLOUD_NAME =
@@ -72,7 +72,7 @@ export async function uploadToCloudinary(
 
 /**
  * Upload a PDF file to Cloudinary.
- * Default folder: "ifeanyi-2027/candidate" – you can pass a subfolder like "ifeanyi-2027/candidate/{tenantId}"
+ * Default folder: "ifeanyi-2027/candidate" – you can pass a subfolder like "ifeanyi-2027/candidate/manifestos"
  */
 export async function uploadPDFToCloudinary(
   file: File,

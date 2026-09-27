@@ -567,7 +567,6 @@ export default function MemberDetailPage() {
                     existingAssignments={assignments}
                     onSave={async (data) => {
                       await createOrganizationalAssignment({
-                        tenant_id: member.tenant_id || "ifeanyi-4-nkanu",
                         user_id: member.id,
                         position: data.position,
                         scope_type: data.scope_type,
@@ -638,7 +637,6 @@ export default function MemberDetailPage() {
                     existingGrants={permissionGrants}
                     onSave={async (data) => {
                       await createPermissionGrant({
-                        tenant_id: member.tenant_id || "ifeanyi-4-nkanu",
                         user_id: member.id,
                         permission: data.permission,
                         granted: true,

@@ -7,7 +7,7 @@ import {
   SiteSettings,
   DEFAULT_SITE_SETTINGS,
 } from "@/lib/firebase/site-settings";
-import { toast } from "sonner";
+import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -38,6 +38,7 @@ import {
 
 export default function AdminSettingsPage() {
   const { theme, setTheme } = useTheme();
+  const toast = useToast();
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -194,7 +195,7 @@ export default function AdminSettingsPage() {
             <CardHeader className="border-b border-gray-100 dark:border-gray-800">
               <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-emerald-700" />
-                Organization Metadata & Single-Tenant Context
+                Organization Metadata
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">

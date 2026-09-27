@@ -8,13 +8,11 @@ import { Users, Target, CheckCircle2, ArrowRight } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getBiography } from "@/lib/firebase/biography";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import ShareButtons from "@/components/ShareButtons";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
-    const tenant = await getCurrentTenant();
-    const aboutData = await getBiography(tenant.id);
+    const aboutData = await getBiography();
 
     if (!aboutData || aboutData.status !== "published") {
       return {
@@ -40,8 +38,7 @@ export default async function AboutUsPage() {
   let image_url: string | null | undefined;
 
   try {
-    const tenant = await getCurrentTenant();
-    const aboutData = await getBiography(tenant.id);
+    const aboutData = await getBiography();
     customAboutText = aboutData?.about;
     image_url = aboutData?.image_url;
   } catch (err) {

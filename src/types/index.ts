@@ -62,7 +62,6 @@ export type OrganizationalAssignmentStatus =
 export interface OrganizationalAssignment {
   id: string;
 
-  tenant_id?: string;
 
   user_id: string;
 
@@ -193,7 +192,6 @@ export type Permission =
 export interface PermissionGrant {
   id: string;
 
-  tenant_id?: string;
 
   user_id: string;
 
@@ -232,7 +230,6 @@ export type CampaignActivityStatus =
 export interface CampaignActivity {
   id: string;
 
-  tenant_id?: string;
 
   title: string;
   description?: string;
@@ -259,35 +256,12 @@ export interface CampaignActivity {
 }
 
 // ============================================================
-// TENANT
-// ============================================================
-
-export interface Tenant {
-  id: string;
-
-  name: string;
-
-  candidate_name?: string;
-
-  state_id?: string;
-
-  campaign_active?: boolean;
-
-  election_mode_enabled?: boolean;
-
-  created_at?: unknown;
-  updated_at?: unknown;
-}
-
-// ============================================================
 // USER PROFILE
 // ============================================================
 
 export interface UserProfile {
   id?: string;
 
-  // Tenant ownership
-  tenant_id?: string;
 
   // Personal information
   full_name: string;
@@ -339,7 +313,6 @@ export interface ManifestoSection {
 }
 
 export interface ManifestoData {
-  tenant_id?: string;
   title: string;
   subtitle: string;
   introduction: string;
@@ -360,7 +333,6 @@ export interface ManifestoData {
 // ============================================================
 
 export interface BiographyData {
-  tenant_id?: string;
   full_name: string;
   title: string; // e.g., "APC Candidate, Nkanu West"
   about: string; // Main biography text
@@ -394,7 +366,6 @@ export interface GalleryImage {
 }
 
 export interface GalleryData {
-  tenant_id?: string;
   images: GalleryImage[];
   updated_at?: unknown;
 }
@@ -414,7 +385,6 @@ export type DonationSourceMethod =
 
 export interface DonorRecord {
   id: string;
-  tenant_id: string;
   full_name: string;
   phone?: string | null;
   email?: string | null;
@@ -430,7 +400,6 @@ export interface DonorRecord {
 
 export interface DonationRecord {
   id: string;
-  tenant_id: string;
   donor_id?: string | null;
   donor_name: string;
   donor_phone?: string | null;
@@ -455,7 +424,6 @@ export interface DonationRecord {
 
 export interface DonationAuditLog {
   id: string;
-  tenant_id: string;
   donation_id: string;
   action: "created" | "updated" | "status_changed" | "cancelled";
   performed_by: string;
@@ -507,7 +475,6 @@ export interface EventData {
 export type PortalContent = Announcement | EventData;
 
 export interface PortalContentData {
-  tenant_id?: string;
   items: PortalContent[];
   updated_at?: unknown;
 }

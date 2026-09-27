@@ -43,8 +43,6 @@ export type CampaignIssueStatus =
 export interface CampaignIssue {
   id: string;
 
-  tenant_id?: string;
-
   title: string;
   description: string;
 
@@ -88,7 +86,6 @@ export async function createCampaignIssue(data: {
 
   location?: string;
   evidence_url?: string;
-  tenant_id?: string;
 }) {
   const ref = await addDoc(collection(db, "issues"), {
     title: data.title.trim(),
@@ -106,8 +103,6 @@ export async function createCampaignIssue(data: {
 
     location: data.location?.trim() || null,
     evidence_url: data.evidence_url?.trim() || null,
-
-    tenant_id: data.tenant_id ?? null,
 
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -133,20 +128,12 @@ export async function createCampaignIssue(data: {
 export async function getScopedCampaignIssues(
   assignment: OrganizationalAssignment,
 ): Promise<CampaignIssue[]> {
-  const q = assignment.tenant_id
-    ? query(
-        collection(db, "issues"),
-        where("tenant_id", "==", assignment.tenant_id),
-        where("scope_type", "==", assignment.scope_type),
-        where("scope_id", "==", assignment.scope_id),
-        orderBy("created_at", "desc"),
-      )
-    : query(
-        collection(db, "issues"),
-        where("scope_type", "==", assignment.scope_type),
-        where("scope_id", "==", assignment.scope_id),
-        orderBy("created_at", "desc"),
-      );
+  const q = query(
+    collection(db, "issues"),
+    where("scope_type", "==", assignment.scope_type),
+    where("scope_id", "==", assignment.scope_id),
+    orderBy("created_at", "desc"),
+  );
 
   const snapshot = await getDocs(q);
 

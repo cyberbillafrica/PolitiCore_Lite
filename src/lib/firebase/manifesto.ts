@@ -5,19 +5,20 @@ import { db } from "./config";
 import type { ManifestoData } from "@/types";
 
 const COLLECTION = "manifestos";
+const DOC_ID = "main";
 
 /**
- * Get a tenant's manifesto
+ * Read the campaign manifesto (flat doc `manifestos/main`).
  */
-export async function getManifesto(tenantId: string): Promise<ManifestoData | null> {
+export async function getManifesto(): Promise<ManifestoData | null> {
   try {
-    const ref = doc(db, COLLECTION, tenantId);
+    const ref = doc(db, COLLECTION, DOC_ID);
     const snap = await getDoc(ref);
-    
+
     if (!snap.exists()) {
       return null;
     }
-    
+
     return snap.data() as ManifestoData;
   } catch (error) {
     console.error("Error fetching manifesto:", error);
@@ -25,30 +26,22 @@ export async function getManifesto(tenantId: string): Promise<ManifestoData | nu
   }
 }
 
-/**
- * Save/update a tenant's manifesto
- */
 export async function updateManifesto(
-  tenantId: string,
-  data: ManifestoData
+  data: ManifestoData,
 ): Promise<void> {
-  const ref = doc(db, COLLECTION, tenantId);
-  
+  const ref = doc(db, COLLECTION, DOC_ID);
+
   await setDoc(
     ref,
     {
       ...data,
-      tenant_id: tenantId,
       updated_at: serverTimestamp(),
     },
-    { merge: true }
+    { merge: true },
   );
 }
 
-/**
- * Check if a manifesto exists
- */
-export async function manifestoExists(tenantId: string): Promise<boolean> {
-  const data = await getManifesto(tenantId);
+export async function manifestoExists(): Promise<boolean> {
+  const data = await getManifesto();
   return data !== null;
 }

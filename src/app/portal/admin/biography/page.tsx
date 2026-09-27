@@ -22,12 +22,11 @@ import { useToast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/errors";
 import { getBiography, updateBiography } from "@/lib/firebase/biography";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import type { BiographyData } from "@/types";
 
 const DEFAULT_BIOGRAPHY: Omit<
   BiographyData,
-  "tenant_id" | "created_at" | "updated_at"
+  "created_at" | "updated_at"
 > = {
   full_name: "",
   title: "",
@@ -71,16 +70,12 @@ export default function AdminBiographyPage() {
   const loadBiography = useCallback(async () => {
     try {
       setLoading(true);
-      const tenant = await getCurrentTenant();
-      const data = await getBiography(tenant.id);
+      const data = await getBiography();
 
       if (data) {
         setBio(data);
       } else {
-        setBio({
-          ...DEFAULT_BIOGRAPHY,
-          tenant_id: tenant.id,
-        } as BiographyData);
+        setBio(DEFAULT_BIOGRAPHY as BiographyData);
       }
     } catch (err) {
       console.error("Failed to load biography:", err);
@@ -113,8 +108,7 @@ export default function AdminBiographyPage() {
     setSaving(true);
 
     try {
-      const tenant = await getCurrentTenant();
-      await updateBiography(tenant.id, {
+      await updateBiography({
         ...bio,
         status,
       });
@@ -139,7 +133,6 @@ export default function AdminBiographyPage() {
     setUploadingImage(true);
 
     try {
-      const tenant = await getCurrentTenant();
       const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
       setBio((prev) => {
         if (!prev) return prev;

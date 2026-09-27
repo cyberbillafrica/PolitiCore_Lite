@@ -29,8 +29,6 @@ export type CampaignReportType =
 export interface CampaignFieldReport {
   id: string;
 
-  tenant_id: string;
-
   submitted_by: string;
 
   report_type: CampaignReportType;
@@ -84,8 +82,6 @@ function mapReport(
 ): CampaignFieldReport {
   return {
     id,
-
-    tenant_id: String(data.tenant_id ?? ""),
 
     submitted_by: String(data.submitted_by ?? ""),
 
@@ -163,17 +159,15 @@ export async function getMyCampaignReports(
  */
 
 export async function getScopedCampaignReports(
-  tenantId: string,
   scopeType: string,
   scopeId: string,
 ): Promise<CampaignFieldReport[]> {
-  if (!tenantId || !scopeType || !scopeId) {
+  if (!scopeType || !scopeId) {
     return [];
   }
 
   const q = query(
     collection(db, COLLECTION),
-    where("tenant_id", "==", tenantId),
     where("scope_type", "==", scopeType),
     where("scope_id", "==", scopeId),
     orderBy("created_at", "desc"),
@@ -191,8 +185,6 @@ export async function getScopedCampaignReports(
  */
 
 export async function createCampaignFieldReport(data: {
-  tenant_id: string;
-
   submitted_by: string;
 
   report_type: CampaignReportType;

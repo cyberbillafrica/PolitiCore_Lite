@@ -34,7 +34,6 @@ import {
   updateEvent,
   deleteEvent,
 } from "@/lib/firebase/portal-content";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import { nkanuWestElectoralData } from "@/data/electoral";
 import type { Announcement, AnnouncementScope, EventData } from "@/types";
 
@@ -83,7 +82,6 @@ export default function AdminAnnouncementsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<(Announcement | EventData)[]>([]);
-  const [tenantId, setTenantId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("announcements");
@@ -110,9 +108,7 @@ export default function AdminAnnouncementsPage() {
     try {
       setLoading(true);
       setError(null);
-      const tenant = await getCurrentTenant();
-      setTenantId(tenant.id);
-      const data = await getPortalContent(tenant.id);
+      const data = await getPortalContent();
       setItems(data);
     } catch (err) {
       console.error("Failed to load content:", err);

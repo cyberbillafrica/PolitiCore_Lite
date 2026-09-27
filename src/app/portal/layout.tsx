@@ -316,8 +316,15 @@ export default function PortalLayout({
   const isSocialMember =
     profile?.membership_types?.includes("social_member") ?? false;
 
-  const canReportElectionActivity =
-    role === "member" || role === "election_officer" || role === "admin";
+  /*
+   * Election surfaces are restricted to admins and election
+   * officers (access matrix). Plain members - including
+   * social-only and campaign members - never see election
+   * links, and the /portal/election layout enforces the same
+   * rule for manually typed URLs.
+   */
+  const canAccessElectionSurfaces =
+    role === "election_officer" || role === "admin";
 
   const canViewElectionDashboard = isAdmin;
 
@@ -497,7 +504,7 @@ export default function PortalLayout({
             }
 
             if ("electionReporting" in child && child.electionReporting) {
-              return canReportElectionActivity;
+              return canAccessElectionSurfaces;
             }
 
             return false;

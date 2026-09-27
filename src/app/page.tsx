@@ -17,7 +17,6 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
 import { getPublishedNews } from "@/lib/firebase/firestore";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import { getPublishedEvents } from "@/lib/firebase/portal-content";
 import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
 
@@ -34,15 +33,12 @@ export default function HomePage() {
       try {
         setNewsLoading(true);
 
-        const [tenant, siteData] = await Promise.all([
-          getCurrentTenant(),
-          getSiteSettings(),
-        ]);
+        const siteData = await getSiteSettings();
 
         setSettings(siteData);
 
         const newsData = await getPublishedNews(3);
-        const eventsData = await getPublishedEvents(tenant.id);
+        const eventsData = await getPublishedEvents();
 
         setLatestNews(newsData);
         setEvents(eventsData);

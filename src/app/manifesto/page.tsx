@@ -9,15 +9,13 @@ import Footer from "@/components/layout/Footer";
 import ShareButtons from "@/components/ShareButtons";
 
 import { getManifesto } from "@/lib/firebase/manifesto";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 
 // ─────────────────────────────────────────────
 // METADATA
 // ─────────────────────────────────────────────
 
 export async function generateMetadata(): Promise<Metadata> {
-  const tenant = await getCurrentTenant();
-  const manifesto = await getManifesto(tenant.id);
+  const manifesto = await getManifesto();
 
   if (!manifesto || manifesto.status !== "published") {
     return {
@@ -37,8 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
 // ─────────────────────────────────────────────
 
 export default async function ManifestoPage() {
-  const tenant = await getCurrentTenant();
-  const manifesto = await getManifesto(tenant.id);
+  const manifesto = await getManifesto();
 
   if (!manifesto || manifesto.status !== "published") {
     return <ManifestoComingSoon />;

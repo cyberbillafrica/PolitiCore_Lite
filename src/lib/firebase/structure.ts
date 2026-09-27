@@ -10,11 +10,9 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./config";
-import { CURRENT_TENANT_ID } from "./tenants";
 
 export interface StructureMember {
   id: string;
-  tenant_id?: string;
   name: string;
   position: string;
   altTitle?: string;
@@ -117,26 +115,23 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   {
     id: "east-cord",
     name: "Apostle Darlington Chukwuemeka Nwatu",
-    position: "Coordinator, Contact & Mobilization",
-    zone: "Enugu East Senatorial Zone",
+    position: "East Senatorial Zone Coordinator",
     level: "ZONAL",
     image_url: "/img/east-cord.jpg",
     display_order: 1,
   },
   {
     id: "west-cord",
-    name: "Chief Jude Ejike Okuli",
-    position: "Zonal Coordinator",
-    zone: "Enugu West Senatorial Zone",
+    name: "Rt. Hon. Paul Nnajior",
+    position: "West Senatorial Zone Coordinator",
     level: "ZONAL",
     image_url: "/img/west-cord.jpg",
     display_order: 2,
   },
   {
     id: "north-cord",
-    name: "Ezugwu Pius Ndubuisi",
-    position: "Zonal Coordinator",
-    zone: "Enugu North Senatorial Zone",
+    name: "Hon. Comr. Chukwudi O. Okolo",
+    position: "North Senatorial Zone Coordinator",
     level: "ZONAL",
     image_url: "/img/north-cord.jpg",
     display_order: 3,
@@ -145,7 +140,7 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   // LGA
   {
     id: "aninri",
-    name: "Okoro Damian Amobi",
+    name: "Hon. Mrs. Ifeoma Osuji",
     position: "Aninri LGA Coordinator",
     level: "LGA",
     image_url: "/img/aninri.jpg",
@@ -153,7 +148,7 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   },
   {
     id: "awgu",
-    name: "Aguocha Mezaya",
+    name: "Hon. Uchenna Ozoemena",
     position: "Awgu LGA Coordinator",
     level: "LGA",
     image_url: "/img/awgu.jpg",
@@ -161,7 +156,7 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   },
   {
     id: "enugu-east",
-    name: "Mr. Chiduabo Chukwuemeka",
+    name: "Hon. Charles Nzekwe",
     position: "Enugu East LGA Coordinator",
     level: "LGA",
     image_url: "/img/enugu-east.jpg",
@@ -169,7 +164,7 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   },
   {
     id: "enugu-north",
-    name: "Godwin Otita",
+    name: "Hon. Amb. Flavour E. Orji",
     position: "Enugu North LGA Coordinator",
     level: "LGA",
     image_url: "/img/enugu-north.jpg",
@@ -177,7 +172,7 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   },
   {
     id: "enugu-south",
-    name: "Hon. Stanley Ikechukwu Obi",
+    name: "Hon. Innocent Anyigor",
     position: "Enugu South LGA Coordinator",
     level: "LGA",
     image_url: "/img/enugu-south.jpg",
@@ -185,32 +180,40 @@ export const INITIAL_STRUCTURE_MEMBERS: StructureMember[] = [
   },
   {
     id: "ezeagu",
-    name: "Hon. Edward Chiekwe Nwankwo",
+    name: "Hon. Igwe Emma Akachukwu",
     position: "Ezeagu LGA Coordinator",
     level: "LGA",
     image_url: "/img/ezeagu.jpg",
     display_order: 6,
   },
   {
-    id: "igbo-eze-north",
-    name: "Chief Abugu Sunday",
-    position: "Igbo-Eze North LGA Coordinator",
+    id: "igbo-etiti",
+    name: "Hon. Chikadibia Nnadi",
+    position: "Igbo Etiti LGA Coordinator",
     level: "LGA",
-    image_url: "/img/igbo-eze-north.jpg",
+    image_url: "/img/igbo-etiti.jpg",
     display_order: 7,
   },
   {
-    id: "igbo-eze-south",
-    name: "Ezema Okwudili Livinus",
-    position: "Igbo-Eze South Chairman",
+    id: "igbo-eze-north",
+    name: "Hon. Chinedu Ezeh",
+    position: "Igbo Eze North LGA Coordinator",
     level: "LGA",
-    image_url: "/img/igbo-eze-south.jpg",
+    image_url: "/img/igbo-eze-north.jpg",
     display_order: 8,
   },
   {
+    id: "igbo-eze-south",
+    name: "Hon. Ebere Amobi",
+    position: "Igbo Eze South LGA Coordinator",
+    level: "LGA",
+    image_url: "/img/igbo-eze-south.jpg",
+    display_order: 9,
+  },
+  {
     id: "isi-uzo",
-    name: "Surv. Anderson Ikechukwu Chinonso",
-    position: "Isi-Uzo LGA Coordinator",
+    name: "Hon. Chukwuemeka Ogbu",
+    position: "Isi Uzo LGA Coordinator",
     level: "LGA",
     image_url: "/img/isi-uzo.jpg",
     display_order: 9,
@@ -262,9 +265,7 @@ const COLLECTION = "structure_members";
 /**
  * Get all structure members for the organization
  */
-export async function getStructureMembers(
-  tenantId?: string
-): Promise<StructureMember[]> {
+export async function getStructureMembers(): Promise<StructureMember[]> {
   try {
     const snap = await getDocs(collection(db, COLLECTION));
 
@@ -275,9 +276,6 @@ export async function getStructureMembers(
         ...docSnap.data(),
       } as StructureMember);
     });
-  if (tenantId && members.length > 0) {
-    // Keep backwards compatibility if filtered
-  }
 
     if (members.length === 0) {
       return INITIAL_STRUCTURE_MEMBERS;
@@ -307,29 +305,24 @@ export async function getStructureMembers(
  * Create or update a structure member
  */
 export async function saveStructureMember(
-  tenantIdOrData: string | Omit<StructureMember, "tenant_id" | "created_at" | "updated_at">,
-  memberDataParam?: Omit<StructureMember, "tenant_id" | "created_at" | "updated_at">
+  memberData: Omit<StructureMember, "created_at" | "updated_at">,
 ): Promise<string> {
-  const memberData = typeof tenantIdOrData === "string" ? memberDataParam! : tenantIdOrData;
-  const targetTenantId = typeof tenantIdOrData === "string" ? tenantIdOrData : CURRENT_TENANT_ID;
-
   if (memberData.id) {
     const ref = doc(db, COLLECTION, memberData.id);
     await setDoc(
       ref,
       {
         ...memberData,
-        tenant_id: targetTenantId,
         updated_at: serverTimestamp(),
       },
       { merge: true }
     );
     return memberData.id;
   } else {
+    const { id: _ignoredId, ...withoutId } = memberData;
     const ref = collection(db, COLLECTION);
     const docRef = await addDoc(ref, {
-      ...memberData,
-      tenant_id: targetTenantId,
+      ...withoutId,
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     });
@@ -344,4 +337,3 @@ export async function deleteStructureMember(id: string): Promise<void> {
   const ref = doc(db, COLLECTION, id);
   await deleteDoc(ref);
 }
-

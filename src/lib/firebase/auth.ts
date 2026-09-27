@@ -13,16 +13,14 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 import { auth, db, firebaseConfig } from "./config";
 
-import { CURRENT_TENANT_ID } from "./tenants";
-
 import type { MembershipType, Role } from "@/types";
 
 /**
  * Creates a new volunteer account through the public
  * registration form.
  *
- * Public registrations always belong to the current campaign
- * tenant and start with the normal "member" access role.
+ * Public registrations always start with the normal "member"
+ * access role.
  */
 export async function signUpVolunteer(
   email: string,
@@ -56,11 +54,6 @@ export async function signUpVolunteer(
       ...userData,
 
       email,
-
-      /**
-       * All users belong to the current campaign tenant.
-       */
-      tenant_id: CURRENT_TENANT_ID,
 
       /**
        * Everyone registering through the public
@@ -152,20 +145,11 @@ export async function createMemberByAdmin(
     /**
      * Create the Firestore user profile through the
      * primary Firestore connection.
-     *
-     * tenant_id is explicitly assigned from the canonical
-     * tenant constant rather than relying on the currently
-     * logged-in admin's profile.
      */
     await setDoc(doc(db, "users", newUser.uid), {
       ...userData,
 
       email,
-
-      /**
-       * Canonical campaign tenant.
-       */
-      tenant_id: CURRENT_TENANT_ID,
 
       points: 0,
       rank: "Volunteer",

@@ -5,12 +5,16 @@ import { db } from "./config";
 import type { BiographyData } from "@/types";
 
 const COLLECTION = "biographies";
+const DOC_ID = "main";
 
-export async function getBiography(
-  tenantId: string,
-): Promise<BiographyData | null> {
+/**
+ * Read the candidate biography.
+ *
+ * The bio lives in one flat document (`biographies/main`).
+ */
+export async function getBiography(): Promise<BiographyData | null> {
   try {
-    const ref = doc(db, COLLECTION, tenantId);
+    const ref = doc(db, COLLECTION, DOC_ID);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
     return snap.data() as BiographyData;
@@ -21,18 +25,15 @@ export async function getBiography(
 }
 
 export async function updateBiography(
-  tenantId: string,
   data: BiographyData,
 ): Promise<void> {
-  const ref = doc(db, COLLECTION, tenantId);
+  const ref = doc(db, COLLECTION, DOC_ID);
   await setDoc(
     ref,
     {
       ...data,
-      tenant_id: tenantId,
       updated_at: serverTimestamp(),
     },
     { merge: true },
   );
 }
-

@@ -24,7 +24,6 @@ import { getManifesto, updateManifesto } from "@/lib/firebase/manifesto";
 import { uploadPDFToCloudinary } from "@/lib/cloudinary";
 import { useToast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/errors";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import type { ManifestoData, ManifestoSection } from "@/types";
 
 // ─────────────────────────────────────────────
@@ -40,7 +39,7 @@ const DEFAULT_SECTION: Omit<ManifestoSection, "id"> = {
 
 const DEFAULT_MANIFESTO: Omit<
   ManifestoData,
-  "tenant_id" | "created_at" | "updated_at"
+  "created_at" | "updated_at"
 > = {
   title: "Our Manifesto",
   subtitle: "A blueprint for progress",
@@ -83,17 +82,13 @@ export default function AdminManifestoPage() {
   const loadManifesto = useCallback(async () => {
     try {
       setLoading(true);
-      const tenant = await getCurrentTenant();
-      const data = await getManifesto(tenant.id);
+      const data = await getManifesto();
 
       if (data) {
         setManifesto(data);
       } else {
         // Start with empty manifesto
-        setManifesto({
-          ...DEFAULT_MANIFESTO,
-          tenant_id: tenant.id,
-        } as ManifestoData);
+        setManifesto(DEFAULT_MANIFESTO as ManifestoData);
       }
     } catch (err) {
       console.error("Failed to load manifesto:", err);
@@ -131,8 +126,7 @@ export default function AdminManifestoPage() {
     setSaving(true);
 
     try {
-      const tenant = await getCurrentTenant();
-      await updateManifesto(tenant.id, {
+      await updateManifesto({
         ...manifesto,
         status,
       });
@@ -253,11 +247,9 @@ export default function AdminManifestoPage() {
     setUploadingPDF(true);
 
     try {
-      const tenant = await getCurrentTenant();
-      // Upload to Cloudinary with tenant-specific folder
       const url = await uploadPDFToCloudinary(
         file,
-        `ifeanyi-2027/manifestos/${tenant.id}`,
+        "ifeanyi-2027/candidate/manifestos",
       );
 
       setManifesto((prev) => {

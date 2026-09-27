@@ -15,7 +15,6 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
-import { CURRENT_TENANT_ID } from "@/lib/firebase/tenants";
 
 /*
  * ============================================================
@@ -25,8 +24,6 @@ import { CURRENT_TENANT_ID } from "@/lib/firebase/tenants";
 
 export interface CampaignAssignment {
   id: string;
-
-  tenant_id: string;
 
   title: string;
   description?: string;
@@ -78,8 +75,6 @@ function mapAssignment(
   return {
     id,
 
-    tenant_id: String(data.tenant_id ?? ""),
-
     title: String(data.title ?? ""),
     description:
       typeof data.description === "string" ? data.description : undefined,
@@ -120,14 +115,9 @@ function mapAssignment(
  * as we strengthen the Firestore authorization layer.
  */
 
-export async function getAllCampaignAssignments(
-  tenantId?: string,
-): Promise<CampaignAssignment[]> {
-  const targetTenantId = tenantId || CURRENT_TENANT_ID;
-
+export async function getAllCampaignAssignments(): Promise<CampaignAssignment[]> {
   const q = query(
     collection(db, COLLECTION),
-    where("tenant_id", "==", targetTenantId),
     orderBy("created_at", "desc"),
   );
 
@@ -200,21 +190,15 @@ export async function getMyCampaignAssignments(
  */
 
 export async function getScopedCampaignAssignments(
-  tenantIdOrScopeType: string,
-  scopeTypeOrId: string,
-  scopeIdParam?: string,
+  scopeType: string,
+  scopeId: string,
 ): Promise<CampaignAssignment[]> {
-  const scopeType = scopeIdParam ? scopeTypeOrId : tenantIdOrScopeType;
-  const scopeId = scopeIdParam ? scopeIdParam : scopeTypeOrId;
-  const targetTenantId = scopeIdParam ? tenantIdOrScopeType : CURRENT_TENANT_ID;
-
   if (!scopeType || !scopeId) {
     return [];
   }
 
   const q = query(
     collection(db, COLLECTION),
-    where("tenant_id", "==", targetTenantId),
     where("scope_type", "==", scopeType),
     where("scope_id", "==", scopeId),
     orderBy("created_at", "desc"),
@@ -232,8 +216,6 @@ export async function getScopedCampaignAssignments(
  */
 
 export async function createCampaignAssignment(data: {
-  tenant_id: string;
-
   title: string;
   description?: string;
 

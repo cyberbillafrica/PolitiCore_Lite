@@ -11,8 +11,6 @@ import {
 
 import { db } from "./config";
 
-import { CURRENT_TENANT_ID } from "./tenants";
-
 import type {
   OrganizationalAssignment,
   UserProfile,
@@ -44,16 +42,13 @@ export interface ScopedCampaignMembersResult {
 
 /*
  * ============================================================
- * GET ALL CAMPAIGN MEMBERS FOR TENANT
+ * GET ALL CAMPAIGN MEMBERS
  * ============================================================
  */
 
-export async function getAllCampaignMembersForTenant(
-  tenantId: string = CURRENT_TENANT_ID,
-): Promise<ScopedCampaignMember[]> {
+export async function getAllCampaignMembers(): Promise<ScopedCampaignMember[]> {
   const membersQuery = query(
     collection(db, "users"),
-    where("tenant_id", "==", tenantId),
     where("membership_types", "array-contains", "campaign_member"),
   );
 

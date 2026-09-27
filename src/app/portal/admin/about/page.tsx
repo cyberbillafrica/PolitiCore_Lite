@@ -20,12 +20,11 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { getBiography, updateBiography } from "@/lib/firebase/biography";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import type { BiographyData } from "@/types";
 
 const DEFAULT_ABOUT: Omit<
   BiographyData,
-  "tenant_id" | "created_at" | "updated_at"
+  "created_at" | "updated_at"
 > = {
   full_name: "PolitiCore Operations Secretariat",
   title: "Political Operations & Campaign Intelligence Platform",
@@ -71,16 +70,12 @@ export default function AdminAboutPage() {
     try {
       setLoading(true);
       setError(null);
-      const tenant = await getCurrentTenant();
-      const data = await getBiography(tenant.id);
+      const data = await getBiography();
 
       if (data) {
         setAboutData(data);
       } else {
-        setAboutData({
-          ...DEFAULT_ABOUT,
-          tenant_id: tenant.id,
-        } as BiographyData);
+        setAboutData(DEFAULT_ABOUT as BiographyData);
       }
     } catch (err) {
       console.error("Failed to load About Us content:", err);
@@ -111,8 +106,7 @@ export default function AdminAboutPage() {
     setSuccess(null);
 
     try {
-      const tenant = await getCurrentTenant();
-      await updateBiography(tenant.id, {
+      await updateBiography({
         ...aboutData,
         full_name: aboutData.full_name || "PolitiCore Operations Secretariat",
         title: aboutData.title || "Political Operations & Campaign Intelligence Platform",
@@ -140,7 +134,6 @@ export default function AdminAboutPage() {
     setError(null);
 
     try {
-      const tenant = await getCurrentTenant();
       const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
       setAboutData((prev) => {
         if (!prev) return prev;

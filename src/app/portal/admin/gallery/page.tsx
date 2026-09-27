@@ -33,7 +33,6 @@ import {
   removeGalleryImage,
 } from "@/lib/firebase/gallery";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getCurrentTenant } from "@/lib/firebase/tenants";
 import type { GalleryImage } from "@/types";
 
 export default function AdminGalleryPage() {
@@ -46,7 +45,6 @@ export default function AdminGalleryPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [tenantId, setTenantId] = useState<string>("");
   const [pendingUploadUrl, setPendingUploadUrl] = useState<string | null>(null);
   const [imageTitle, setImageTitle] = useState("");
   const [imageDescription, setImageDescription] = useState("");
@@ -67,9 +65,7 @@ export default function AdminGalleryPage() {
     try {
       setLoading(true);
       setError(null);
-      const tenant = await getCurrentTenant();
-      setTenantId(tenant.id);
-      const data = await getGallery(tenant.id);
+      const data = await getGallery();
       setImages(data?.images || []);
     } catch (err) {
       console.error("Failed to load gallery:", err);
@@ -117,7 +113,7 @@ export default function AdminGalleryPage() {
     setError(null);
 
     try {
-      await addGalleryImage(tenantId, {
+      await addGalleryImage({
         url: pendingUploadUrl,
         title: imageTitle.trim() || "Gallery image",
         description: imageDescription.trim() || undefined,
@@ -140,7 +136,7 @@ export default function AdminGalleryPage() {
     if (!confirm("Remove this image from the gallery?")) return;
 
     try {
-      await removeGalleryImage(tenantId, imageId);
+      await removeGalleryImage(imageId);
       await loadGallery();
       setSuccess("Image removed.");
     } catch (err) {

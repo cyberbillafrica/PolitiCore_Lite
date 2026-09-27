@@ -70,8 +70,6 @@ export async function getPermissionGrantsByUserId(
 // ============================================================
 
 export async function createPermissionGrant(data: {
-  tenant_id: string;
-
   user_id: string;
 
   permission: Permission;
