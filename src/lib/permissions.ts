@@ -176,6 +176,9 @@ function positionHasPermission(
           "report_issue",
           "view_notices",
           "view_documents",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
         ].includes(permission);
 
       case "ward_coordinator":
@@ -201,6 +204,10 @@ function positionHasPermission(
           "view_documents",
           "manage_documents",
           "view_analytics",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
+          "view_election_dashboard",
         ].includes(permission);
 
       case "lga_coordinator":
@@ -226,6 +233,10 @@ function positionHasPermission(
           "view_documents",
           "manage_documents",
           "view_analytics",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
+          "view_election_dashboard",
         ].includes(permission);
 
       case "zone_coordinator":
@@ -251,6 +262,10 @@ function positionHasPermission(
           "view_documents",
           "manage_documents",
           "view_analytics",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
+          "view_election_dashboard",
         ].includes(permission);
 
       case "state_coordinator":
@@ -279,6 +294,10 @@ function positionHasPermission(
           "view_analytics",
           "manage_organization",
           "manage_permissions",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
+          "view_election_dashboard",
         ].includes(permission);
 
       case "campaign_manager":
@@ -344,6 +363,7 @@ export function hasPermission(
       "submit_election_pu_report",
       "submit_election_incident",
       "upload_election_result",
+      "view_election_dashboard",
     ].includes(permission);
   }
 
@@ -379,4 +399,3 @@ export function isCampaignCouncilMember(
 
   return getCampaignAssignments(assignments).length > 0;
 }
-

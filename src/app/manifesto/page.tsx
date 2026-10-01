@@ -171,8 +171,8 @@ function ManifestoComingSoon() {
             Manifesto Coming Soon
           </h1>
           <p className="mt-3 text-gray-600 max-w-md mx-auto">
-            Our vision and commitments for Nkanu West will be published shortly.
-            Check back for updates.
+            Our vision and commitments will be published shortly. Check back for
+            updates.
           </p>
           <Link
             href="/"
@@ -187,4 +187,3 @@ function ManifestoComingSoon() {
     </div>
   );
 }
-

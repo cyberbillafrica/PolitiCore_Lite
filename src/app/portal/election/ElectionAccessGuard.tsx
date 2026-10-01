@@ -29,9 +29,13 @@ export default function ElectionAccessGuard({
   const router = useRouter();
 
   const accessRole = profile?.access_role ?? null;
+  const isCampaignMember =
+    profile?.membership_types?.includes("campaign_member") ?? false;
 
   const hasElectionAccess =
-    accessRole === "admin" || accessRole === "election_officer";
+    accessRole === "admin" ||
+    accessRole === "election_officer" ||
+    isCampaignMember;
 
   useEffect(() => {
     if (accessLoading) return;
@@ -63,8 +67,8 @@ export default function ElectionAccessGuard({
             Election access restricted
           </h1>
           <p className="mt-2 text-sm text-gray-600">
-            Your account does not have election operations access. This area
-            is limited to administrators and election officers.
+            Your account does not have election operations access. This area is
+            limited to administrators, election officers, and campaign members.
           </p>
         </div>
       </div>

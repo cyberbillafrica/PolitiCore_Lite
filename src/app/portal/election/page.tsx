@@ -2,6 +2,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   BarChart,
@@ -43,7 +45,18 @@ const totalResults = {
 };
 
 export default function ElectionDashboard() {
+  const router = useRouter();
+  const { profile } = useAuth();
   const [electionMode] = useState("active"); // This would come from admin settings
+
+  if (
+    profile &&
+    profile.access_role !== "admin" &&
+    profile.access_role !== "election_officer"
+  ) {
+    router.replace("/portal/election/results");
+    return null;
+  }
 
   if (electionMode !== "active") {
     return (
@@ -276,4 +289,3 @@ export default function ElectionDashboard() {
     </div>
   );
 }
-

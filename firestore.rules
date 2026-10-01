@@ -622,15 +622,18 @@ service cloud.firestore {
     match /election_results/{resultId} {
 
       /*
-       * Dashboard visibility for authorized election roles.
-       * Election mode gates submissions, never reads.
+       * Coordinator scoping is enforced in the client query layer.
+       * The rules intentionally keep reads to admin/election officer
+       * access plus a member's own registered polling unit to avoid
+       * expensive per-assignment traversals in Firestore rules.
        */
       allow read: if isAdminOrElectionOfficer();
 
-      /*
-       * Ordinary members see their own submitted result.
-       */
-      allow read: if isMember()
+      allow read: if isSignedIn()
+        && callerMemberships().hasAny(["campaign_member"])
+        && resource.data.polling_unit_id == callerProfile().polling_unit_id;
+
+      allow read: if isSignedIn()
         && resource.data.submitted_by == request.auth.uid;
 
       /*
@@ -638,19 +641,24 @@ service cloud.firestore {
        *
        * The deterministic document ID prevents a second submission.
        */
-      allow create: if isSignedIn()
-        && !exists(
-          /databases/$(database)/documents/election_results/$(resultId)
-        )
-        && request.resource.data.submitted_by == request.auth.uid
-        && request.resource.data.verified == false
-        && resultId
-          == request.resource.data.ward_id
-             + "__"
-             + request.resource.data.polling_unit_id
-        && canSubmitElectionActivity(
-          request.resource.data.ward_id,
-          request.resource.data.polling_unit_id
+      allow create: if isAdminOrElectionOfficer()
+        || (
+          isSignedIn()
+          && callerMemberships().hasAny(["campaign_member"])
+          && !exists(
+            /databases/$(database)/documents/election_results/$(resultId)
+          )
+          && request.resource.data.submitted_by == request.auth.uid
+          && request.resource.data.verified == false
+          && request.resource.data.polling_unit_id == callerProfile().polling_unit_id
+          && resultId
+            == request.resource.data.ward_id
+               + "__"
+               + request.resource.data.polling_unit_id
+          && canSubmitElectionActivity(
+            request.resource.data.ward_id,
+            request.resource.data.polling_unit_id
+          )
         );
 
       /*

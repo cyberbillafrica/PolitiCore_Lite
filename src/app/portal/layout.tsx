@@ -203,6 +203,13 @@ const navigation: NavItem[] = [
       },
 
       {
+        name: "Results",
+        href: "/portal/election/results",
+        icon: BarChart3,
+        electionReporting: true,
+      },
+
+      {
         name: "Result Upload",
         href: "/portal/election/upload",
         icon: Upload,
@@ -298,14 +305,7 @@ export default function PortalLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  const {
-    user,
-    profile,
-    loading,
-    accessLoading,
-    hasPermission,
-    isCampaignMember,
-  } = useAuth();
+  const { user, profile, loading, hasPermission, isCampaignMember } = useAuth();
 
   const role = profile?.access_role ?? null;
 
@@ -316,15 +316,8 @@ export default function PortalLayout({
   const isSocialMember =
     profile?.membership_types?.includes("social_member") ?? false;
 
-  /*
-   * Election surfaces are restricted to admins and election
-   * officers (access matrix). Plain members - including
-   * social-only and campaign members - never see election
-   * links, and the /portal/election layout enforces the same
-   * rule for manually typed URLs.
-   */
   const canAccessElectionSurfaces =
-    role === "election_officer" || role === "admin";
+    role === "election_officer" || role === "admin" || isCampaignMember;
 
   const canViewElectionDashboard = isAdmin;
 
@@ -943,4 +936,3 @@ function UserPanel({
     </div>
   );
 }
-

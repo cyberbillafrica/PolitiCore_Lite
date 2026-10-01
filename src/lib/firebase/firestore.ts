@@ -18,12 +18,15 @@ import {
 import { db } from "./config";
 import { getAnnouncements as getPortalAnnouncements } from "./portal-content";
 
-
 // ============================================================
 // ORGANIZATIONAL ASSIGNMENTS
 // ============================================================
 
-import type { Announcement, OrganizationalAssignment } from "@/types";
+import type {
+  Announcement,
+  ElectionResultRecord,
+  OrganizationalAssignment,
+} from "@/types";
 
 /**
  * Get all active organizational assignments for a user.
@@ -333,7 +336,10 @@ export function generateSlug(title: string): string {
  * Normalizes Firestore news document data into a consistent NewsArticle interface.
  * Handles legacy documents that use `published: boolean`.
  */
-export function normalizeNewsArticle(id: string, data: Record<string, unknown>): NewsArticle {
+export function normalizeNewsArticle(
+  id: string,
+  data: Record<string, unknown>,
+): NewsArticle {
   const status: NewsStatus =
     (data.status as NewsStatus) || (data.published ? "published" : "draft");
 
@@ -357,7 +363,9 @@ export function normalizeNewsArticle(id: string, data: Record<string, unknown>):
   };
 }
 
-export async function getPublishedNews(limitCount: number = 20): Promise<NewsArticle[]> {
+export async function getPublishedNews(
+  limitCount: number = 20,
+): Promise<NewsArticle[]> {
   // Simple equality queries without orderBy to avoid requiring Firestore composite indexes
   const qStatus = query(
     collection(db, "news"),
@@ -415,20 +423,22 @@ export async function getNewsArticle(id: string): Promise<NewsArticle | null> {
   return normalizeNewsArticle(snap.id, snap.data());
 }
 
-export async function getNewsArticleBySlug(slug: string): Promise<NewsArticle | null> {
+export async function getNewsArticleBySlug(
+  slug: string,
+): Promise<NewsArticle | null> {
   // Query status == published or legacy published == true
   const qStatus = query(
     collection(db, "news"),
     where("slug", "==", slug),
     where("status", "==", "published"),
-    limit(1)
+    limit(1),
   );
 
   const qLegacy = query(
     collection(db, "news"),
     where("slug", "==", slug),
     where("published", "==", true),
-    limit(1)
+    limit(1),
   );
 
   const [snapStatus, snapLegacy] = await Promise.all([
@@ -443,7 +453,7 @@ export async function getNewsArticleBySlug(slug: string): Promise<NewsArticle | 
 }
 
 export async function createNewsArticle(
-  articleData: Omit<NewsArticle, "id" | "created_at" | "updated_at">
+  articleData: Omit<NewsArticle, "id" | "created_at" | "updated_at">,
 ): Promise<string> {
   const docData: Record<string, unknown> = {
     title: articleData.title,
@@ -454,7 +464,10 @@ export async function createNewsArticle(
     category: articleData.category || null,
     status: articleData.status || "draft",
     published: articleData.status === "published",
-    published_at: articleData.status === "published" ? serverTimestamp() : (articleData.published_at || null),
+    published_at:
+      articleData.status === "published"
+        ? serverTimestamp()
+        : articleData.published_at || null,
     scheduled_at: articleData.scheduled_at || null,
     author: articleData.author || null,
     created_by: articleData.created_by || "",
@@ -469,7 +482,7 @@ export async function createNewsArticle(
 
 export async function updateNewsArticle(
   id: string,
-  articleData: Partial<NewsArticle>
+  articleData: Partial<NewsArticle>,
 ): Promise<void> {
   const updateData: Record<string, unknown> = {
     updated_at: serverTimestamp(),
@@ -477,13 +490,19 @@ export async function updateNewsArticle(
 
   if (articleData.title !== undefined) updateData.title = articleData.title;
   if (articleData.slug !== undefined) updateData.slug = articleData.slug;
-  if (articleData.excerpt !== undefined) updateData.excerpt = articleData.excerpt;
-  if (articleData.content !== undefined) updateData.content = articleData.content;
-  if (articleData.featured_image !== undefined) updateData.featured_image = articleData.featured_image;
-  if (articleData.category !== undefined) updateData.category = articleData.category;
+  if (articleData.excerpt !== undefined)
+    updateData.excerpt = articleData.excerpt;
+  if (articleData.content !== undefined)
+    updateData.content = articleData.content;
+  if (articleData.featured_image !== undefined)
+    updateData.featured_image = articleData.featured_image;
+  if (articleData.category !== undefined)
+    updateData.category = articleData.category;
   if (articleData.author !== undefined) updateData.author = articleData.author;
-  if (articleData.updated_by !== undefined) updateData.updated_by = articleData.updated_by;
-  if (articleData.scheduled_at !== undefined) updateData.scheduled_at = articleData.scheduled_at;
+  if (articleData.updated_by !== undefined)
+    updateData.updated_by = articleData.updated_by;
+  if (articleData.scheduled_at !== undefined)
+    updateData.scheduled_at = articleData.scheduled_at;
 
   if (articleData.status !== undefined) {
     updateData.status = articleData.status;
@@ -501,21 +520,34 @@ export async function deleteNewsArticle(id: string): Promise<void> {
   await deleteDoc(doc(db, "news", id));
 }
 
-
-
 /**
  * Get announcements for the current organization, filtered by user scope
  */
-export async function getUserAnnouncements(userProfile: any): Promise<Announcement[]> {
+export async function getUserAnnouncements(
+  userProfile: any,
+): Promise<Announcement[]> {
   const allAnnouncements = await getPortalAnnouncements();
-  
+
   // Filter by scope
   return allAnnouncements.filter((announcement) => {
     if (announcement.scope === "general") return true;
-    if (announcement.scope === "admins" && userProfile?.access_role === "admin") return true;
-    if (announcement.scope === "campaign_members" && userProfile?.membership_types?.includes("campaign_member")) return true;
-    if (announcement.scope === "social_members" && userProfile?.membership_types?.includes("social_member")) return true;
-    if (announcement.scope === "election_officers" && userProfile?.access_role === "election_officer") return true;
+    if (announcement.scope === "admins" && userProfile?.access_role === "admin")
+      return true;
+    if (
+      announcement.scope === "campaign_members" &&
+      userProfile?.membership_types?.includes("campaign_member")
+    )
+      return true;
+    if (
+      announcement.scope === "social_members" &&
+      userProfile?.membership_types?.includes("social_member")
+    )
+      return true;
+    if (
+      announcement.scope === "election_officers" &&
+      userProfile?.access_role === "election_officer"
+    )
+      return true;
     return false;
   });
 }
@@ -551,6 +583,78 @@ export interface ElectionResult {
   votes: number;
 }
 
+export function deriveLgaIdFromWardId(wardId: string): string {
+  if (!wardId) return wardId;
+
+  const match = wardId.match(/^(.*)-ward-[^-]+$/);
+  return match ? match[1] : wardId;
+}
+
+export async function getAllElectionResults(): Promise<ElectionResultRecord[]> {
+  const q = query(
+    collection(db, "election_results"),
+    orderBy("created_at", "desc"),
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+  }));
+}
+
+export async function getElectionResultsByPollingUnit(
+  pollingUnitId: string,
+): Promise<ElectionResultRecord[]> {
+  const q = query(
+    collection(db, "election_results"),
+    where("polling_unit_id", "==", pollingUnitId),
+    orderBy("created_at", "desc"),
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+  }));
+}
+
+export async function getElectionResultsByWard(
+  wardId: string,
+): Promise<ElectionResultRecord[]> {
+  const q = query(
+    collection(db, "election_results"),
+    where("ward_id", "==", wardId),
+    orderBy("created_at", "desc"),
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+  }));
+}
+
+export async function getElectionResultsByLga(
+  lgaId: string,
+): Promise<ElectionResultRecord[]> {
+  const q = query(
+    collection(db, "election_results"),
+    where("lga_id", "==", lgaId),
+    orderBy("created_at", "desc"),
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+  }));
+}
+
 /**
  * Submits a polling unit's election results as a SINGLE document,
  * keyed by a deterministic ID derived from ward_id + polling_unit_id.
@@ -569,11 +673,13 @@ export async function submitElectionResult(
   userId: string,
 ) {
   const resultDocId = `${wardId}__${pollingUnitId}`;
+  const lgaId = deriveLgaIdFromWardId(wardId);
 
   const resultRef = doc(db, "election_results", resultDocId);
 
   await setDoc(resultRef, {
     ward_id: wardId,
+    lga_id: lgaId,
     polling_unit_id: pollingUnitId,
     results,
     submitted_by: userId,
@@ -622,9 +728,10 @@ export async function getContactMessages(): Promise<ContactMessageDoc[]> {
 /**
  * Mark a contact message as read.
  */
-export async function markContactMessageAsRead(messageId: string): Promise<void> {
+export async function markContactMessageAsRead(
+  messageId: string,
+): Promise<void> {
   await updateDoc(doc(db, "contact_messages", messageId), {
     status: "read",
   });
 }
-

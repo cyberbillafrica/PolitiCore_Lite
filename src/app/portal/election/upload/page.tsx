@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getErrorMessage } from "@/lib/errors";
 import { submitElectionResult } from "@/lib/firebase/firestore";
 import { parties } from "@/lib/utils";
 import { nkanuWestElectoralData } from "@/data/electoral";
 import { getWardById, getPollingUnitById } from "@/lib/constants";
 
 export default function ElectionUploadPage() {
-  const { profile } = useAuth();
-  const isAdminOrElectionOfficer =
+  const { profile, hasPermission } = useAuth();
+  const canUploadAnyPU =
     profile?.access_role === "admin" ||
     profile?.access_role === "election_officer";
+  const isAdminOrElectionOfficer = canUploadAnyPU;
 
   const [form, setForm] = useState({
     ward_id: isAdminOrElectionOfficer ? "" : (profile?.ward_id ?? ""),
@@ -24,6 +26,28 @@ export default function ElectionUploadPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  if (!profile) {
+    return null;
+  }
+
+  if (!hasPermission("upload_election_result")) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+            <span className="text-2xl">🚫</span>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900">
+            Election access restricted
+          </h1>
+          <p className="mt-2 text-sm text-gray-600">
+            You do not have permission to upload election results for this area.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const selectedWard = nkanuWestElectoralData.find(
     (ward) => ward.id === form.ward_id,
@@ -77,8 +101,8 @@ export default function ElectionUploadPage() {
       setMessage(
         "Results submitted successfully! They will be reviewed shortly.",
       );
-    } catch (err: any) {
-      setError(err.message || "Submission failed. Please try again.");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Submission failed. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -208,4 +232,3 @@ export default function ElectionUploadPage() {
     </div>
   );
 }
-

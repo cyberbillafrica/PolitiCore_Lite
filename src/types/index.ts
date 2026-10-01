@@ -9,10 +9,7 @@
 // OrganizationalAssignment.
 //
 
-export type Role =
-  | "admin"
-  | "member"
-  | "election_officer";
+export type Role = "admin" | "member" | "election_officer";
 
 // ============================================================
 // MEMBERSHIP TYPES
@@ -61,7 +58,6 @@ export type OrganizationalAssignmentStatus =
 
 export interface OrganizationalAssignment {
   id: string;
-
 
   user_id: string;
 
@@ -192,7 +188,6 @@ export type Permission =
 export interface PermissionGrant {
   id: string;
 
-
   user_id: string;
 
   permission: Permission;
@@ -230,7 +225,6 @@ export type CampaignActivityStatus =
 export interface CampaignActivity {
   id: string;
 
-
   title: string;
   description?: string;
 
@@ -261,7 +255,6 @@ export interface CampaignActivity {
 
 export interface UserProfile {
   id?: string;
-
 
   // Personal information
   full_name: string;
@@ -303,6 +296,21 @@ export interface UserProfile {
 // ============================================================
 // MANIFESTO
 // ============================================================
+
+export interface ElectionResultRecord {
+  id?: string;
+  ward_id: string;
+  lga_id?: string;
+  polling_unit_id: string;
+  results: Array<{
+    party: string;
+    votes: number;
+  }>;
+  submitted_by: string;
+  verified: boolean;
+  created_at?: unknown;
+  updated_at?: unknown;
+}
 
 export interface ManifestoSection {
   id: string;
@@ -478,4 +486,3 @@ export interface PortalContentData {
   items: PortalContent[];
   updated_at?: unknown;
 }
-
