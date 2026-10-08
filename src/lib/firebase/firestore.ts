@@ -13,10 +13,13 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 
 import { db } from "./config";
 import { getAnnouncements as getPortalAnnouncements } from "./portal-content";
+import { isTaskExpired } from "@/lib/date-utils";
+import { REFERRAL_BONUS_POINTS } from "@/lib/social-config";
 
 // ============================================================
 // ORGANIZATIONAL ASSIGNMENTS
@@ -64,6 +67,118 @@ export async function getAllUsers() {
     id: d.id,
     ...d.data(),
   }));
+}
+
+// ─────────────────────────────────────────────
+// Relational Organizing & Referrals
+// ─────────────────────────────────────────────
+
+/**
+ * Resolves a referral code to the referrer's user ID.
+ */
+export async function resolveReferral(code: string): Promise<string | null> {
+  if (!code || !code.trim()) return null;
+  const cleanCode = code.trim().toUpperCase();
+
+  const q = query(
+    collection(db, "users"),
+    where("referral_code", "==", cleanCode),
+    limit(1),
+  );
+
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    return snap.docs[0].id;
+  }
+
+  // Fallback: check if code is a truncated user ID prefix
+  const allSnap = await getDocs(collection(db, "users"));
+  for (const d of allSnap.docs) {
+    if (d.id.substring(0, 8).toUpperCase() === cleanCode) {
+      return d.id;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Gets all members referred by a user.
+ */
+export async function getUserReferrals(userId: string) {
+  const q = query(
+    collection(db, "users"),
+    where("referred_by", "==", userId),
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+}
+
+// ─────────────────────────────────────────────
+// Sub-teams (Phase 2 Scaffold - Feature Flagged)
+// ─────────────────────────────────────────────
+
+export interface SubTeamDoc {
+  id?: string;
+  name: string;
+  owner_id: string;
+  member_ids: string[];
+  join_code: string;
+  created_at?: unknown;
+}
+
+export async function createTeam(name: string, ownerId: string): Promise<string> {
+  const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const teamRef = await addDoc(collection(db, "teams"), {
+    name: name.trim(),
+    owner_id: ownerId,
+    member_ids: [ownerId],
+    join_code: joinCode,
+    created_at: serverTimestamp(),
+  });
+
+  // Link team to user
+  await updateDoc(doc(db, "users", ownerId), {
+    team_id: teamRef.id,
+    updated_at: serverTimestamp(),
+  });
+
+  return teamRef.id;
+}
+
+export async function joinTeamByCode(joinCode: string, userId: string) {
+  const cleanCode = joinCode.trim().toUpperCase();
+  const q = query(
+    collection(db, "teams"),
+    where("join_code", "==", cleanCode),
+    limit(1),
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    throw new Error("Invalid team join code.");
+  }
+
+  const teamDoc = snap.docs[0];
+  const teamData = teamDoc.data();
+  const memberIds: string[] = teamData.member_ids || [];
+
+  if (!memberIds.includes(userId)) {
+    memberIds.push(userId);
+    await updateDoc(teamDoc.ref, {
+      member_ids: memberIds,
+      updated_at: serverTimestamp(),
+    });
+  }
+
+  await updateDoc(doc(db, "users", userId), {
+    team_id: teamDoc.id,
+    updated_at: serverTimestamp(),
+  });
 }
 
 export async function getUserProfile(userId: string) {
@@ -120,11 +235,53 @@ export async function getAllTasks() {
 export async function createTask(taskData: Record<string, unknown>) {
   const docRef = await addDoc(collection(db, "tasks"), {
     ...taskData,
-    status: "active",
+    status: taskData.status || "active",
     created_at: serverTimestamp(),
   });
 
   return docRef.id;
+}
+
+export async function updateTask(
+  taskId: string,
+  payload: Record<string, unknown>,
+) {
+  const taskRef = doc(db, "tasks", taskId);
+  await updateDoc(taskRef, {
+    ...payload,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function deleteTask(
+  taskId: string,
+  options: { mode: "soft" | "hard"; userId: string },
+) {
+  const taskRef = doc(db, "tasks", taskId);
+
+  if (options.mode === "soft") {
+    await updateDoc(taskRef, {
+      status: "archived",
+      archived_at: serverTimestamp(),
+      archived_by: options.userId,
+      updated_at: serverTimestamp(),
+    });
+  } else {
+    // Hard delete: delete task and all its submissions in a batch write
+    const q = query(
+      collection(db, "task_submissions"),
+      where("task_id", "==", taskId),
+    );
+    const snap = await getDocs(q);
+
+    const batch = writeBatch(db);
+    snap.docs.forEach((submissionDoc) => {
+      batch.delete(submissionDoc.ref);
+    });
+
+    batch.delete(taskRef);
+    await batch.commit();
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -153,6 +310,25 @@ export async function submitTaskCompletion(
   userId: string,
   proofUrl?: string,
 ) {
+  const taskRef = doc(db, "tasks", taskId);
+  const taskSnap = await getDoc(taskRef);
+
+  if (!taskSnap.exists()) {
+    throw new Error("Task not found");
+  }
+
+  const taskData = taskSnap.data();
+
+  if (taskData.status !== "active") {
+    throw new Error("This task is not currently active.");
+  }
+
+  if (isTaskExpired(taskData.deadline)) {
+    throw new Error(
+      "This task deadline has passed. Submissions are no longer accepted.",
+    );
+  }
+
   const submissionId = `${taskId}_${userId}`;
 
   const submissionRef = doc(db, "task_submissions", submissionId);
@@ -162,6 +338,7 @@ export async function submitTaskCompletion(
     user_id: userId,
     proof_url: proofUrl?.trim() || null,
     status: "pending",
+    source: "task",
     submitted_at: serverTimestamp(),
   });
 }
@@ -291,10 +468,44 @@ export async function verifyTaskSubmission(
     });
 
     // Award points exactly once.
-    transaction.update(userRef, {
+    const userUpdate: Record<string, unknown> = {
       points: increment(points),
       updated_at: serverTimestamp(),
-    });
+    };
+
+    const userData = userSnap.data();
+    const referredBy = userData.referred_by as string | undefined;
+    const hasCompletedFirstTask = userData.has_completed_first_task as boolean | undefined;
+
+    if (referredBy && !hasCompletedFirstTask) {
+      userUpdate.has_completed_first_task = true;
+
+      const referrerRef = doc(db, "users", referredBy);
+      const referrerSnap = await transaction.get(referrerRef);
+
+      if (referrerSnap.exists()) {
+        transaction.update(referrerRef, {
+          points: increment(REFERRAL_BONUS_POINTS),
+          updated_at: serverTimestamp(),
+        });
+
+        // Log referral bonus submission so it shows up in analytics & user history
+        const referralSubRef = doc(collection(db, "task_submissions"));
+        transaction.set(referralSubRef, {
+          task_id: `referral_${userId}`,
+          user_id: referredBy,
+          status: "verified",
+          source: "referral_bonus",
+          submitted_at: serverTimestamp(),
+          verified_at: serverTimestamp(),
+          verified_by: adminId,
+          referred_user_id: userId,
+          referred_user_name: userData.full_name || "Referred Member",
+        });
+      }
+    }
+
+    transaction.update(userRef, userUpdate);
   });
 }
 
