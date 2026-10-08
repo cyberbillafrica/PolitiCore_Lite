@@ -285,12 +285,61 @@ export interface UserProfile {
   // Membership
   membership_types: MembershipType[];
 
-  // Social points
+  // Social points & referrals
   points: number;
   rank: string;
+  referral_code?: string;
+  referred_by?: string | null;
+  team_id?: string | null;
 
   created_at?: unknown;
   updated_at?: unknown;
+}
+
+// ============================================================
+// SOCIAL TASKS & SUBMISSIONS
+// ============================================================
+
+export type TaskPlatform = "Facebook" | "X" | "Instagram" | "TikTok";
+
+export type TaskAction =
+  | "Like"
+  | "Comment"
+  | "Like and Comment"
+  | "Share"
+  | "Comment and Share"
+  | "Make Post";
+
+export type TaskStatus = "active" | "inactive" | "archived";
+
+export interface SocialTask {
+  id: string;
+  platform: TaskPlatform;
+  action: TaskAction;
+  points: number;
+  url: string;
+  deadline?: string | null;
+  status: TaskStatus;
+  created_at?: unknown;
+  created_by?: string;
+  updated_at?: unknown;
+  updated_by?: string;
+  archived_at?: unknown;
+  archived_by?: string;
+  [key: string]: unknown;
+}
+
+export interface TaskSubmission {
+  id: string;
+  task_id: string;
+  user_id: string;
+  status: "pending" | "verified";
+  proof_url?: string | null;
+  source?: "task" | "referral_bonus";
+  submitted_at?: unknown;
+  verified_at?: unknown;
+  verified_by?: string;
+  [key: string]: unknown;
 }
 
 // ============================================================

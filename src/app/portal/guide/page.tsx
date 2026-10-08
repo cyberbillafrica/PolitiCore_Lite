@@ -13,7 +13,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
-type GuideSection = "overview" | "admin" | "structure" | "inec" | "operations" | "theme";
+import { Share2 } from "lucide-react";
+
+type GuideSection = "overview" | "admin" | "structure" | "inec" | "operations" | "social" | "theme";
 
 export default function UserGuidePage() {
   const [activeSection, setActiveSection] = useState<GuideSection>("overview");
@@ -32,19 +34,20 @@ export default function UserGuidePage() {
           </h1>
           <p className="mt-2 text-sm sm:text-base text-emerald-100/90 leading-relaxed">
             Welcome to the comprehensive operational manual for PolitiCore (Political Operations & Campaign Intelligence Platform).
-            Learn how to navigate organizational structures, manage field reports, control site settings, and process officer registrations.
+            Learn how to navigate organizational structures, manage field reports, control site settings, utilize the Social Force subsystem, and process officer registrations.
           </p>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {[
           { id: "overview", label: "Overview & Purpose", icon: Building2 },
           { id: "admin", label: "Admin Control Center", icon: Settings },
           { id: "structure", label: "Organizational Structure", icon: Layers },
           { id: "inec", label: "INEC Officer Roster", icon: Vote },
           { id: "operations", label: "Field Operations & Tasks", icon: CheckSquare },
+          { id: "social", label: "Social Force", icon: Share2 },
           { id: "theme", label: "Notifications & Themes", icon: Sparkles },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -197,6 +200,61 @@ export default function UserGuidePage() {
             <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
               Portal members can view assigned tasks, submit field activity reports, monitor ward electoral coverage, and access election incident loggers during active polling exercises.
             </p>
+          </div>
+        )}
+
+        {activeSection === "social" && (
+          <div className="space-y-6">
+            <div className="flex items-center gap-3 border-b border-gray-100 dark:border-gray-800 pb-4">
+              <Share2 className="h-7 w-7 text-emerald-700 dark:text-emerald-400" />
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Social Force Subsystem</h2>
+                <p className="text-xs text-gray-500">Digital activism, social tasks, proof verification, relational organizing, and analytics</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+              The Social Force module mobilizes digital volunteers across platforms including Facebook, X (Twitter), Instagram, and TikTok to amplify key campaign messaging, drive engagement, and reward active supporters with social points.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 space-y-2">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  <CheckSquare className="h-4 w-4 text-emerald-600" /> Expanded Action Types
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Tasks support six interaction types: <strong>Like</strong>, <strong>Comment</strong>, <strong>Like and Comment</strong>, <strong>Share</strong>, <strong>Comment and Share</strong>, and <strong>Make Post</strong>.
+                  For content-generating actions (Share, Comment and Share, Make Post), members submit a direct link to their post for administrator verification.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 space-y-2">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" /> Deadline Enforcement & Extensions
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Tasks automatically close at 23:59:59 WAT on their deadline date. Expired tasks block new member submissions while retaining historical submission records. Administrators can extend deadlines at any time to re-open tasks.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 space-y-2">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-emerald-600" /> Relational Organizing & Referrals
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Members receive a personal referral code and invite link. When invited supporters sign up and complete their first verified social task, the referring member earns bonus points towards their leaderboard ranking.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 space-y-2">
+                <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                  <Settings className="h-4 w-4 text-emerald-600" /> Advanced Analytics & KPI Tracking
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Administrators access a real-time analytics dashboard tracking total points awarded, top volunteer rankings, task completion rates, estimated digital reach, and engagement trends with configurable date range filters and CSV export.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

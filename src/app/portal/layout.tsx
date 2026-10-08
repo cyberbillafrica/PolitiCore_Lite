@@ -228,6 +228,12 @@ const adminNavigation = [
   },
 
   {
+    name: "Social Analytics",
+    href: "/portal/admin/analytics",
+    icon: BarChart3,
+  },
+
+  {
     name: "Biography",
     href: "/portal/admin/biography",
     icon: Users,
@@ -335,17 +341,14 @@ export default function PortalLayout({
     pathname.startsWith("/portal/admin"),
   );
 
-  const [previousPathname, setPreviousPathname] = useState(pathname);
-
-  if (pathname !== previousPathname) {
-    setPreviousPathname(pathname);
-
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setCampaignOpen(pathname.startsWith("/portal/campaign"));
-
     setElectionOpen(pathname.startsWith("/portal/election"));
-
     setAdminOpen(pathname.startsWith("/portal/admin"));
-  }
+    setSidebarOpen(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [pathname]);
 
   const electoralLocation: ElectoralLocation | null =
     profile?.ward_id && profile?.polling_unit_id
@@ -807,7 +810,7 @@ export default function PortalLayout({
 
       {/* Main Content */}
 
-      <div className="lg:pl-72">
+      <div className="lg:pl-72 pb-20 lg:pb-8">
         {/* Top Desktop & Mobile Header Bar with Bell Notification System */}
         <header className="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 sm:px-6 h-16 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
@@ -842,6 +845,95 @@ export default function PortalLayout({
 
         <main className="p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (< lg) */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 lg:hidden bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] shadow-lg">
+        <div className="grid grid-cols-5 h-16 items-center">
+          <Link
+            href="/portal/dashboard"
+            className={cn(
+              "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+              pathname === "/portal/dashboard"
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+            )}
+          >
+            <LayoutDashboard className="h-5 w-5 mb-0.5" />
+            <span>Dashboard</span>
+          </Link>
+
+          {(isSocialMember || isAdmin) && (
+            <Link
+              href="/portal/tasks"
+              className={cn(
+                "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+                pathname === "/portal/tasks"
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+              )}
+            >
+              <CheckSquare className="h-5 w-5 mb-0.5" />
+              <span>Tasks</span>
+            </Link>
+          )}
+
+          {(isSocialMember || isAdmin) && (
+            <Link
+              href="/portal/leaderboard"
+              className={cn(
+                "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+                pathname === "/portal/leaderboard"
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+              )}
+            >
+              <TrendingUp className="h-5 w-5 mb-0.5" />
+              <span>Leaderboard</span>
+            </Link>
+          )}
+
+          {isAdmin ? (
+            <Link
+              href="/portal/admin/analytics"
+              className={cn(
+                "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+                pathname === "/portal/admin/analytics"
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+              )}
+            >
+              <BarChart3 className="h-5 w-5 mb-0.5" />
+              <span>Analytics</span>
+            </Link>
+          ) : (
+            <Link
+              href="/portal/profile"
+              className={cn(
+                "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+                pathname === "/portal/profile"
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+              )}
+            >
+              <Users className="h-5 w-5 mb-0.5" />
+              <span>Profile</span>
+            </Link>
+          )}
+
+          <Link
+            href="/portal/guide"
+            className={cn(
+              "flex flex-col items-center justify-center h-full text-[10px] font-bold transition-colors min-h-[44px]",
+              pathname === "/portal/guide"
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-gray-500 hover:text-gray-900 dark:hover:text-gray-200",
+            )}
+          >
+            <BookOpen className="h-5 w-5 mb-0.5" />
+            <span>Guide</span>
+          </Link>
+        </div>
+      </nav>
     </div>
   );
 }
