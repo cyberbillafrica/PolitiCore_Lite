@@ -659,6 +659,12 @@ export interface ElectionSettings {
   id?: string;
   active_election_cycle_id: string | null;
   active_contest_id: string | null;
+  /*
+   * Master switch for election activity. `undefined` is treated as
+   * ON so an unconfigured deployment is not locked out. The FieldValue
+   * is mirrored by `electionModeEnabled()` in firestore.rules.
+   */
+  election_mode_enabled?: boolean;
   updated_by?: string;
   updated_at?: unknown;
 }

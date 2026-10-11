@@ -2,9 +2,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createMemberByAdmin } from "@/lib/firebase/auth";
-import { nkanuWestElectoralData } from "@/data/electoral";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import { useActiveContest } from "@/hooks/useElectionEngine";
+import {
+  contestCoversPollingUnit,
+  describeContestScope,
+  lgasWithinContestScope,
+} from "@/lib/election-scope";
 import { useAuth } from "@/contexts/AuthContext";
-import type { MembershipType, Role } from "@/types";
+import type { LGA, MembershipType, Role } from "@/types";
 
 export default function AddMemberPage() {
   const router = useRouter();
@@ -48,9 +54,66 @@ export default function AddMemberPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const selectedWard = nkanuWestElectoralData.find(
-    (ward) => ward.id === form.ward_id,
-  );
+  /*
+   * Geographic scope comes from the ACTIVE CONTEST, never from a
+   * hardcoded LGA. See src/lib/election-scope.ts for the scope model.
+   */
+  const { contest } = useActiveContest();
+
+  const [allLgas, setAllLgas] = useState<LGA[]>([]);
+  const [selectedLgaId, setSelectedLgaId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getAllEnuguLGAs()
+      .then((data) => {
+        if (!cancelled) setAllLgas(data);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to load the Enugu State LGA list:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Only LGAs inside the active contest's scope may be chosen.
+  const scopedLgas = lgasWithinContestScope(contest, allLgas);
+
+  /*
+   * Keep the selected LGA valid as the LGA list or the contest scope
+   * changes. A single-LGA scope needs no manual choice, so it is
+   * preselected; an out-of-scope choice is cleared instead of being
+   * submitted silently.
+   */
+  useEffect(() => {
+    if (allLgas.length === 0) return;
+
+    const allowed = lgasWithinContestScope(contest, allLgas);
+
+    if (
+      selectedLgaId !== "" &&
+      allowed.some((lga) => lga.id === selectedLgaId)
+    ) {
+      return;
+    }
+
+    const nextLgaId = allowed.length === 1 ? allowed[0].id : "";
+
+    if (nextLgaId === selectedLgaId) return;
+
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelectedLgaId(nextLgaId);
+    setForm((prev) => ({ ...prev, ward_id: "", polling_unit_id: "" }));
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [allLgas, contest, selectedLgaId]);
+
+  const selectedLga = scopedLgas.find((lga) => lga.id === selectedLgaId);
+  const wards = selectedLga?.wards ?? [];
+
+  const selectedWard = wards.find((ward) => ward.id === form.ward_id);
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
   const handleRoleToggle = (type: MembershipType) => {
@@ -65,6 +128,31 @@ export default function AddMemberPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    /*
+     * The registration must land inside the active contest's scope.
+     * The whole LGA to ward to polling unit chain is checked, so a ward
+     * picked from a stale selection cannot slip through.
+     */
+    if (
+      !selectedLgaId ||
+      !contestCoversPollingUnit(
+        contest,
+        selectedLgaId,
+        form.ward_id,
+        form.polling_unit_id,
+        allLgas,
+      )
+    ) {
+      setError(
+        `This ward and polling unit are outside the active contest scope (${describeContestScope(
+          contest,
+          allLgas,
+        )}). Choose a location inside that scope.`,
+      );
+      return;
+    }
+
     setLoading(true);
 
     const { user, error: createError } = await createMemberByAdmin(
@@ -115,6 +203,24 @@ export default function AddMemberPage() {
         {error && (
           <div className="p-4 bg-red-50 text-red-700 rounded-lg">{error}</div>
         )}
+
+        {/*
+         * The active contest defines the geographic boundary for this
+         * registration. Showing it makes the limited options obvious.
+         */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+          <span className="font-semibold uppercase tracking-wide text-slate-500">
+            Active contest scope
+          </span>
+          <p className="mt-1 font-medium">
+            {describeContestScope(contest, allLgas)}
+          </p>
+          <p className="mt-1 text-slate-500">
+            Members can only be registered into wards and polling units
+            inside this scope.
+          </p>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium mb-2">
@@ -157,6 +263,29 @@ export default function AddMemberPage() {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium mb-2">LGA *</label>
+            <select
+              required
+              value={selectedLgaId}
+              onChange={(e) => {
+                setSelectedLgaId(e.target.value);
+                setForm((prev) => ({
+                  ...prev,
+                  ward_id: "",
+                  polling_unit_id: "",
+                }));
+              }}
+              className="w-full px-4 py-3 border rounded-lg"
+            >
+              <option value="">Select LGA</option>
+              {scopedLgas.map((lga) => (
+                <option key={lga.id} value={lga.id}>
+                  {lga.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium mb-2">Ward *</label>
             <select
               required
@@ -168,10 +297,13 @@ export default function AddMemberPage() {
                   polling_unit_id: "",
                 })
               }
-              className="w-full px-4 py-3 border rounded-lg"
+              disabled={!selectedLgaId}
+              className="w-full px-4 py-3 border rounded-lg disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
-              <option value="">Select ward</option>
-              {nkanuWestElectoralData.map((ward) => (
+              <option value="">
+                {selectedLgaId ? "Select ward" : "Select an LGA first"}
+              </option>
+              {wards.map((ward) => (
                 <option key={ward.id} value={ward.id}>
                   {ward.code} — {ward.name}
                 </option>

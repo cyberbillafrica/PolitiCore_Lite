@@ -3,10 +3,36 @@ import { nkanuWestElectoralData } from "@/data/electoral";
 
 export const electoralWards = nkanuWestElectoralData;
 
+/*
+ * The LGA that owns the bundled ward/PU dataset.
+ *
+ * Both the id and the label are derived from the dataset itself
+ * (ward ids are prefixed with their LGA id, e.g. "<lga-id>-ward-01")
+ * so no LGA is ever hardcoded here. This object is only the offline
+ * fallback for when the seeded `electoral_data/enugu-state` document
+ * is unavailable — the live source of truth is the seeded data.
+ */
+function bundledLgaId(): string {
+  const wardId = electoralWards[0]?.id ?? "";
+  const marker = wardId.indexOf("-ward-");
+  return marker > 0 ? wardId.slice(0, marker) : "";
+}
+
+function humanizeId(id: string): string {
+  return id
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export const fallbackLGA = {
-  id: "nkanu-west",
-  code: "NW",
-  name: "Nkanu West",
+  id: bundledLgaId(),
+  code: humanizeId(bundledLgaId())
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase())
+    .join(""),
+  name: humanizeId(bundledLgaId()),
   wards: nkanuWestElectoralData,
 };
 
@@ -59,10 +85,14 @@ export function getElectoralLocation(wardId?: string, pollingUnitId?: string) {
   return { ward, pollingUnit: pollingUnit ?? null };
 }
 
+/*
+ * Bundled LGA list — the offline fallback only.
+ *
+ * Election surfaces should read the live, state-wide list from
+ * `getAllEnuguLGAs()` in `@/lib/firebase/electoral`, which prefers
+ * the seeded `electoral_data/enugu-state` document. This function
+ * exists so the bundled dataset is still usable without a network.
+ */
 export async function getAllLGAs() {
   return [fallbackLGA];
-}
-
-export async function getLGA(id: string) {
-  return id === "nkanu-west" || !id ? fallbackLGA : null;
 }

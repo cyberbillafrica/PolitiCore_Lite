@@ -30,6 +30,7 @@ import {
   getContestsByCycle,
 } from "@/lib/firebase/election";
 import { getEnuguElectoralData } from "@/lib/firebase/electoral";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 import type {
   EnuguStateElectoralData,
   PollingUnit,
@@ -40,6 +41,13 @@ import type {
 export default function ElectionOperationsPage() {
   const router = useRouter();
   const { profile, loading: authLoading } = useAuth();
+
+  /*
+   * Master election switch. When it is OFF the review queue stays
+   * readable (officers can still audit evidence) but every review
+   * mutation is refused here and again by firestore.rules.
+   */
+  const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   const [electoralData, setElectoralData] = useState<EnuguStateElectoralData | null>(null);
   const [cycles, setCycles] = useState<ElectionCycle[]>([]);
@@ -182,6 +190,14 @@ export default function ElectionOperationsPage() {
   const handleReview = async (action: "approve" | "reject" | "clarify" | "reopen") => {
     if (!selectedResult || !profile) return;
 
+    if (!electionMode) {
+      setFeedbackMsg({
+        type: "error",
+        text: "Election mode is currently OFF. Review actions are paused.",
+      });
+      return;
+    }
+
     if ((action === "reject" || action === "clarify") && !reviewNotes.trim()) {
       setFeedbackMsg({
         type: "error",
@@ -296,6 +312,17 @@ export default function ElectionOperationsPage() {
           </div>
         </div>
       </div>
+
+      {!electionModeLoading && !electionMode && (
+        <div className="flex items-start gap-2 p-4 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 border border-slate-300">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            <strong>Election mode is OFF.</strong> The review queue is
+            read-only and no review action can be submitted until an
+            administrator turns election mode back on.
+          </span>
+        </div>
+      )}
 
       {feedbackMsg && (
         <div
@@ -521,29 +548,29 @@ export default function ElectionOperationsPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleReview("approve")}
-                    disabled={submittingAction}
-                    className="px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    disabled={submittingAction || electionModeLoading || !electionMode}
+                    className="px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <CheckCircle className="w-4 h-4" /> Approve Result
                   </button>
                   <button
                     onClick={() => handleReview("reject")}
-                    disabled={submittingAction}
-                    className="px-3 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    disabled={submittingAction || electionModeLoading || !electionMode}
+                    className="px-3 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <XCircle className="w-4 h-4" /> Reject Result
                   </button>
                   <button
                     onClick={() => handleReview("clarify")}
-                    disabled={submittingAction}
-                    className="px-3 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    disabled={submittingAction || electionModeLoading || !electionMode}
+                    className="px-3 py-2 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <HelpCircle className="w-4 h-4" /> Request Clarification
                   </button>
                   <button
                     onClick={() => handleReview("reopen")}
-                    disabled={submittingAction}
-                    className="px-3 py-2 text-xs font-bold text-purple-800 bg-purple-100 hover:bg-purple-200 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    disabled={submittingAction || electionModeLoading || !electionMode}
+                    className="px-3 py-2 text-xs font-bold text-purple-800 bg-purple-100 hover:bg-purple-200 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RotateCcw className="w-4 h-4" /> Reopen Result
                   </button>

@@ -6,10 +6,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  KeyRound,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   Trash2,
@@ -17,18 +19,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  addDoc,
-} from "firebase/firestore";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -36,11 +27,30 @@ import { useAuth } from "@/contexts/AuthContext";
 
 import { db } from "@/lib/firebase/config";
 
+import {
+  createOrganizationalAssignment,
+  deleteOrganizationalAssignment,
+  updateOrganizationalAssignment,
+} from "@/lib/firebase/organizationalAssignments";
+
+import {
+  createPermissionGrant,
+  deletePermissionGrant,
+  updatePermissionGrant,
+} from "@/lib/firebase/permissionGrants";
+
+import {
+  updateMemberAccessRole,
+  updateMemberMembershipTypes,
+} from "@/lib/firebase/campaignMembers";
+
 import type {
+  MembershipType,
   OrganizationalAssignment,
   OrganizationalPosition,
   Permission,
   PermissionGrant,
+  Role,
   ScopeType,
   UserProfile,
 } from "@/types";
@@ -52,10 +62,19 @@ import type {
  *
  * This page is deliberately kept as ONE page.
  *
- * It manages:
+ * It is the definitive console for all four administrative
+ * entities:
  *
- *   1. Organizational assignments
- *   2. Permission grants
+ *   1. Access roles               ("users".access_role)
+ *   2. Membership types           ("users".membership_types)
+ *   3. Organizational assignments (create / read / update / delete)
+ *   4. Permission grants          (create / read / update / delete)
+ *
+ * Every write goes through the shared lib modules
+ * (src/lib/firebase/organizationalAssignments.ts,
+ *  src/lib/firebase/permissionGrants.ts,
+ *  src/lib/firebase/campaignMembers.ts) so this page and the rest of
+ * the app agree on document shape.
  *
  * IMPORTANT:
  *
@@ -93,6 +112,19 @@ const SCOPE_TYPES: ScopeType[] = [
   "senatorial_zone",
   "state",
   "campaign",
+];
+
+/*
+ * Application-level access roles.
+ *
+ * Single-tenant: only the three roles below exist. Legacy
+ * cross-organization super-admin roles are intentionally not offered.
+ */
+const ROLES: Role[] = ["admin", "member", "election_officer"];
+
+const MEMBERSHIP_TYPE_OPTIONS: MembershipType[] = [
+  "campaign_member",
+  "social_member",
 ];
 
 const PERMISSIONS: Permission[] = [
@@ -216,6 +248,52 @@ export default function CampaignCoordinationPage() {
   const [grantValue, setGrantValue] = useState(true);
 
   const [creatingGrant, setCreatingGrant] = useState(false);
+
+  /*
+   * ------------------------------------------------------------
+   * GRANT EDITOR
+   * ------------------------------------------------------------
+   */
+
+  const [editingGrantId, setEditingGrantId] = useState<string | null>(null);
+
+  const [editingGrantPermission, setEditingGrantPermission] =
+    useState<Permission>("view_dashboard");
+
+  const [editingGrantValue, setEditingGrantValue] = useState(true);
+
+  const [editingGrantScopeType, setEditingGrantScopeType] = useState<
+    ScopeType | ""
+  >("");
+
+  const [editingGrantScopeId, setEditingGrantScopeId] = useState("");
+
+  const [savingGrant, setSavingGrant] = useState(false);
+
+  /*
+   * ------------------------------------------------------------
+   * ACCESS ROLE / MEMBERSHIP EDITORS
+   * ------------------------------------------------------------
+   *
+   * Drafts are keyed by user id. An absent draft means "not edited
+   * yet", so the member's stored value is shown until they change it.
+   */
+
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, Role>>({});
+
+  const [membershipDrafts, setMembershipDrafts] = useState<
+    Record<string, MembershipType[]>
+  >({});
+
+  const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
+
+  /*
+   * ------------------------------------------------------------
+   * FEEDBACK
+   * ------------------------------------------------------------
+   */
+
+  const [success, setSuccess] = useState<string | null>(null);
 
   /*
    * ------------------------------------------------------------
@@ -370,39 +448,65 @@ export default function CampaignCoordinationPage() {
       return;
     }
 
+    const wasEditing = Boolean(editingAssignmentId);
+    const editingTarget = wasEditing
+      ? assignments.find((item) => item.id === editingAssignmentId)
+      : undefined;
+
     try {
       setCreatingAssignment(true);
       setError(null);
+      setSuccess(null);
 
-      if (editingAssignmentId) {
-        await updateDoc(doc(db, "organizational_assignments", editingAssignmentId), {
-          user_id: selectedUserId,
-          position: selectedPosition,
-          scope_type: selectedScopeType,
-          scope_id: selectedScopeId.trim(),
-          updated_at: serverTimestamp(),
-        });
+      if (wasEditing && editingAssignmentId) {
+        if (editingTarget && editingTarget.user_id !== selectedUserId) {
+          /*
+           * Re-assigning an existing record to a different member means
+           * replacing it: `user_id` is immutable once created, so the
+           * old row is removed and a fresh one is written for the new
+           * member with the same position and scope.
+           */
+          await deleteOrganizationalAssignment(editingAssignmentId);
+
+          await createOrganizationalAssignment({
+            user_id: selectedUserId,
+            position: selectedPosition,
+            scope_type: selectedScopeType,
+            scope_id: selectedScopeId.trim(),
+            status: editingTarget.status,
+            assigned_by: profile.id,
+          });
+        } else {
+          await updateOrganizationalAssignment(editingAssignmentId, {
+            position: selectedPosition,
+            scope_type: selectedScopeType,
+            scope_id: selectedScopeId.trim(),
+          });
+        }
       } else {
-        await addDoc(collection(db, "organizational_assignments"), {
+        await createOrganizationalAssignment({
           user_id: selectedUserId,
           position: selectedPosition,
           scope_type: selectedScopeType,
           scope_id: selectedScopeId.trim(),
           status: "active",
           assigned_by: profile.id,
-          assigned_at: serverTimestamp(),
-          created_at: serverTimestamp(),
-          updated_at: serverTimestamp(),
         });
       }
 
       resetAssignmentForm();
       await loadData();
+
+      setSuccess(
+        wasEditing
+          ? "Organizational assignment updated."
+          : "Organizational assignment created.",
+      );
     } catch (err) {
       console.error("Failed to save assignment:", err);
 
       setError(
-        editingAssignmentId
+        wasEditing
           ? "Unable to update organizational assignment."
           : "Unable to create organizational assignment.",
       );
@@ -419,14 +523,21 @@ export default function CampaignCoordinationPage() {
 
   async function toggleAssignment(assignment: OrganizationalAssignment) {
     try {
+      setError(null);
+
       const nextStatus = assignment.status === "active" ? "inactive" : "active";
 
-      await updateDoc(doc(db, "organizational_assignments", assignment.id), {
+      await updateOrganizationalAssignment(assignment.id, {
         status: nextStatus,
-        updated_at: serverTimestamp(),
       });
 
       await loadData();
+
+      setSuccess(
+        nextStatus === "active"
+          ? "Organizational assignment activated."
+          : "Organizational assignment deactivated.",
+      );
     } catch (err) {
       console.error("Failed to update assignment:", err);
 
@@ -442,9 +553,17 @@ export default function CampaignCoordinationPage() {
 
   async function removeAssignment(assignmentId: string) {
     try {
-      await deleteDoc(doc(db, "organizational_assignments", assignmentId));
+      setError(null);
+
+      await deleteOrganizationalAssignment(assignmentId);
+
+      if (editingAssignmentId === assignmentId) {
+        resetAssignmentForm();
+      }
 
       await loadData();
+
+      setSuccess("Organizational assignment deleted.");
     } catch (err) {
       console.error("Failed to delete assignment:", err);
 
@@ -469,8 +588,9 @@ export default function CampaignCoordinationPage() {
     try {
       setCreatingGrant(true);
       setError(null);
+      setSuccess(null);
 
-      await addDoc(collection(db, "permission_grants"), {
+      await createPermissionGrant({
         user_id: grantUserId,
         permission: grantPermission,
         granted: grantValue,
@@ -478,8 +598,6 @@ export default function CampaignCoordinationPage() {
         scope_id:
           grantScopeType && grantScopeId.trim() ? grantScopeId.trim() : null,
         granted_by: profile.id,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
       });
 
       setGrantUserId("");
@@ -487,6 +605,8 @@ export default function CampaignCoordinationPage() {
       setGrantScopeType("");
 
       await loadData();
+
+      setSuccess("Permission grant created.");
     } catch (err) {
       console.error("Failed to create permission grant:", err);
 
@@ -504,13 +624,157 @@ export default function CampaignCoordinationPage() {
 
   async function removeGrant(grantId: string) {
     try {
-      await deleteDoc(doc(db, "permission_grants", grantId));
+      setError(null);
+
+      await deletePermissionGrant(grantId);
+
+      if (editingGrantId === grantId) {
+        setEditingGrantId(null);
+      }
 
       await loadData();
+
+      setSuccess("Permission grant deleted.");
     } catch (err) {
       console.error("Failed to delete permission grant:", err);
 
       setError("Unable to delete permission grant.");
+    }
+  }
+
+  /*
+   * ------------------------------------------------------------
+   * EDIT PERMISSION GRANT
+   * ------------------------------------------------------------
+   */
+
+  function startEditGrant(grant: PermissionGrant) {
+    setEditingGrantId(grant.id);
+    setEditingGrantPermission(grant.permission);
+    setEditingGrantValue(grant.granted);
+    setEditingGrantScopeType(grant.scope_type ?? "");
+    setEditingGrantScopeId(grant.scope_id ?? "");
+    setError(null);
+    setSuccess(null);
+  }
+
+  function cancelEditGrant() {
+    setEditingGrantId(null);
+  }
+
+  async function saveGrantEdit() {
+    if (!editingGrantId) return;
+
+    try {
+      setSavingGrant(true);
+      setError(null);
+
+      await updatePermissionGrant(editingGrantId, {
+        permission: editingGrantPermission,
+        granted: editingGrantValue,
+        scope_type: editingGrantScopeType || null,
+        scope_id:
+          editingGrantScopeType && editingGrantScopeId.trim()
+            ? editingGrantScopeId.trim()
+            : null,
+      });
+
+      setEditingGrantId(null);
+      await loadData();
+
+      setSuccess("Permission grant updated.");
+    } catch (err) {
+      console.error("Failed to update permission grant:", err);
+
+      setError("Unable to update permission grant.");
+    } finally {
+      setSavingGrant(false);
+    }
+  }
+
+  /*
+   * ------------------------------------------------------------
+   * ACCESS ROLE & MEMBERSHIP TYPES
+   * ------------------------------------------------------------
+   */
+
+  function roleDraftFor(member: UserProfile): Role {
+    return roleDrafts[member.id ?? ""] ?? member.access_role;
+  }
+
+  function membershipDraftFor(member: UserProfile): MembershipType[] {
+    return membershipDrafts[member.id ?? ""] ?? member.membership_types ?? [];
+  }
+
+  function setRoleDraft(memberId: string, role: Role) {
+    setRoleDrafts((prev) => ({ ...prev, [memberId]: role }));
+  }
+
+  function toggleMembershipDraft(member: UserProfile, type: MembershipType) {
+    const memberId = member.id ?? "";
+    const current = membershipDraftFor(member);
+
+    const next = current.includes(type)
+      ? current.filter((item) => item !== type)
+      : [...current, type];
+
+    setMembershipDrafts((prev) => ({ ...prev, [memberId]: next }));
+  }
+
+  async function saveMemberAccess(member: UserProfile) {
+    const memberId = member.id;
+
+    if (!memberId) return;
+
+    try {
+      setSavingMemberId(memberId);
+      setError(null);
+
+      const role = roleDraftFor(member);
+      const memberships = membershipDraftFor(member);
+
+      if (role !== member.access_role) {
+        await updateMemberAccessRole(memberId, role);
+      }
+
+      const currentMemberships = [...(member.membership_types ?? [])].sort();
+      const nextMemberships = [...memberships].sort();
+
+      if (currentMemberships.join("|") !== nextMemberships.join("|")) {
+        await updateMemberMembershipTypes(memberId, memberships);
+      }
+
+      /*
+       * Reflect the write locally straight away — the coordinator must
+       * see the new role/memberships without waiting for a re-read.
+       */
+      setMembers((prev) =>
+        prev.map((item) =>
+          item.id === memberId
+            ? { ...item, access_role: role, membership_types: memberships }
+            : item,
+        ),
+      );
+
+      setRoleDrafts((prev) => {
+        const next = { ...prev };
+        delete next[memberId];
+        return next;
+      });
+
+      setMembershipDrafts((prev) => {
+        const next = { ...prev };
+        delete next[memberId];
+        return next;
+      });
+
+      setSuccess(`Access updated for ${member.full_name}.`);
+    } catch (err) {
+      console.error("Failed to update member access:", err);
+
+      setError("Unable to update member access.");
+    } finally {
+      setSavingMemberId(null);
     }
   }
 
@@ -613,6 +877,22 @@ export default function CampaignCoordinationPage() {
         </div>
       )}
 
+      {success && (
+        <div className="flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
+
+          <p className="text-sm text-green-700">{success}</p>
+
+          <button
+            type="button"
+            onClick={() => setSuccess(null)}
+            className="ml-auto"
+          >
+            <XCircle className="h-5 w-5 text-green-400" />
+          </button>
+        </div>
+      )}
+
       {/* ======================================================
           SUMMARY
           ====================================================== */}
@@ -642,6 +922,131 @@ export default function CampaignCoordinationPage() {
           value={grants.length}
         />
       </div>
+
+      {/* ======================================================
+          ACCESS ROLES & MEMBERSHIP TYPES
+          ====================================================== */}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <KeyRound className="h-5 w-5 text-apc-primary" />
+            Access Roles &amp; Membership Types
+          </CardTitle>
+
+          <p className="text-sm text-gray-500">
+            Set each member&apos;s application-level access role and the
+            membership types they hold. Both membership types may be held at
+            once, and an empty set is allowed.
+          </p>
+        </CardHeader>
+
+        <CardContent>
+          {loading ? (
+            <LoadingRow />
+          ) : members.length === 0 ? (
+            <EmptyState text="No members found." />
+          ) : (
+            <div className="max-h-[520px] overflow-auto">
+              <table className="w-full min-w-[760px]">
+                <thead>
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-400">
+                    <th className="px-3 py-3">Member</th>
+
+                    <th className="px-3 py-3">Access Role</th>
+
+                    <th className="px-3 py-3">Membership Types</th>
+
+                    <th className="px-3 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {members.map((member) => {
+                    const memberId = member.id ?? "";
+                    const draftRole = roleDraftFor(member);
+                    const draftMemberships = membershipDraftFor(member);
+
+                    return (
+                      <tr key={memberId} className="border-b last:border-0">
+                        <td className="px-3 py-4">
+                          <p className="font-semibold text-gray-900">
+                            {member.full_name}
+                          </p>
+
+                          <p className="text-xs text-gray-500">
+                            {member.email}
+                          </p>
+                        </td>
+
+                        <td className="px-3 py-4">
+                          <select
+                            value={draftRole}
+                            onChange={(event) =>
+                              setRoleDraft(memberId, event.target.value as Role)
+                            }
+                            aria-label={`Access role for ${member.full_name}`}
+                            className="rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-apc-primary"
+                          >
+                            {ROLES.map((role) => (
+                              <option key={role} value={role}>
+                                {humanize(role)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-3 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            {MEMBERSHIP_TYPE_OPTIONS.map((type) => {
+                              const active = draftMemberships.includes(type);
+
+                              return (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  onClick={() =>
+                                    toggleMembershipDraft(member, type)
+                                  }
+                                  aria-pressed={active}
+                                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                    active
+                                      ? "border-green-200 bg-green-50 text-green-700"
+                                      : "border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  {active ? "✓ " : ""}
+                                  {humanize(type)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => saveMemberAccess(member)}
+                            disabled={savingMemberId === memberId}
+                            className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2 text-xs font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
+                          >
+                            {savingMemberId === memberId ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Save
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ======================================================
           CREATE ASSIGNMENT
@@ -703,7 +1108,7 @@ export default function CampaignCoordinationPage() {
               label="Scope ID"
               value={selectedScopeId}
               onChange={setSelectedScopeId}
-              placeholder="e.g. nkanu-west-ward-01"
+              placeholder="e.g. ward-01 or lga-name"
             />
           </div>
 
@@ -989,46 +1394,154 @@ export default function CampaignCoordinationPage() {
           ) : (
             <div className="space-y-3">
               {grants.map((grant) => (
-                <div
-                  key={grant.id}
-                  className="flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="font-semibold text-gray-900">
-                      {memberName(grant.user_id)}
-                    </p>
-
-                    <p className="mt-1 text-sm text-gray-600">
-                      {permissionLabel(grant.permission)}
-                    </p>
-
-                    {grant.scope_type && (
-                      <p className="mt-1 text-xs text-gray-500">
-                        Scope: {scopeLabel(grant.scope_type)}
-                        {grant.scope_id ? ` — ${grant.scope_id}` : ""}
+                <div key={grant.id} className="space-y-4 rounded-xl border p-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {memberName(grant.user_id)}
                       </p>
-                    )}
+
+                      <p className="mt-1 text-sm text-gray-600">
+                        {permissionLabel(grant.permission)}
+                      </p>
+
+                      {grant.scope_type && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Scope: {scopeLabel(grant.scope_type)}
+                          {grant.scope_id ? ` — ${grant.scope_id}` : ""}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          grant.granted
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {grant.granted ? "Granted" : "Denied"}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          editingGrantId === grant.id
+                            ? cancelEditGrant()
+                            : startEditGrant(grant)
+                        }
+                        className="rounded-lg border border-blue-200 p-2 text-blue-600 hover:bg-blue-50"
+                        aria-label={`Edit grant for ${memberName(grant.user_id)}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => removeGrant(grant.id)}
+                        className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
+                        aria-label={`Delete grant for ${memberName(grant.user_id)}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        grant.granted
-                          ? "bg-green-100 text-green-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {grant.granted ? "Granted" : "Denied"}
-                    </span>
+                  {editingGrantId === grant.id && (
+                    <div className="space-y-4 rounded-xl border bg-gray-50 p-4">
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                        <SelectField
+                          label="Permission"
+                          value={editingGrantPermission}
+                          onChange={(value) =>
+                            setEditingGrantPermission(value as Permission)
+                          }
+                          options={PERMISSIONS.map((permission) => ({
+                            value: permission,
+                            label: permissionLabel(permission),
+                          }))}
+                        />
 
-                    <button
-                      type="button"
-                      onClick={() => removeGrant(grant.id)}
-                      className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                        <SelectField
+                          label="Scope"
+                          value={editingGrantScopeType}
+                          onChange={(value) =>
+                            setEditingGrantScopeType(value as ScopeType | "")
+                          }
+                          options={[
+                            {
+                              value: "",
+                              label: "Global",
+                            },
+                            ...SCOPE_TYPES.map((scope) => ({
+                              value: scope,
+                              label: scopeLabel(scope),
+                            })),
+                          ]}
+                        />
+
+                        <TextField
+                          label="Scope ID"
+                          value={editingGrantScopeId}
+                          onChange={setEditingGrantScopeId}
+                          placeholder="Optional scope ID"
+                        />
+
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-gray-700">
+                            Decision
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingGrantValue((value) => !value)
+                            }
+                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-sm font-semibold ${
+                              editingGrantValue
+                                ? "border-green-200 bg-green-50 text-green-700"
+                                : "border-red-200 bg-red-50 text-red-700"
+                            }`}
+                          >
+                            <span>
+                              {editingGrantValue ? "Granted" : "Denied"}
+                            </span>
+
+                            {editingGrantValue ? (
+                              <CheckCircle2 className="h-4 w-4" />
+                            ) : (
+                              <XCircle className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={cancelEditGrant}
+                          className="rounded-lg border px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-white"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={saveGrantEdit}
+                          disabled={savingGrant}
+                          className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
+                        >
+                          {savingGrant ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          Update Grant
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

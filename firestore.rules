@@ -160,12 +160,26 @@ service cloud.firestore {
     // ============================================================
 
     /*
-     * Single-tenant: no tenant gate. Election actions are
-     * available to any signed-in user that passes the per-rule
-     * role/scope checks below.
+     * Single-tenant: no tenant gate. Election actions are available to
+     * any signed-in user that also passes the per-rule role/scope checks
+     * below AND has the master election switch turned on.
+     *
+     * The switch lives on the single election_settings document as
+     * `election_mode_enabled` (mirrored by setElectionMode() in
+     * src/lib/firebase/election.ts). A missing document or a missing
+     * field counts as ON so a fresh deployment is never locked out.
      */
+    function electionSettingsDoc() {
+      return /databases/$(database)/documents/election_settings/default;
+    }
+
     function electionModeEnabled() {
-      return isSignedIn();
+      return isSignedIn()
+        && (
+          !exists(electionSettingsDoc())
+          || !get(electionSettingsDoc()).data.keys().hasAny(["election_mode_enabled"])
+          || get(electionSettingsDoc()).data.election_mode_enabled == true
+        );
     }
 
     function canReadElectionResult(data) {

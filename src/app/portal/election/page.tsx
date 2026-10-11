@@ -34,8 +34,9 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { getAllLGAs } from "@/lib/constants";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { assignmentCoversScope } from "@/lib/permissions";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 import {
   subscribeToElectionResults,
   correctElectionResult,
@@ -88,6 +89,7 @@ export default function ElectionDashboard() {
   const router = useRouter();
   const { profile, assignments, accessLoading } = useAuth();
   const isAdmin = profile?.access_role === "admin";
+  const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   useEffect(() => {
     if (accessLoading) return;
@@ -145,7 +147,7 @@ export default function ElectionDashboard() {
   useEffect(() => {
     async function init() {
       try {
-        const lgaData = await getAllLGAs();
+        const lgaData = await getAllEnuguLGAs();
         setLgas(lgaData);
 
         const loadedSettings = await getElectionSettings();
@@ -314,10 +316,12 @@ export default function ElectionDashboard() {
           assignmentCoversScope(
             assignment,
             { scope_type: "ward", scope_id: result.ward_id },
+            lgas,
           ) ||
           assignmentCoversScope(
             assignment,
             { scope_type: "polling_unit", scope_id: result.polling_unit_id },
+            lgas,
           ),
       );
     });
@@ -615,6 +619,18 @@ export default function ElectionDashboard() {
           >
             Refresh Page
           </button>
+        </div>
+      )}
+
+      {/* Master election mode indicator (Issue: election mode must gate activity) */}
+      {!electionModeLoading && !electionMode && (
+        <div className="p-4 bg-gray-100 text-gray-700 border border-gray-300 rounded-xl flex items-start gap-2 text-xs font-semibold">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-gray-500" />
+          <span>
+            <strong>Election mode is OFF.</strong> Election activity is paused.
+            Approved results stay readable below, but result corrections are
+            disabled until an administrator turns election mode back on.
+          </span>
         </div>
       )}
 
@@ -1062,7 +1078,13 @@ export default function ElectionDashboard() {
                                   setEditFormResults([...r.results]);
                                   setEditReason("");
                                 }}
-                                className="px-2.5 py-1 text-xs font-semibold rounded bg-apc-primary/10 text-apc-primary hover:bg-apc-primary hover:text-white transition-colors"
+                                disabled={!electionMode}
+                                title={
+                                  electionMode
+                                    ? "Correct this result"
+                                    : "Election mode is off"
+                                }
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-apc-primary/10 text-apc-primary hover:bg-apc-primary hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-apc-primary/10 disabled:hover:text-apc-primary"
                               >
                                 Correct
                               </button>
@@ -1234,10 +1256,17 @@ export default function ElectionDashboard() {
               </button>
               <button
                 onClick={handleSaveCorrection}
-                disabled={savingEdit}
-                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg bg-apc-primary text-white hover:bg-apc-dark disabled:opacity-50"
+                disabled={savingEdit || !electionMode}
+                title={
+                  electionMode ? "Save correction" : "Election mode is off"
+                }
+                className="inline-flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg bg-apc-primary text-white hover:bg-apc-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingEdit ? "Saving..." : "Save Correction"}
+                {savingEdit
+                  ? "Saving..."
+                  : electionMode
+                    ? "Save Correction"
+                    : "Election Mode Off"}
               </button>
             </div>
           </div>

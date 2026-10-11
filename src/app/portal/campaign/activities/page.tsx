@@ -779,7 +779,7 @@ function CreateActivityForm({
                     required
                     value={adminScopeId}
                     onChange={(event) => setAdminScopeId(event.target.value)}
-                    placeholder="e.g. nkanu-west-ward-01"
+                    placeholder="e.g. ward-01 or lga-name"
                     className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
                   />
                 </div>

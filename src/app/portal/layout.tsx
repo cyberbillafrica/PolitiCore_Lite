@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
 import { getElectoralLocation } from "@/lib/constants";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 
 import type { Ward, PollingUnit } from "@/data/electoral";
 import type { Permission, UserProfile } from "@/types";
@@ -327,7 +328,13 @@ export default function PortalLayout({
 
   const canViewElectionDashboard = isAdmin;
 
-  const electionMode = true;
+  /*
+   * Master election switch, read live from the single
+   * `election_settings` document. When OFF the election navigation is
+   * greyed out and route-disabled below; the same flag is enforced
+   * server-side by `electionModeEnabled()` in firestore.rules.
+   */
+  const { electionMode } = useElectionMode();
 
   const [campaignOpen, setCampaignOpen] = useState(() =>
     pathname.startsWith("/portal/campaign"),

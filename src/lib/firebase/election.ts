@@ -168,20 +168,28 @@ export async function getElectionSettings(): Promise<ElectionSettings | null> {
   return {
     active_election_cycle_id: DEFAULT_ELECTION_CYCLE_2027.id,
     active_contest_id: DEFAULT_CONTESTS_2027[0].id,
+    election_mode_enabled: true,
   };
 }
 
 export function subscribeToElectionSettings(
-  onData: (settings: ElectionSettings | null) => void
+  onData: (settings: ElectionSettings | null) => void,
+  onError?: (error: Error) => void
 ): Unsubscribe {
   const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
-  return onSnapshot(docRef, (snap) => {
-    if (snap.exists()) {
-      onData({ id: snap.id, ...snap.data() } as ElectionSettings);
-    } else {
-      onData(null);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        onData({ id: snap.id, ...snap.data() } as ElectionSettings);
+      } else {
+        onData(null);
+      }
+    },
+    (error) => {
+      onError?.(error);
     }
-  });
+  );
 }
 
 export async function setActiveCollationContest(data: {
@@ -196,6 +204,24 @@ export async function setActiveCollationContest(data: {
       active_election_cycle_id: data.activeCycleId,
       active_contest_id: data.activeContestId,
       updated_by: data.userId,
+      updated_at: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+/*
+ * Master election switch. Persisted on the single election_settings
+ * document so both the UI (navigation + action buttons) and
+ * `electionModeEnabled()` in firestore.rules read the same flag.
+ */
+export async function setElectionMode(enabled: boolean, userId: string) {
+  const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
+  await setDoc(
+    docRef,
+    {
+      election_mode_enabled: enabled,
+      updated_by: userId,
       updated_at: serverTimestamp(),
     },
     { merge: true }

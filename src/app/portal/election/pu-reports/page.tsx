@@ -8,8 +8,10 @@ import {
   type PUReportDoc,
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getAllLGAs } from "@/lib/constants";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import { deriveLgaIdFromWard } from "@/lib/election-scope";
 import { assignmentCoversScope } from "@/lib/permissions";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,12 +27,10 @@ import {
   Lock,
 } from "lucide-react";
 
-// Default LGA for campaign members.
-const CAMPAIGN_LGA_ID = "nkanu-west";
-
 export default function PUReportsPage() {
   const { profile, assignments, accessLoading } = useAuth();
   const isAdmin = profile?.access_role === "admin";
+  const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   const [lgas, setLgas] = useState<LGA[]>([]);
   const [reports, setReports] = useState<PUReportDoc[]>([]);
@@ -43,8 +43,13 @@ export default function PUReportsPage() {
   const [formError, setFormError] = useState("");
   const [successMsg, setSuccessMessage] = useState("");
 
+  /*
+   * No LGA is assumed. The submitter's LGA is their registered LGA — or
+   * the LGA that owns their registered ward — resolved once the Enugu
+   * State LGA list has loaded.
+   */
   const [form, setForm] = useState({
-    lga_id: CAMPAIGN_LGA_ID,
+    lga_id: "",
     ward_id: profile?.ward_id ?? "",
     polling_unit_id: profile?.polling_unit_id ?? "",
     report_type: "conduct" as PUReportDoc["report_type"],
@@ -58,11 +63,25 @@ export default function PUReportsPage() {
   // Load LGAs
   useEffect(() => {
     async function loadLgas() {
-      const data = await getAllLGAs();
+      const data = await getAllEnuguLGAs();
       setLgas(data);
     }
     loadLgas();
   }, []);
+
+  const resolvedLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
+
+  /*
+   * Fill the LGA once the LGA list is known, but only when it is still
+   * empty so an explicit choice is never overwritten.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!resolvedLgaId) return;
+
+    setForm((prev) => (prev.lga_id ? prev : { ...prev, lga_id: resolvedLgaId }));
+  }, [resolvedLgaId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Real-time PU Reports Listener
   useEffect(() => {
@@ -100,10 +119,12 @@ export default function PUReportsPage() {
           assignmentCoversScope(
             a,
             { scope_type: "ward", scope_id: r.ward_id },
+            lgas,
           ) ||
           assignmentCoversScope(
             a,
             { scope_type: "polling_unit", scope_id: r.polling_unit_id },
+            lgas,
           ),
       ) || r.submitted_by === profile?.id
     );
@@ -121,6 +142,13 @@ export default function PUReportsPage() {
     e.preventDefault();
     setFormError("");
     setSuccessMessage("");
+
+    if (electionModeLoading || !electionMode) {
+      setFormError(
+        "Election mode is currently OFF. PU report submission is disabled.",
+      );
+      return;
+    }
 
     if (!form.ward_id || !form.polling_unit_id) {
       setFormError("Ward and polling unit are required.");
@@ -172,7 +200,7 @@ export default function PUReportsPage() {
       setSuccessMessage("Polling unit report submitted successfully!");
       setShowForm(false);
       setForm({
-        lga_id: CAMPAIGN_LGA_ID,
+        lga_id: resolvedLgaId,
         ward_id: profile?.ward_id ?? "",
         polling_unit_id: profile?.polling_unit_id ?? "",
         report_type: "conduct",
@@ -224,6 +252,16 @@ export default function PUReportsPage() {
           {showForm ? "Cancel" : "Submit PU Report"}
         </button>
       </div>
+
+      {!electionModeLoading && !electionMode && (
+        <div className="flex items-start gap-2 rounded-lg border border-gray-300 bg-gray-100 p-4 text-sm font-medium text-gray-700">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>Election mode is OFF.</strong> Polling unit reports are
+            read-only until an administrator turns election mode back on.
+          </span>
+        </div>
+      )}
 
       {successMsg && (
         <div className="flex items-center gap-2 p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 text-sm">
@@ -427,7 +465,7 @@ export default function PUReportsPage() {
 
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || electionModeLoading || !electionMode}
                   className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-2 text-sm font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
                 >
                   {submitting ? (

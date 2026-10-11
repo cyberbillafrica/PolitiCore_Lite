@@ -8,8 +8,10 @@ import {
   type ElectionIncidentDoc,
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getAllLGAs } from "@/lib/constants";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import { deriveLgaIdFromWard } from "@/lib/election-scope";
 import { assignmentCoversScope } from "@/lib/permissions";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,11 +26,9 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
-// Default LGA for campaign members.
-const CAMPAIGN_LGA_ID = "nkanu-west";
-
 export default function IncidentsPage() {
   const { profile, assignments, accessLoading } = useAuth();
+  const { electionMode, loading: electionModeLoading } = useElectionMode();
   const isAdmin = profile?.access_role === "admin";
 
   const [lgas, setLgas] = useState<LGA[]>([]);
@@ -42,8 +42,13 @@ export default function IncidentsPage() {
   const [formError, setFormError] = useState("");
   const [successMsg, setSuccessMessage] = useState("");
 
+  /*
+   * No LGA is assumed. The LGA is the reporter's registered LGA (or the
+   * LGA owning their registered ward) and is resolved once the Enugu
+   * State LGA list has loaded.
+   */
   const [form, setForm] = useState({
-    lga_id: CAMPAIGN_LGA_ID,
+    lga_id: "",
     ward_id: profile?.ward_id ?? "",
     polling_unit_id: profile?.polling_unit_id ?? "",
     incident_type: "bavas_malfunction" as ElectionIncidentDoc["incident_type"],
@@ -54,14 +59,30 @@ export default function IncidentsPage() {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
 
-  // Load LGAs
+  // Load the state-wide LGA list
   useEffect(() => {
     async function loadLgas() {
-      const data = await getAllLGAs();
+      const data = await getAllEnuguLGAs();
       setLgas(data);
     }
     loadLgas();
   }, []);
+
+  const resolvedLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
+
+  /*
+   * Place the reporter in their own LGA once the list is known. Only
+   * fills an empty value, so an explicit choice is never overwritten.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!resolvedLgaId) return;
+
+    setForm((prev) =>
+      prev.lga_id ? prev : { ...prev, lga_id: resolvedLgaId },
+    );
+  }, [resolvedLgaId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Real-time Incidents Listener
   useEffect(() => {
@@ -99,6 +120,7 @@ export default function IncidentsPage() {
         assignmentCoversScope(
           a,
           { scope_type: "ward", scope_id: inc.ward_id },
+          lgas,
         ),
       ) || inc.reported_by === profile?.id
     );
@@ -116,6 +138,13 @@ export default function IncidentsPage() {
     e.preventDefault();
     setFormError("");
     setSuccessMessage("");
+
+    if (!electionMode) {
+      setFormError(
+        "Election mode is currently OFF. Incident reporting is disabled.",
+      );
+      return;
+    }
 
     if (!form.ward_id) {
       setFormError("Ward is required.");
@@ -164,7 +193,7 @@ export default function IncidentsPage() {
       setSuccessMessage("Election incident reported successfully!");
       setShowForm(false);
       setForm({
-        lga_id: CAMPAIGN_LGA_ID,
+        lga_id: resolvedLgaId,
         ward_id: profile?.ward_id ?? "",
         polling_unit_id: profile?.polling_unit_id ?? "",
         incident_type: "bavas_malfunction",
@@ -212,12 +241,23 @@ export default function IncidentsPage() {
             setFormError("");
             setSuccessMessage("");
           }}
-          className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+          disabled={electionModeLoading || !electionMode}
+          className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
         >
           <AlertTriangle className="h-4 w-4" />
           {showForm ? "Cancel" : "Report Incident"}
         </button>
       </div>
+
+      {!electionModeLoading && !electionMode && (
+        <div className="flex items-start gap-2 p-4 bg-gray-100 text-gray-700 rounded-lg border border-gray-300 text-sm">
+          <ShieldAlert className="h-5 w-5 shrink-0" />
+          <span>
+            <strong>Election mode is OFF.</strong> Incident reporting is
+            disabled until an administrator turns election mode back on.
+          </span>
+        </div>
+      )}
 
       {successMsg && (
         <div className="flex items-center gap-2 p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 text-sm">
@@ -433,8 +473,8 @@ export default function IncidentsPage() {
 
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  disabled={submitting || electionModeLoading || !electionMode}
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <>

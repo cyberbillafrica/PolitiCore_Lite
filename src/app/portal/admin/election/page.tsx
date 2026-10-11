@@ -14,10 +14,12 @@ import {
   createPoliticalParty,
   getElectionSettings,
   setActiveCollationContest,
+  setElectionMode as persistElectionMode,
   getCandidatesByContest,
   createCandidate,
 } from "@/lib/firebase/election";
-import { getAllLGAs } from "@/lib/constants";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import { describeContestScope } from "@/lib/election-scope";
 import type {
   ElectionCycle,
   ElectionContest,
@@ -112,7 +114,15 @@ export default function AdminElectionManagementPage() {
     running_mate_name: "",
   });
 
-  // Unified Election Mode Toggle
+  /*
+   * Unified Election Mode Toggle.
+   *
+   * The value lives on the single `election_settings` document as
+   * `election_mode_enabled` and is hydrated from there on load — it is
+   * no longer page-local state. `electionModeEnabled()` in
+   * firestore.rules reads the same flag, so the UI and the security
+   * boundary cannot drift apart.
+   */
   const [electionMode, setElectionMode] = useState<boolean>(true);
 
   const [submitting, setSubmitting] = useState(false);
@@ -134,14 +144,16 @@ export default function AdminElectionManagementPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const lgaData = await getAllLGAs();
+        const lgaData = await getAllEnuguLGAs();
         setLgas(lgaData);
 
         const loadedSettings = await getElectionSettings();
         setSettings(loadedSettings);
 
-        // Election mode is local to this page; the Firestore rules
-        // gate submissions on a signed-in caller.
+        // Hydrate the master election switch from the settings document.
+        // A missing field counts as ON so an unconfigured deployment is
+        // never locked out of its own election surfaces.
+        setElectionMode(loadedSettings?.election_mode_enabled !== false);
 
         const loadedCycles = await getElectionCycles();
         setCycles(loadedCycles);
@@ -192,7 +204,11 @@ export default function AdminElectionManagementPage() {
     setSubmitting(true);
     setFeedback(null);
     try {
+      await persistElectionMode(enabled, profile.id || "admin");
       setElectionMode(enabled);
+      setSettings((prev) =>
+        prev ? { ...prev, election_mode_enabled: enabled } : prev,
+      );
       setFeedback({
         type: "success",
         text: `Election Mode has been ${enabled ? "ENABLED" : "DISABLED"} system-wide.`,
@@ -477,6 +493,97 @@ export default function AdminElectionManagementPage() {
           <span>{feedback.text}</span>
         </div>
       )}
+
+      {/*
+        ELECTION SETTINGS
+
+        The consolidated settings surface. The active contest selected
+        here is what every other election screen reads through
+        `useActiveContest()` to derive its geographic scope, so this is
+        the single place scope is decided. All three values persist to
+        the election_settings document.
+      */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Vote className="w-5 h-5 text-apc-primary" />
+          <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+            Election Settings
+          </h2>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-4 text-xs">
+          <div>
+            <label className="block font-semibold text-gray-600 mb-1.5">
+              Active Election Cycle
+            </label>
+            <select
+              value={selectedCycleId}
+              onChange={(e) => setSelectedCycleId(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary"
+            >
+              {cycles.map((cy) => (
+                <option key={cy.id} value={cy.id}>
+                  {cy.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-600 mb-1.5">
+              Active Contest (defines operational scope)
+            </label>
+            <select
+              value={settings?.active_contest_id ?? ""}
+              disabled={submitting || contests.length === 0}
+              onChange={(e) => handleSetActiveContest(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary disabled:bg-gray-100"
+            >
+              <option value="">Select active contest</option>
+              {contests.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.contest_type})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-600 mb-1.5">
+              Election Mode
+            </label>
+            <button
+              type="button"
+              onClick={() => handleToggleElectionMode(!electionMode)}
+              disabled={submitting}
+              className={`w-full px-3 py-2.5 rounded-lg font-bold text-white transition-colors disabled:opacity-50 ${
+                electionMode
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-red-600 hover:bg-red-700"
+              }`}
+            >
+              {electionMode ? "ENABLED (Live)" : "DISABLED (Off)"}
+            </button>
+          </div>
+        </div>
+
+        <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+          <p>
+            <span className="font-semibold">Operational scope:</span>{" "}
+            {describeContestScope(
+              contests.find((c) => c.id === settings?.active_contest_id) ?? null,
+              lgas,
+            )}
+          </p>
+          <p className="text-gray-500">
+            When election mode is OFF, election navigation and submissions are
+            disabled portal-wide and blocked by Firestore rules. Every
+            geographic boundary — registration, member add, assignments,
+            results, PU reports and incidents — follows the active contest's
+            scope, never a fixed LGA.
+          </p>
+        </div>
+      </div>
 
       {/* Cycle Selector Bar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap items-center justify-between gap-4">

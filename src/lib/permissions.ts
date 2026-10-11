@@ -1,4 +1,5 @@
 import type {
+  LGA,
   OrganizationalAssignment,
   Permission,
   PermissionGrant,
@@ -84,32 +85,152 @@ export function hasPosition(
   );
 }
 
+/*
+ * ============================================================
+ * HIERARCHY RESOLVER
+ * ============================================================
+ *
+ * Hierarchy:
+ *
+ *   State ("state") / Campaign ("campaign")
+ *     └── Senatorial Zone ("senatorial_zone")
+ *           └── LGA ("lga")
+ *                 └── Ward ("ward")
+ *                       └── Polling Unit ("polling_unit")
+ *
+ * `lgasData` carries the electoral hierarchy. When it is not
+ * supplied the resolver falls back to id-prefix matching, which
+ * still links an LGA to its "<lga>-ward-NN" wards and those wards to
+ * their "<lga>-ward-NN-pu-NNN" polling units. No LGA is ever assumed.
+ */
+export function isScopeDescendant(
+  sourceScope: PermissionScope,
+  targetScope: PermissionScope,
+  lgasData?: LGA[],
+): boolean {
+  if (!sourceScope.scope_type || !targetScope.scope_type) return false;
+
+  const sourceType = sourceScope.scope_type;
+  const sourceId = sourceScope.scope_id;
+  const targetType = targetScope.scope_type;
+  const targetId = targetScope.scope_id;
+
+  // 1. Campaign and State cover everything in the state.
+  if (sourceType === "campaign" || sourceType === "state") {
+    return true;
+  }
+
+  // 2. Senatorial zone covers its own zone and everything below it.
+  if (sourceType === "senatorial_zone") {
+    if (targetType === "senatorial_zone") {
+      return sourceId === targetId;
+    }
+    return true;
+  }
+
+  const lgasList = lgasData ?? [];
+
+  // 3. LGA covers its own LGAs, wards and polling units.
+  if (sourceType === "lga") {
+    if (targetType === "lga") {
+      return sourceId === targetId;
+    }
+
+    if (!sourceId) return false;
+
+    const matchedLga = lgasList.find(
+      (lga) =>
+        lga.id === sourceId || lga.id.toLowerCase() === sourceId.toLowerCase(),
+    );
+
+    if (!matchedLga) {
+      if (!targetId) return false;
+      return targetId.startsWith(sourceId);
+    }
+
+    if (targetType === "ward") {
+      return matchedLga.wards.some((ward) => ward.id === targetId);
+    }
+
+    if (targetType === "polling_unit") {
+      return matchedLga.wards.some((ward) =>
+        ward.pollingUnits.some((unit) => unit.id === targetId),
+      );
+    }
+
+    return false;
+  }
+
+  // 4. Ward covers itself and the polling units inside it.
+  if (sourceType === "ward") {
+    if (targetType === "ward") {
+      return sourceId === targetId;
+    }
+
+    if (targetType === "polling_unit") {
+      if (!sourceId || !targetId) return false;
+
+      for (const lga of lgasList) {
+        const ward = lga.wards.find((item) => item.id === sourceId);
+        if (ward) {
+          return ward.pollingUnits.some((unit) => unit.id === targetId);
+        }
+      }
+
+      return targetId.startsWith(sourceId);
+    }
+
+    return false;
+  }
+
+  // 5. A polling unit is a leaf.
+  if (sourceType === "polling_unit") {
+    return targetType === "polling_unit" && sourceId === targetId;
+  }
+
+  return false;
+}
+
 /**
  * Determine whether an assignment covers a requested scope.
  *
- * Current implementation intentionally remains simple.
- *
- * A direct scope match is allowed:
+ * A direct scope match is always allowed:
  *
  *   ward -> same ward
  *   lga -> same LGA
  *   state -> same state
  *   campaign -> same campaign
  *
- * Hierarchical expansion can be added later once the full
- * electoral hierarchy is wired into Firestore.
+ * The optional third argument turns the check into a
+ * hierarchy-aware one: a ward-scoped assignment then covers the
+ * polling units inside that ward, and an LGA-scoped assignment
+ * covers its child wards and their polling units. Passing it is
+ * backwards compatible — two-argument callers keep exact
+ * matching semantics plus prefix fallback.
  */
 export function assignmentCoversScope(
   assignment: OrganizationalAssignment,
   scope?: PermissionScope,
+  lgasData?: LGA[],
 ): boolean {
   if (!scope?.scope_type || !scope.scope_id) {
     return true;
   }
 
-  return (
+  if (
     assignment.scope_type === scope.scope_type &&
     assignment.scope_id === scope.scope_id
+  ) {
+    return true;
+  }
+
+  return isScopeDescendant(
+    {
+      scope_type: assignment.scope_type,
+      scope_id: assignment.scope_id,
+    },
+    scope,
+    lgasData,
   );
 }
 

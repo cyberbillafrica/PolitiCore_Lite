@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -11,7 +11,12 @@ import {
   getElectionSettings,
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getAllLGAs } from "@/lib/constants";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import {
+  deriveLgaIdFromWard,
+  isWithinContestScope,
+} from "@/lib/election-scope";
+import { useElectionMode } from "@/hooks/useElectionEngine";
 import type {
   LGA,
   ElectionCycle,
@@ -28,11 +33,10 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
-const CAMPAIGN_LGA_ID = "nkanu-west";
-
 export default function ElectionUploadPage() {
   const router = useRouter();
   const { profile, loading: authLoading } = useAuth();
+  const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   useEffect(() => {
     if (authLoading) return;
@@ -65,8 +69,13 @@ export default function ElectionUploadPage() {
   const [selectedCycleId, setSelectedCycleId] = useState<string>("");
   const [selectedContestId, setSelectedContestId] = useState<string>("");
 
+  /*
+   * No LGA is assumed. The LGA is the member's registered LGA (or the
+   * LGA owning their registered ward) and is resolved once the Enugu
+   * State LGA list has loaded.
+   */
   const [form, setForm] = useState({
-    lga_id: CAMPAIGN_LGA_ID,
+    lga_id: "",
     ward_id: isAdminOrElectionOfficer ? "" : (profile?.ward_id ?? ""),
     polling_unit_id: isAdminOrElectionOfficer
       ? ""
@@ -88,7 +97,7 @@ export default function ElectionUploadPage() {
   useEffect(() => {
     async function initData() {
       try {
-        const lgaData = await getAllLGAs();
+        const lgaData = await getAllEnuguLGAs();
         setLgas(lgaData);
 
         const loadedSettings = await getElectionSettings();
@@ -130,37 +139,66 @@ export default function ElectionUploadPage() {
     });
   }, [selectedCycleId]);
 
+  /*
+   * Place the submitter in the LGA that owns their registered ward once
+   * the LGA list is known. Only fills an empty value, so an
+   * administrator's explicit choice is never overwritten. No LGA is
+   * assumed when the ward cannot be resolved.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (lgas.length === 0) return;
+
+    const resolvedLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
+
+    if (!resolvedLgaId) return;
+
+    setForm((prev) => (prev.lga_id ? prev : { ...prev, lga_id: resolvedLgaId }));
+  }, [lgas, profile?.ward_id]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   // Selected Contest Details & Tracked Parties
   const currentContest = contests.find((c) => c.id === selectedContestId);
   const currentCycle = cycles.find((c) => c.id === selectedCycleId);
 
   const trackedPartiesList = currentContest?.tracked_parties ?? [];
 
-  const trackedPartyObjects = trackedPartiesList.map((pid) => {
-    const pObj = allParties.find(
-      (p) => p.id === pid.toLowerCase() || p.acronym.toLowerCase() === pid.toLowerCase()
-    );
-    return (
-      pObj || {
-        id: pid,
-        acronym: pid.toUpperCase(),
-        name: pid.toUpperCase(),
-        inec_registered: true,
-        status: "active" as const,
-      }
-    );
-  });
+  /*
+   * `trackedPartiesList` is a fresh array on every render, so this list
+   * must be memoised on a string projection of it. Without the memo the
+   * reset effect below re-ran on every render, wrote a brand-new
+   * `partyVotes` object each time, and put the page in an infinite
+   * render loop that froze the whole portal.
+   */
+  const trackedPartiesKey = trackedPartiesList.join("|");
+
+  const trackedPartyObjects = useMemo(() => {
+    return trackedPartiesList.map((pid) => {
+      const pObj = allParties.find(
+        (p) => p.id === pid.toLowerCase() || p.acronym.toLowerCase() === pid.toLowerCase()
+      );
+      return (
+        pObj || {
+          id: pid,
+          acronym: pid.toUpperCase(),
+          name: pid.toUpperCase(),
+          inec_registered: true,
+          status: "active" as const,
+        }
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedPartiesKey, allParties]);
 
   // Reset/Initialize party vote object when contest changes
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!currentContest) return;
     const initialVotes: Record<string, number> = {};
     for (const p of trackedPartyObjects) {
       initialVotes[p.id] = 0;
     }
     setPartyVotes(initialVotes);
-  }, [selectedContestId, currentContest, trackedPartyObjects]);
+  }, [selectedContestId, trackedPartiesKey, trackedPartyObjects]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const selectedLga = lgas.find((lga) => lga.id === form.lga_id);
@@ -170,7 +208,8 @@ export default function ElectionUploadPage() {
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
   // Resolved names for member reporting area
-  const memberLga = lgas.find((lga) => lga.id === (CAMPAIGN_LGA_ID));
+  const memberLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
+  const memberLga = lgas.find((lga) => lga.id === memberLgaId);
   const memberWard = memberLga?.wards.find((w) => w.id === profile?.ward_id);
   const memberPollingUnit = memberWard?.pollingUnits.find(
     (pu) => pu.id === profile?.polling_unit_id,
@@ -188,6 +227,13 @@ export default function ElectionUploadPage() {
     e.preventDefault();
     setError("");
     setMessage("");
+
+    if (!electionMode) {
+      setError(
+        "Election mode is currently OFF. Result submission is disabled.",
+      );
+      return;
+    }
 
     if (!selectedContestId || !currentContest) {
       setError("Active Election Contest is required.");
@@ -217,32 +263,16 @@ export default function ElectionUploadPage() {
       }
     }
 
-    // Validate polling unit belongs to contest scope
-    const parentLgaId = form.lga_id;
-    if ((currentContest.scope_type as string) === "lga") {
-      if (
-        parentLgaId &&
-        currentContest.scope_id &&
-        parentLgaId.toLowerCase() !== currentContest.scope_id.toLowerCase()
-      ) {
-        setError("This polling unit is not within the scope of the selected contest.");
-        return;
-      }
-    } else if (
-      currentContest.scope_type === "federal_constituency" ||
-      currentContest.scope_type === "state_constituency"
+    /*
+     * Validate that the polling unit's LGA sits inside the active
+     * contest's scope. The boundary comes from the contest
+     * (scope_type / scope_id / lga_ids) — never from a fixed LGA.
+     */
+    if (
+      !isWithinContestScope(currentContest, { lgaId: form.lga_id }, lgas)
     ) {
-      if (
-        currentContest.lga_ids &&
-        currentContest.lga_ids.length > 0 &&
-        parentLgaId &&
-        !currentContest.lga_ids.some(
-          (id) => id.toLowerCase() === parentLgaId.toLowerCase()
-        )
-      ) {
-        setError("This polling unit is not within the scope of the selected contest.");
-        return;
-      }
+      setError("This polling unit is not within the scope of the selected contest.");
+      return;
     }
 
     // Format party vote payload
@@ -344,6 +374,16 @@ export default function ElectionUploadPage() {
           Submit official polling-unit result sheets for active election contests.
         </p>
       </div>
+
+      {!electionModeLoading && !electionMode && (
+        <div className="flex items-start gap-2 p-4 bg-gray-100 text-gray-700 rounded-xl border border-gray-300 text-xs font-medium">
+          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            <strong>Election mode is OFF.</strong> Result upload is disabled
+            until an administrator turns election mode back on.
+          </span>
+        </div>
+      )}
 
       {/* Prominent Election & Contest Header Specs (Sec 20 Requirement) */}
       <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3">
@@ -629,8 +669,13 @@ export default function ElectionUploadPage() {
 
         <button
           type="submit"
-          disabled={submitting || trackedPartyObjects.length === 0}
-          className="w-full bg-apc-primary text-white py-3 rounded-xl font-bold hover:bg-apc-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+          disabled={
+            submitting ||
+            trackedPartyObjects.length === 0 ||
+            electionModeLoading ||
+            !electionMode
+          }
+          className="w-full bg-apc-primary text-white py-3 rounded-xl font-bold hover:bg-apc-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
         >
           {submitting ? (
             <>

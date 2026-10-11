@@ -74,6 +74,7 @@ import {
   deletePermissionGrant,
 } from "@/lib/firebase/permissionGrants";
 import { nkanuWestElectoralData } from "@/data/electoral";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 
 import type {
   OrganizationalAssignment,
@@ -978,8 +979,31 @@ function AssignmentManager({
   const [scopeId, setScopeId] = useState<string>("");
   const [status, setStatus] = useState<"active" | "inactive">("active");
 
-  // Get available wards for Nkanu West
+  // Bundled ward list, used only when no LGA has been chosen yet.
   const wards = nkanuWestElectoralData;
+
+  /*
+   * LGAs come from the seeded Enugu State electoral data, never from a
+   * hardcoded one, so an LGA-coordinator assignment can target any LGA
+   * in the state instead of being pinned to a single one.
+   */
+  const [lgas, setLgas] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getAllEnuguLGAs()
+      .then((data) => {
+        if (!cancelled) setLgas(data);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to load the Enugu State LGA list:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Validate position/scope combination
   const isValidCombination = () => {
@@ -1004,12 +1028,9 @@ function AssignmentManager({
       return;
     }
 
+    // The chosen scope id is used as-is: no LGA is ever substituted.
+    // (State and senatorial-zone keep their single canonical ids below.)
     let finalScopeId = scopeId;
-
-    // For LGA coordinator in Nkanu West, use a standard identifier
-    if (position === "lga_coordinator" && scopeType === "lga") {
-      finalScopeId = "nkanu-west-lga";
-    }
 
     // For state coordinator
     if (position === "state_coordinator" && scopeType === "state") {
@@ -1053,7 +1074,12 @@ function AssignmentManager({
         <Label>Scope Type</Label>
         <Select
           value={scopeType}
-          onValueChange={(v) => setScopeType(v as ScopeType)}
+          onValueChange={(v) => {
+            setScopeType(v as ScopeType);
+            // A scope id only means something for the type it was picked
+            // for, so clear it whenever the type changes.
+            setScopeId("");
+          }}
         >
           <SelectTrigger>
             <SelectValue />
@@ -1082,6 +1108,27 @@ function AssignmentManager({
               {wards.map((ward) => (
                 <SelectItem key={ward.id} value={ward.id}>
                   {ward.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {scopeType === "lga" && (
+        <div className="grid gap-2">
+          <Label>LGA</Label>
+          <Select
+            value={scopeId}
+            onValueChange={(value) => setScopeId(value ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select an LGA" />
+            </SelectTrigger>
+            <SelectContent>
+              {lgas.map((lga) => (
+                <SelectItem key={lga.id} value={lga.id}>
+                  {lga.name}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
+import { getAllLGAs as getBundledLGAs } from "@/lib/constants";
 import type {
   EnuguStateElectoralData,
   LGA,
@@ -30,11 +31,31 @@ export async function getEnuguElectoralData(): Promise<EnuguStateElectoralData |
 }
 
 /**
- * Retrieves all LGAs in Enugu State.
+ * Retrieves all LGAs in Enugu State from the seeded document.
  */
 export async function getLGAs(): Promise<LGA[]> {
   const data = await getEnuguElectoralData();
   return data?.lgas ?? [];
+}
+
+/**
+ * Every LGA in Enugu State — the state-wide list all election
+ * surfaces must scope against.
+ *
+ * Prefers the seeded `electoral_data/enugu-state` document (all 17
+ * LGAs, written by scripts/seed-electoral-data.ts). When that document
+ * is not seeded yet it falls back to the bundled ward/PU dataset so the
+ * election pages still function offline instead of rendering an empty
+ * geographic selector.
+ */
+export async function getAllEnuguLGAs(): Promise<LGA[]> {
+  const seeded = await getLGAs();
+
+  if (seeded.length > 0) {
+    return seeded;
+  }
+
+  return getBundledLGAs();
 }
 
 /**
