@@ -9,7 +9,6 @@ import {
   type ElectionResultDoc,
 } from "@/lib/firebase/election";
 import { generateElectionExportPackage } from "@/lib/electionExport";
-import { CURRENT_TENANT_ID } from "@/lib/firebase/tenants";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ElectionCycle, ElectionContest } from "@/types";
 import {
@@ -67,7 +66,6 @@ export default function ElectionExportPage() {
   useEffect(() => {
     if (!selectedContestId) return;
     const unsubscribe = subscribeToElectionResults(
-      CURRENT_TENANT_ID,
       (docs) => {
         const filtered = docs.filter((d) => d.contest_id === selectedContestId);
         setResults(filtered);

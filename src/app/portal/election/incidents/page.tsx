@@ -9,7 +9,7 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllLGAs } from "@/lib/constants";
-import { assignmentCoversScope, isAdminUser } from "@/lib/permissions";
+import { assignmentCoversScope } from "@/lib/permissions";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,9 +24,12 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
+// Default LGA for campaign members.
+const CAMPAIGN_LGA_ID = "nkanu-west";
+
 export default function IncidentsPage() {
   const { profile, assignments, accessLoading } = useAuth();
-  const isAdmin = isAdminUser(profile);
+  const isAdmin = profile?.access_role === "admin";
 
   const [lgas, setLgas] = useState<LGA[]>([]);
   const [incidents, setIncidents] = useState<ElectionIncidentDoc[]>([]);
@@ -40,7 +43,7 @@ export default function IncidentsPage() {
   const [successMsg, setSuccessMessage] = useState("");
 
   const [form, setForm] = useState({
-    lga_id: profile?.lga_id ?? "nkanu-west",
+    lga_id: CAMPAIGN_LGA_ID,
     ward_id: profile?.ward_id ?? "",
     polling_unit_id: profile?.polling_unit_id ?? "",
     incident_type: "bavas_malfunction" as ElectionIncidentDoc["incident_type"],
@@ -62,10 +65,7 @@ export default function IncidentsPage() {
 
   // Real-time Incidents Listener
   useEffect(() => {
-    if (!profile?.tenant_id) return;
-
     const unsubscribe = subscribeToElectionIncidents(
-      profile.tenant_id,
       (docs) => {
         setIncidents(docs);
         setLoading(false);
@@ -80,7 +80,7 @@ export default function IncidentsPage() {
     );
 
     return () => unsubscribe();
-  }, [profile?.tenant_id]);
+  }, []);
 
   const selectedLga = lgas.find((l) => l.id === form.lga_id);
   const wards = selectedLga?.wards ?? [];
@@ -99,7 +99,6 @@ export default function IncidentsPage() {
         assignmentCoversScope(
           a,
           { scope_type: "ward", scope_id: inc.ward_id },
-          lgas,
         ),
       ) || inc.reported_by === profile?.id
     );
@@ -165,7 +164,7 @@ export default function IncidentsPage() {
       setSuccessMessage("Election incident reported successfully!");
       setShowForm(false);
       setForm({
-        lga_id: profile?.lga_id ?? "nkanu-west",
+        lga_id: CAMPAIGN_LGA_ID,
         ward_id: profile?.ward_id ?? "",
         polling_unit_id: profile?.polling_unit_id ?? "",
         incident_type: "bavas_malfunction",

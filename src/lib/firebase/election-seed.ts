@@ -145,7 +145,7 @@ export const INEC_2027_POLITICAL_PARTIES: PoliticalParty[] = [
 
 export const DEFAULT_ELECTION_CYCLE_2027: Omit<
   ElectionCycle,
-  "tenant_id" | "created_by"
+  "created_by"
 > = {
   id: "general-election-2027",
   name: "2027 General Elections",
@@ -159,7 +159,7 @@ export const DEFAULT_ELECTION_CYCLE_2027: Omit<
 
 export const DEFAULT_CONTESTS_2027: Omit<
   ElectionContest,
-  "tenant_id" | "created_by"
+  "created_by"
 >[] = [
   {
     id: "2027-presidential",

@@ -14,7 +14,6 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
-import { getCurrentTenant } from "./tenants";
 import {
   INEC_2027_POLITICAL_PARTIES,
   DEFAULT_ELECTION_CYCLE_2027,
@@ -69,7 +68,6 @@ export interface ElectionResultHistory {
 
 export interface ElectionResultDoc {
   id: string;
-  tenant_id: string;
   election_cycle_id: string;
   contest_id: string;
   contest_type: ContestType;
@@ -104,7 +102,6 @@ export interface ElectionResultDoc {
 
 export interface PUReportDoc {
   id: string;
-  tenant_id: string;
   ward_id: string;
   polling_unit_id: string;
   submitted_by: string;
@@ -124,7 +121,6 @@ export interface PUReportDoc {
 
 export interface ElectionIncidentDoc {
   id: string;
-  tenant_id: string;
   ward_id: string;
   polling_unit_id?: string | null;
   incident_type:
@@ -154,11 +150,14 @@ export interface ElectionIncidentDoc {
  * ============================================================
  */
 
-export async function getElectionSettings(
-  tenantId?: string
-): Promise<ElectionSettings | null> {
-  const currentTenantId = tenantId || (await getCurrentTenant()).id;
-  const docRef = doc(db, "election_settings", currentTenantId);
+/*
+ * The election engine keeps exactly one settings document, so the
+ * document id is a local constant.
+ */
+export const ELECTION_SETTINGS_DOC_ID = "default";
+
+export async function getElectionSettings(): Promise<ElectionSettings | null> {
+  const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
   const snap = await getDoc(docRef);
 
   if (snap.exists()) {
@@ -167,17 +166,15 @@ export async function getElectionSettings(
 
   // Return fallback read-only settings without attempting admin writes
   return {
-    tenant_id: currentTenantId,
     active_election_cycle_id: DEFAULT_ELECTION_CYCLE_2027.id,
     active_contest_id: DEFAULT_CONTESTS_2027[0].id,
   };
 }
 
 export function subscribeToElectionSettings(
-  tenantId: string,
   onData: (settings: ElectionSettings | null) => void
 ): Unsubscribe {
-  const docRef = doc(db, "election_settings", tenantId);
+  const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
   return onSnapshot(docRef, (snap) => {
     if (snap.exists()) {
       onData({ id: snap.id, ...snap.data() } as ElectionSettings);
@@ -192,12 +189,10 @@ export async function setActiveCollationContest(data: {
   activeContestId: string;
   userId: string;
 }) {
-  const tenant = await getCurrentTenant();
-  const docRef = doc(db, "election_settings", tenant.id);
+  const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
   await setDoc(
     docRef,
     {
-      tenant_id: tenant.id,
       active_election_cycle_id: data.activeCycleId,
       active_contest_id: data.activeContestId,
       updated_by: data.userId,
@@ -253,19 +248,13 @@ export async function createPoliticalParty(party: Omit<PoliticalParty, "id"> & {
  * ============================================================
  */
 
-export async function getElectionCycles(tenantId?: string): Promise<ElectionCycle[]> {
-  const currentTenantId = tenantId || (await getCurrentTenant()).id;
-  const q = query(
-    collection(db, "election_cycles"),
-    where("tenant_id", "==", currentTenantId)
-  );
-  const snap = await getDocs(q);
+export async function getElectionCycles(): Promise<ElectionCycle[]> {
+  const snap = await getDocs(collection(db, "election_cycles"));
 
   if (snap.empty) {
     return [
       {
         ...DEFAULT_ELECTION_CYCLE_2027,
-        tenant_id: currentTenantId,
         created_by: "system",
       },
     ];
@@ -284,10 +273,8 @@ export async function createElectionCycle(data: {
   end_date?: string;
   userId: string;
 }) {
-  const tenant = await getCurrentTenant();
   const cycleRef = doc(db, "election_cycles", data.id);
   await setDoc(cycleRef, {
-    tenant_id: tenant.id,
     name: data.name,
     year: data.year,
     description: data.description || "",
@@ -318,13 +305,10 @@ export async function updateElectionCycle(
  */
 
 export async function getContestsByCycle(
-  electionCycleId: string,
-  tenantId?: string
+  electionCycleId: string
 ): Promise<ElectionContest[]> {
-  const currentTenantId = tenantId || (await getCurrentTenant()).id;
   const q = query(
     collection(db, "election_contests"),
-    where("tenant_id", "==", currentTenantId),
     where("election_cycle_id", "==", electionCycleId)
   );
   const snap = await getDocs(q);
@@ -332,7 +316,6 @@ export async function getContestsByCycle(
   if (snap.empty && electionCycleId === DEFAULT_ELECTION_CYCLE_2027.id) {
     return DEFAULT_CONTESTS_2027.map((item) => ({
       ...item,
-      tenant_id: currentTenantId,
       created_by: "system",
     }));
   }
@@ -348,10 +331,8 @@ export async function getContest(contestId: string): Promise<ElectionContest | n
   // Check default seed fallbacks if Firestore document hasn't been created yet
   const fallback = DEFAULT_CONTESTS_2027.find((c) => c.id === contestId);
   if (fallback) {
-    const tenant = await getCurrentTenant();
     return {
       ...fallback,
-      tenant_id: tenant.id,
       created_by: "system",
     };
   }
@@ -373,10 +354,8 @@ export async function createContest(data: {
   focus_party_id?: string;
   userId: string;
 }) {
-  const tenant = await getCurrentTenant();
   const contestRef = doc(db, "election_contests", data.id);
   await setDoc(contestRef, {
-    tenant_id: tenant.id,
     election_cycle_id: data.election_cycle_id,
     contest_type: data.contest_type,
     name: data.name,
@@ -467,7 +446,6 @@ export async function submitElectionResultWithEvidence(data: {
     throw new Error(`Cannot submit result: Contest '${contest.name}' is currently ${contest.status} and not OPEN for result submission.`);
   }
 
-  const tenant = await getCurrentTenant();
   // Deterministic ID across Contest + Polling Unit as required by Spec Section 15
   const resultDocId = `${data.contestId}__${data.pollingUnitId}`;
   const resultRef = doc(db, "election_results", resultDocId);
@@ -482,7 +460,6 @@ export async function submitElectionResultWithEvidence(data: {
   };
 
   await setDoc(resultRef, {
-    tenant_id: tenant.id,
     election_cycle_id: data.electionCycleId,
     contest_id: data.contestId,
     contest_type: data.contestType,
@@ -607,7 +584,6 @@ export async function correctElectionResult(data: {
  */
 
 export function subscribeToElectionResults(
-  tenantId: string,
   onData: (results: ElectionResultDoc[], isInitialLoad: boolean) => void,
   onError?: (err: Error) => void,
   scopeConstraint?: {
@@ -621,7 +597,6 @@ export function subscribeToElectionResults(
   if (scopeConstraint?.contest_id && scopeConstraint?.ward_id && scopeConstraint?.polling_unit_id) {
     q = query(
       collection(db, "election_results"),
-      where("tenant_id", "==", tenantId),
       where("contest_id", "==", scopeConstraint.contest_id),
       where("ward_id", "==", scopeConstraint.ward_id),
       where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
@@ -629,21 +604,16 @@ export function subscribeToElectionResults(
   } else if (scopeConstraint?.contest_id) {
     q = query(
       collection(db, "election_results"),
-      where("tenant_id", "==", tenantId),
       where("contest_id", "==", scopeConstraint.contest_id),
     );
   } else if (scopeConstraint?.ward_id && scopeConstraint?.polling_unit_id) {
     q = query(
       collection(db, "election_results"),
-      where("tenant_id", "==", tenantId),
       where("ward_id", "==", scopeConstraint.ward_id),
       where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
     );
   } else {
-    q = query(
-      collection(db, "election_results"),
-      where("tenant_id", "==", tenantId),
-    );
+    q = query(collection(db, "election_results"));
   }
 
   let isFirstSnapshot = true;
@@ -681,9 +651,7 @@ export async function createPUReport(data: {
   content: string;
   cloudinary_url?: string | null;
 }) {
-  const tenant = await getCurrentTenant();
   const ref = await addDoc(collection(db, "pu_reports"), {
-    tenant_id: tenant.id,
     ...data,
     status: "submitted",
     created_at: serverTimestamp(),
@@ -692,14 +660,10 @@ export async function createPUReport(data: {
 }
 
 export function subscribeToPUReports(
-  tenantId: string,
   onData: (reports: PUReportDoc[]) => void,
   onError?: (err: Error) => void,
 ): Unsubscribe {
-  const q = query(
-    collection(db, "pu_reports"),
-    where("tenant_id", "==", tenantId),
-  );
+  const q = query(collection(db, "pu_reports"));
 
   return onSnapshot(
     q,
@@ -738,9 +702,7 @@ export async function createElectionIncident(data: {
   reported_by: string;
   cloudinary_url?: string | null;
 }) {
-  const tenant = await getCurrentTenant();
   const ref = await addDoc(collection(db, "election_incidents"), {
-    tenant_id: tenant.id,
     ...data,
     status: "reported",
     created_at: serverTimestamp(),
@@ -749,14 +711,10 @@ export async function createElectionIncident(data: {
 }
 
 export function subscribeToElectionIncidents(
-  tenantId: string,
   onData: (incidents: ElectionIncidentDoc[]) => void,
   onError?: (err: Error) => void,
 ): Unsubscribe {
-  const q = query(
-    collection(db, "election_incidents"),
-    where("tenant_id", "==", tenantId),
-  );
+  const q = query(collection(db, "election_incidents"));
 
   return onSnapshot(
     q,

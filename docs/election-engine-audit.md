@@ -143,8 +143,6 @@ export default function ElectionUploadPage() {
   const { profile } = useAuth();
   const isAdminOrElectionOfficer =
     profile?.access_role === "admin" ||
-    profile?.access_role === "tenant_super_admin" ||
-    profile?.access_role === "platform_super_admin" ||
     profile?.access_role === "election_officer";
 ```
 
@@ -170,11 +168,11 @@ if (!isAdminOrElectionOfficer) {
 - **Firestore Writes:**
   - `setDoc(doc(db, "election_results", `${contestId}__${pollingUnitId}`), payload)`
     - **Collection:** `election_results`
-    - **Shape:** `{ tenant_id, election_cycle_id, contest_id, contest_type, contest_scope: { scope_type, scope_id }, state_id, senatorial_zone_id, lga_id, ward_id, polling_unit_id, results: [{ party, votes }], submitted_by, status: "submitted", verified: false, cloudinary_url, cloudinary_public_id, history: [{ edited_by, edited_at, action: "create", new_results, new_status: "submitted", notes }], created_at, updated_at }`
+    - **Shape:** `{ election_cycle_id, contest_id, contest_type, contest_scope: { scope_type, scope_id }, state_id, senatorial_zone_id, lga_id, ward_id, polling_unit_id, results: [{ party, votes }], submitted_by, status: "submitted", verified: false, cloudinary_url, cloudinary_public_id, history: [{ edited_by, edited_at, action: "create", new_results, new_status: "submitted", notes }], created_at, updated_at }`
 - **Firestore Reads:**
-  - `getDoc(doc(db, "election_settings", tenantId))`
-  - `getDocs(query(collection(db, "election_cycles"), where("tenant_id", "==", tenantId)))`
-  - `getDocs(query(collection(db, "election_contests"), where("tenant_id", "==", tenantId), where("election_cycle_id", "==", cycleId)))`
+  - `getDoc(doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID))`
+  - `getDocs(collection(db, "election_cycles"))`
+  - `getDocs(query(collection(db, "election_contests"), where("election_cycle_id", "==", cycleId)))`
   - `getDocs(collection(db, "political_parties"))`
   - `getDocs(collection(db, "electoral_data"))`
 
@@ -182,13 +180,12 @@ if (!isAdminOrElectionOfficer) {
 
 ## J-E2 — Audit `src/app/portal/election/operations/page.tsx`
 
-### 1. Does it list pending submissions filtered by tenant?
+### 1. Does it list pending submissions across the campaign?
 - **Answer:** **Yes**
 - **Line Numbers:** Lines 147–158, 176–177
 - **Code Evidence:**
 ```typescript
 const unsubscribe = subscribeToElectionResults(
-  tenantId,
   (data) => {
     setResults(data);
     setLoading(false);
@@ -220,8 +217,6 @@ const unsubscribe = subscribeToElectionResults(
 ```typescript
 const role = profile.access_role || "member";
 const isOfficerOrAdmin =
-  role === "platform_super_admin" ||
-  role === "tenant_super_admin" ||
   role === "admin" ||
   role === "election_officer";
 
@@ -305,14 +300,13 @@ if ((action === "reject" || action === "clarify") && !reviewNotes.trim()) {
 - **Code Evidence:**
 ```typescript
 const unsubscribe = subscribeToElectionResults(
-  tenantId,
   onData,
   onError,
   scopeConstraint
 );
 ```
 
-### 2. Does the scope constraint differ by role (admin/officer = tenant-wide, member = own PU)?
+### 2. Does the scope constraint differ by role (admin/officer = campaign-wide, member = own PU)?
 - **Answer:** **Yes**
 - **Line Numbers:** Lines 143–155
 - **Code Evidence:**
@@ -453,10 +447,10 @@ if (selectedWardId !== "all") {
 
 ### Firestore Operations
 - **Firestore Reads:**
-  - Real-time listener: `onSnapshot(query(collection(db, "election_results"), where("tenant_id", "==", tenantId), ...scopeConstraints))`
-  - `getDoc(doc(db, "election_settings", tenantId))`
-  - `getDocs(query(collection(db, "election_cycles"), where("tenant_id", "==", tenantId)))`
-  - `getDocs(query(collection(db, "election_contests"), where("tenant_id", "==", tenantId), where("election_cycle_id", "==", cycleId)))`
+  - Real-time listener: `onSnapshot(query(collection(db, "election_results"), ...scopeConstraints))`
+  - `getDoc(doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID))`
+  - `getDocs(collection(db, "election_cycles"))`
+  - `getDocs(query(collection(db, "election_contests"), where("election_cycle_id", "==", cycleId)))`
   - `getDocs(collection(db, "political_parties"))`
 
 ---
@@ -521,7 +515,6 @@ await setActiveCollationContest({
 - **Code Evidence:**
 ```typescript
 await createCandidate({
-  tenant_id: profile?.tenant_id || "default",
   contest_id: selectedContestForCandidates,
   party_id: candidateForm.party_id,
   candidate_name: candidateForm.candidate_name,
@@ -540,11 +533,7 @@ await createCandidate({
 - **Code Evidence:**
 ```typescript
 const role = profile.access_role;
-if (
-  role !== "admin" &&
-  role !== "tenant_super_admin" &&
-  role !== "platform_super_admin"
-) {
+if (role !== "admin") {
   router.push("/portal/dashboard");
 }
 ```
@@ -557,19 +546,19 @@ if (
 - **Firestore Writes:**
   - `setDoc(doc(db, "election_cycles", data.id), payload)`
     - **Collection:** `election_cycles`
-    - **Shape:** `{ tenant_id, name, year, description, status, start_date, end_date, created_by, created_at, updated_at }`
+    - **Shape:** `{ name, year, description, status, start_date, end_date, created_by, created_at, updated_at }`
   - `setDoc(doc(db, "election_contests", data.id), payload)`
     - **Collection:** `election_contests`
-    - **Shape:** `{ tenant_id, election_cycle_id, contest_type, name, scope_type, scope_id, state_id, senatorial_zone_id, lga_ids, election_date, status: "OPEN", collation_status: "IN_PROGRESS", tracked_parties, focus_party_id, created_by, created_at, updated_at }`
+    - **Shape:** `{ election_cycle_id, contest_type, name, scope_type, scope_id, state_id, senatorial_zone_id, lga_ids, election_date, status: "OPEN", collation_status: "IN_PROGRESS", tracked_parties, focus_party_id, created_by, created_at, updated_at }`
   - `setDoc(doc(db, "political_parties", party.id), payload)`
     - **Collection:** `political_parties`
     - **Shape:** `{ id, acronym, name, color, inec_registered, status: "active", created_at, updated_at }`
   - `addDoc(collection(db, "election_candidates"), payload)`
     - **Collection:** `election_candidates`
-    - **Shape:** `{ tenant_id, contest_id, party_id, candidate_name, running_mate_name, status: "active", created_at, updated_at }`
-  - `setDoc(doc(db, "election_settings", tenantId), payload, { merge: true })`
+    - **Shape:** `{ contest_id, party_id, candidate_name, running_mate_name, status: "active", created_at, updated_at }`
+  - `setDoc(doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID), payload, { merge: true })`
     - **Collection:** `election_settings`
-    - **Shape:** `{ tenant_id, active_election_cycle_id, active_contest_id, updated_by, updated_at }`
+    - **Shape:** `{ active_election_cycle_id, active_contest_id, updated_by, updated_at }`
 
 ---
 
@@ -577,14 +566,14 @@ if (
 
 | Page | Write Target | Client Field Shape | Rules Requirement | Match / Status |
 | --- | --- | --- | --- | --- |
-| `/portal/election/upload` | `election_results/{resultId}` (create) | `tenant_id`, `election_cycle_id`, `contest_id`, `contest_type`, `contest_scope: { scope_type, scope_id }`, `state_id`, `senatorial_zone_id`, `lga_id`, `ward_id`, `polling_unit_id`, `results: [{ party, votes }]`, `submitted_by`, `status: "submitted"`, `verified: false`, `cloudinary_url`, `cloudinary_public_id`, `history`, `created_at`, `updated_at` | `electionModeEnabled()`, `resultId == contest_id + "__" + polling_unit_id`, `status == "submitted"`, `verified == false`, `submitted_by == request.auth.uid`, `cloudinary_url is string` | **MATCH** (`firestore.rules:815-840`, `election.ts:480-515`) |
+| `/portal/election/upload` | `election_results/{resultId}` (create) | `election_cycle_id`, `contest_id`, `contest_type`, `contest_scope: { scope_type, scope_id }`, `state_id`, `senatorial_zone_id`, `lga_id`, `ward_id`, `polling_unit_id`, `results: [{ party, votes }]`, `submitted_by`, `status: "submitted"`, `verified: false`, `cloudinary_url`, `cloudinary_public_id`, `history`, `created_at`, `updated_at` | `electionModeEnabled()`, `resultId == contest_id + "__" + polling_unit_id`, `status == "submitted"`, `verified == false`, `submitted_by == request.auth.uid`, `cloudinary_url is string` | **MATCH** (`firestore.rules:815-840`, `election.ts:480-515`) |
 | `/portal/election/operations` | `election_results/{resultId}` (review update) | `status` (`"approved"`/`"rejected"`/`"clarification_required"`/`"reopened"`), `verified: boolean`, `reviewed_by`, `review_notes`, `reviewed_at`, `history`, `updated_at` | `officerReviewUpdate()` requires `isElectionOfficer()`, `reviewed_by == request.auth.uid`, `verified == (status == "approved")`, affectedKeys allowlist. | **DENIED FOR ADMIN** (`firestore.rules:225-250`). Rules require `isElectionOfficer()`. If an Admin attempts review approval on operations desk, rules will deny! |
 | `/portal/election` | `election_results/{resultId}` (admin correction) | `results`, `status: "pending_review"`, `verified: false`, `history`, `updated_at` | `adminCorrectionUpdate()` requires `isAdmin()`, `status == "pending_review"`, `verified == false`, affectedKeys allowlist (`results`, `status`, `verified`, `history`, `updated_at`). | **MATCH** (`firestore.rules:340-360`, `election.ts:220-250`) |
-| `/portal/admin/election` | `election_cycles/{cycleId}` (create/update) | `tenant_id`, `name`, `year`, `description`, `status`, `start_date`, `end_date`, `created_by`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:778-782`, `election.ts:265-295`) |
-| `/portal/admin/election` | `election_contests/{contestId}` (create/update) | `tenant_id`, `election_cycle_id`, `contest_type`, `name`, `scope_type`, `scope_id`, `state_id`, `senatorial_zone_id`, `lga_ids`, `election_date`, `status`, `collation_status`, `tracked_parties`, `focus_party_id`, `created_by`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:783-787`, `election.ts:340-375`) |
+| `/portal/admin/election` | `election_cycles/{cycleId}` (create/update) | `name`, `year`, `description`, `status`, `start_date`, `end_date`, `created_by`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:778-782`, `election.ts:265-295`) |
+| `/portal/admin/election` | `election_contests/{contestId}` (create/update) | `election_cycle_id`, `contest_type`, `name`, `scope_type`, `scope_id`, `state_id`, `senatorial_zone_id`, `lga_ids`, `election_date`, `status`, `collation_status`, `tracked_parties`, `focus_party_id`, `created_by`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:783-787`, `election.ts:340-375`) |
 | `/portal/admin/election` | `political_parties/{partyId}` (create/update) | `id`, `acronym`, `name`, `color`, `inec_registered`, `status`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:788-792`, `election.ts:200-220`) |
-| `/portal/admin/election` | `election_candidates/{candidateId}` (create) | `tenant_id`, `contest_id`, `party_id`, `candidate_name`, `running_mate_name`, `status`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:793-797`, `election.ts:410-435`) |
-| `/portal/admin/election` | `election_settings/{tenantId}` (set active contest) | `tenant_id`, `active_election_cycle_id`, `active_contest_id`, `updated_by`, `updated_at` | `isAdmin()` | **MATCH** (`firestore.rules:798-802`, `election.ts:190-210`) |
+| `/portal/admin/election` | `election_candidates/{candidateId}` (create) | `contest_id`, `party_id`, `candidate_name`, `running_mate_name`, `status`, timestamps | `isAdmin()` | **MATCH** (`firestore.rules:793-797`, `election.ts:410-435`) |
+| `/portal/admin/election` | `election_settings/{settingsId}` (set active contest) | `active_election_cycle_id`, `active_contest_id`, `updated_by`, `updated_at` | `isAdmin()` | **MATCH** (`firestore.rules:798-802`, `election.ts:190-210`) |
 
 ---
 
@@ -604,7 +593,7 @@ if (
 | §49 Election Mode | Verified | Verified | `election_mode_enabled` checked on result creation in security rules. (`firestore.rules:170-180`, `815-820`) |
 | §50 Election Management Settings | Verified | Verified | Admin management portal created at `/portal/admin/election` for Cycles, Contests, Dates, Status, Parties, Candidates, and Active Collation. (`src/app/portal/admin/election/page.tsx:1-500`) |
 | §51 Political Party Data Requirement | Verified | Verified | Curated 2027 INEC political party master dataset configured in `election-seed.ts`. (`src/lib/firebase/election-seed.ts:6-140`) |
-| §52 Candidate Data Requirement | Verified | Verified | Candidates linked to Cycle, Contest, Party, and Tenant. (`src/types/index.ts:550-565`, `src/lib/firebase/election.ts:415-435`, `src/app/portal/admin/election/page.tsx:340-370`) |
+| §52 Candidate Data Requirement | Verified | Verified | Candidates linked to Cycle, Contest, and Party. (`src/types/index.ts:550-565`, `src/lib/firebase/election.ts:415-435`, `src/app/portal/admin/election/page.tsx:340-370`) |
 | §53 Result Evidence and Party Data Must Agree | Verified | Verified | Review panel presents full context (Election, Contest, Constituency, Ward, PU, Evidence image, Party Votes, Submitter, Time, and History). (`src/app/portal/election/operations/page.tsx:430-570`) |
 
 ---

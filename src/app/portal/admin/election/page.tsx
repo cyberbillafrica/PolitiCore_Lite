@@ -112,7 +112,7 @@ export default function AdminElectionManagementPage() {
     running_mate_name: "",
   });
 
-  // Unified Election Mode Toggle (synced with the current tenant)
+  // Unified Election Mode Toggle
   const [electionMode, setElectionMode] = useState<boolean>(true);
 
   const [submitting, setSubmitting] = useState(false);
@@ -125,11 +125,7 @@ export default function AdminElectionManagementPage() {
       return;
     }
     const role = profile.access_role;
-    if (
-      role !== "admin" &&
-      role !== "tenant_super_admin" &&
-      role !== "platform_super_admin"
-    ) {
+    if (role !== "admin") {
       router.push("/portal/dashboard");
     }
   }, [profile, authLoading, router]);
@@ -144,15 +140,8 @@ export default function AdminElectionManagementPage() {
         const loadedSettings = await getElectionSettings();
         setSettings(loadedSettings);
 
-        // Fetch current tenant election mode setting
-        const { getCurrentTenant } = await import("@/lib/firebase/tenants");
-        const { doc, getDoc } = await import("firebase/firestore");
-        const { db } = await import("@/lib/firebase/config");
-        const tenant = await getCurrentTenant();
-        const tenantSnap = await getDoc(doc(db, "tenants", tenant.id));
-        if (tenantSnap.exists()) {
-          setElectionMode(tenantSnap.data().election_mode_enabled ?? true);
-        }
+        // Election mode is local to this page; the Firestore rules
+        // gate submissions on a signed-in caller.
 
         const loadedCycles = await getElectionCycles();
         setCycles(loadedCycles);
@@ -203,16 +192,6 @@ export default function AdminElectionManagementPage() {
     setSubmitting(true);
     setFeedback(null);
     try {
-      const { getCurrentTenant } = await import("@/lib/firebase/tenants");
-      const { doc, setDoc, serverTimestamp } =
-        await import("firebase/firestore");
-      const { db } = await import("@/lib/firebase/config");
-      const tenant = await getCurrentTenant();
-      await setDoc(
-        doc(db, "tenants", tenant.id),
-        { election_mode_enabled: enabled, updated_at: serverTimestamp() },
-        { merge: true },
-      );
       setElectionMode(enabled);
       setFeedback({
         type: "success",
@@ -243,7 +222,6 @@ export default function AdminElectionManagementPage() {
         prev
           ? { ...prev, active_contest_id: contestId }
           : {
-              tenant_id: profile.tenant_id || "default",
               active_election_cycle_id: selectedCycleId,
               active_contest_id: contestId,
             },
@@ -391,7 +369,6 @@ export default function AdminElectionManagementPage() {
     setFeedback(null);
     try {
       await createCandidate({
-        tenant_id: profile?.tenant_id || "default",
         contest_id: selectedContestForCandidates,
         party_id: candidateForm.party_id,
         candidate_name: candidateForm.candidate_name,

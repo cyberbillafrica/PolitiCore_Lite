@@ -9,7 +9,7 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllLGAs } from "@/lib/constants";
-import { assignmentCoversScope, isAdminUser } from "@/lib/permissions";
+import { assignmentCoversScope } from "@/lib/permissions";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,9 +25,12 @@ import {
   Lock,
 } from "lucide-react";
 
+// Default LGA for campaign members.
+const CAMPAIGN_LGA_ID = "nkanu-west";
+
 export default function PUReportsPage() {
   const { profile, assignments, accessLoading } = useAuth();
-  const isAdmin = isAdminUser(profile);
+  const isAdmin = profile?.access_role === "admin";
 
   const [lgas, setLgas] = useState<LGA[]>([]);
   const [reports, setReports] = useState<PUReportDoc[]>([]);
@@ -41,7 +44,7 @@ export default function PUReportsPage() {
   const [successMsg, setSuccessMessage] = useState("");
 
   const [form, setForm] = useState({
-    lga_id: profile?.lga_id ?? "nkanu-west",
+    lga_id: CAMPAIGN_LGA_ID,
     ward_id: profile?.ward_id ?? "",
     polling_unit_id: profile?.polling_unit_id ?? "",
     report_type: "conduct" as PUReportDoc["report_type"],
@@ -63,10 +66,7 @@ export default function PUReportsPage() {
 
   // Real-time PU Reports Listener
   useEffect(() => {
-    if (!profile?.tenant_id) return;
-
     const unsubscribe = subscribeToPUReports(
-      profile.tenant_id,
       (docs) => {
         setReports(docs);
         setLoading(false);
@@ -79,7 +79,7 @@ export default function PUReportsPage() {
     );
 
     return () => unsubscribe();
-  }, [profile?.tenant_id]);
+  }, []);
 
   const selectedLga = lgas.find((l) => l.id === form.lga_id);
   const wards = selectedLga?.wards ?? [];
@@ -100,12 +100,10 @@ export default function PUReportsPage() {
           assignmentCoversScope(
             a,
             { scope_type: "ward", scope_id: r.ward_id },
-            lgas,
           ) ||
           assignmentCoversScope(
             a,
             { scope_type: "polling_unit", scope_id: r.polling_unit_id },
-            lgas,
           ),
       ) || r.submitted_by === profile?.id
     );
@@ -174,7 +172,7 @@ export default function PUReportsPage() {
       setSuccessMessage("Polling unit report submitted successfully!");
       setShowForm(false);
       setForm({
-        lga_id: profile?.lga_id ?? "nkanu-west",
+        lga_id: CAMPAIGN_LGA_ID,
         ward_id: profile?.ward_id ?? "",
         polling_unit_id: profile?.polling_unit_id ?? "",
         report_type: "conduct",

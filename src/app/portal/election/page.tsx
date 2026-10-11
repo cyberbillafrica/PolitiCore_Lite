@@ -35,7 +35,7 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getAllLGAs } from "@/lib/constants";
-import { assignmentCoversScope, isAdminUser } from "@/lib/permissions";
+import { assignmentCoversScope } from "@/lib/permissions";
 import {
   subscribeToElectionResults,
   correctElectionResult,
@@ -46,7 +46,6 @@ import {
   type ElectionResultDoc,
   type ElectionPartyResult,
 } from "@/lib/firebase/election";
-import { CURRENT_TENANT_ID, getCurrentTenant } from "@/lib/firebase/tenants";
 import type {
   LGA,
   Ward,
@@ -88,7 +87,7 @@ function getDocTimestamp(doc: ElectionResultDoc): number {
 export default function ElectionDashboard() {
   const router = useRouter();
   const { profile, assignments, accessLoading } = useAuth();
-  const isAdmin = isAdminUser(profile);
+  const isAdmin = profile?.access_role === "admin";
 
   useEffect(() => {
     if (accessLoading) return;
@@ -102,9 +101,7 @@ export default function ElectionDashboard() {
       profile?.membership_types?.includes("social_member") &&
       !profile?.membership_types?.includes("campaign_member") &&
       profile.access_role !== "election_officer" &&
-      profile.access_role !== "admin" &&
-      profile.access_role !== "tenant_super_admin" &&
-      profile.access_role !== "platform_super_admin";
+      profile.access_role !== "admin";
 
     if (isSocialOnly) {
       router.replace("/portal/dashboard");
@@ -118,7 +115,6 @@ export default function ElectionDashboard() {
   const [results, setResults] = useState<ElectionResultDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [listenerError, setListenerError] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState(CURRENT_TENANT_ID);
 
   // Selection states
   const [selectedCycleId, setSelectedCycleId] = useState<string>("all");
@@ -151,8 +147,6 @@ export default function ElectionDashboard() {
       try {
         const lgaData = await getAllLGAs();
         setLgas(lgaData);
-        const tenant = await getCurrentTenant();
-        setTenantId(tenant.id);
 
         const loadedSettings = await getElectionSettings();
         const loadedCycles = await getElectionCycles();
@@ -210,10 +204,7 @@ export default function ElectionDashboard() {
 
   // Real-time Firestore Listener
   useEffect(() => {
-    if (!tenantId) return;
-
     const unsubscribe = subscribeToElectionResults(
-      tenantId,
       (docs, isInitialLoad) => {
         setResults(docs);
         setLoading(false);
@@ -289,7 +280,7 @@ export default function ElectionDashboard() {
     );
 
     return () => unsubscribe();
-  }, [tenantId, lgas, scopeConstraint]);
+  }, [lgas, scopeConstraint]);
 
   // Hierarchical Scope Filtering
   const coveredResults = useMemo(() => {
@@ -323,12 +314,10 @@ export default function ElectionDashboard() {
           assignmentCoversScope(
             assignment,
             { scope_type: "ward", scope_id: result.ward_id },
-            lgas,
           ) ||
           assignmentCoversScope(
             assignment,
             { scope_type: "polling_unit", scope_id: result.polling_unit_id },
-            lgas,
           ),
       );
     });

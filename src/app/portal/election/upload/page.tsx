@@ -28,6 +28,8 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
+const CAMPAIGN_LGA_ID = "nkanu-west";
+
 export default function ElectionUploadPage() {
   const router = useRouter();
   const { profile, loading: authLoading } = useAuth();
@@ -44,9 +46,7 @@ export default function ElectionUploadPage() {
       profile?.membership_types?.includes("social_member") &&
       !profile?.membership_types?.includes("campaign_member") &&
       profile.access_role !== "election_officer" &&
-      profile.access_role !== "admin" &&
-      profile.access_role !== "tenant_super_admin" &&
-      profile.access_role !== "platform_super_admin";
+      profile.access_role !== "admin";
 
     if (isSocialOnly) {
       router.replace("/portal/dashboard");
@@ -55,8 +55,6 @@ export default function ElectionUploadPage() {
 
   const isAdminOrElectionOfficer =
     profile?.access_role === "admin" ||
-    profile?.access_role === "tenant_super_admin" ||
-    profile?.access_role === "platform_super_admin" ||
     profile?.access_role === "election_officer";
 
   const [lgas, setLgas] = useState<LGA[]>([]);
@@ -68,7 +66,7 @@ export default function ElectionUploadPage() {
   const [selectedContestId, setSelectedContestId] = useState<string>("");
 
   const [form, setForm] = useState({
-    lga_id: profile?.lga_id ?? "nkanu-west",
+    lga_id: CAMPAIGN_LGA_ID,
     ward_id: isAdminOrElectionOfficer ? "" : (profile?.ward_id ?? ""),
     polling_unit_id: isAdminOrElectionOfficer
       ? ""
@@ -172,7 +170,7 @@ export default function ElectionUploadPage() {
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
   // Resolved names for member reporting area
-  const memberLga = lgas.find((lga) => lga.id === (profile?.lga_id ?? "nkanu-west"));
+  const memberLga = lgas.find((lga) => lga.id === (CAMPAIGN_LGA_ID));
   const memberWard = memberLga?.wards.find((w) => w.id === profile?.ward_id);
   const memberPollingUnit = memberWard?.pollingUnits.find(
     (pu) => pu.id === profile?.polling_unit_id,

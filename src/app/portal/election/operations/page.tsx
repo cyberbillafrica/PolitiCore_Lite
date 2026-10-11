@@ -129,9 +129,7 @@ export default function ElectionOperationsPage() {
       profile?.membership_types?.includes("social_member") &&
       !profile?.membership_types?.includes("campaign_member") &&
       profile.access_role !== "election_officer" &&
-      profile.access_role !== "admin" &&
-      profile.access_role !== "tenant_super_admin" &&
-      profile.access_role !== "platform_super_admin";
+      profile.access_role !== "admin";
 
     if (isSocialOnly) {
       router.replace("/portal/dashboard");
@@ -147,11 +145,9 @@ export default function ElectionOperationsPage() {
   useEffect(() => {
     if (!profile) return;
 
-    const tenantId = profile.tenant_id || "default";
     const scopeConstraint = selectedContestId !== "all" ? { contest_id: selectedContestId } : undefined;
 
     const unsubscribe = subscribeToElectionResults(
-      tenantId,
       (data) => {
         setResults(data);
         setLoading(false);
