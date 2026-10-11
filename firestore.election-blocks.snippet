@@ -1,0 +1,170 @@
+match /election_cycles/{cycleId} {
+  allow read: if isSignedIn();
+  allow create, update, delete: if isAdmin();
+}
+
+match /election_contests/{contestId} {
+  allow read: if isSignedIn();
+  allow create, update, delete: if isAdmin();
+}
+
+match /political_parties/{partyId} {
+  allow read: if true;
+  allow create, update, delete: if isAdmin();
+}
+
+match /election_candidates/{candidateId} {
+  allow read: if isSignedIn();
+  allow create, update, delete: if isAdmin();
+}
+
+match /election_settings/{tenantId} {
+  allow read: if isSignedIn();
+  allow create, update: if isAdmin() && tenantId == callerTenantId();
+}
+
+// ============================================================
+// ELECTION RESULTS — full lifecycle
+// ============================================================
+match /election_results/{resultId} {
+
+  allow read: if canReadElectionResult(resource.data);
+
+  allow create: if electionModeEnabled()
+    && !exists(/databases/$(database)/documents/election_results/$(resultId))
+    && request.resource.data.tenant_id == callerTenantId()
+    && request.resource.data.submitted_by == request.auth.uid
+    && request.resource.data.contest_id is string
+    && request.resource.data.ward_id is string
+    && request.resource.data.polling_unit_id is string
+    && request.resource.data.results is list
+    && request.resource.data.results.size() > 0
+    && request.resource.data.status == "submitted"
+    && request.resource.data.verified == false
+    && request.resource.data.cloudinary_url is string
+    && (
+      // Support both ID formats: contest__pu and ward__pu
+      resultId == request.resource.data.contest_id + "__"
+                  + request.resource.data.polling_unit_id
+      || resultId == request.resource.data.ward_id + "__"
+                  + request.resource.data.polling_unit_id
+    )
+    && (
+      isAdminOrElectionOfficer()
+      || registeredAt(
+          request.resource.data.ward_id,
+          request.resource.data.polling_unit_id)
+    );
+
+  // Officer review (approve / reject / clarify / reopen).
+  allow update: if officerReviewUpdate() && validOfficerTransition();
+
+  // Admin correction (spec §32 — forces re-review).
+  allow update: if adminCorrectionUpdate();
+
+  // Immutable record.
+  allow delete: if false;
+}
+
+// ============================================================
+// POLLING UNIT REPORTS
+// ============================================================
+match /pu_reports/{reportId} {
+
+  allow read: if isAdmin() && sameTenant(resource.data);
+
+  allow read: if isSignedIn()
+    && resource.data.tenant_id == callerTenantId()
+    && (
+      resource.data.submitted_by == request.auth.uid
+      || isElectionOfficer()
+      || hasGlobalAccess("view_election_results")
+      || hasScopedAccess("view_election_results", "ward", resource.data.ward_id)
+      || hasScopedAccess("view_election_results", "polling_unit", resource.data.polling_unit_id)
+    );
+
+  allow create: if isSignedIn()
+    && request.resource.data.tenant_id == callerTenantId()
+    && request.resource.data.submitted_by == request.auth.uid
+    && request.resource.data.status == "submitted"
+    && (
+      isAdminOrElectionOfficer()
+      || registeredAt(
+          request.resource.data.ward_id,
+          request.resource.data.polling_unit_id)
+    );
+
+  allow update, delete: if isAdmin() && sameTenant(resource.data);
+}
+
+// ============================================================
+// ELECTION INCIDENTS
+// ============================================================
+match /election_incidents/{incidentId} {
+
+  allow read: if isAdmin() && sameTenant(resource.data);
+
+  allow read: if isSignedIn()
+    && resource.data.tenant_id == callerTenantId()
+    && (
+      resource.data.reported_by == request.auth.uid
+      || isElectionOfficer()
+      || hasGlobalAccess("view_election_results")
+      || hasScopedAccess("view_election_results", "ward", resource.data.ward_id)
+      || (
+        resource.data.polling_unit_id != null
+        && hasScopedAccess("view_election_results", "polling_unit", resource.data.polling_unit_id)
+      )
+    );
+
+  allow create: if isSignedIn()
+    && request.resource.data.tenant_id == callerTenantId()
+    && request.resource.data.reported_by == request.auth.uid
+    && request.resource.data.status == "reported"
+    && request.resource.data.description is string
+    && (
+      isAdminOrElectionOfficer()
+      || (
+        isCampaignMember()
+        && callerProfile().ward_id == request.resource.data.ward_id
+      )
+    );
+
+  allow update, delete: if isAdmin() && sameTenant(resource.data);
+}
+
+// ============================================================
+// TENANTS
+// ============================================================
+match /tenants/{tenantId} {
+  allow read: if true;
+  allow create, update: if isAdmin() && tenantId == callerTenantId();
+  allow delete: if false;
+}
+
+// ============================================================
+// CONTACT MESSAGES
+// ============================================================
+match /contact_messages/{messageId} {
+  allow create: if request.resource.data.name is string
+    && request.resource.data.email is string
+    && request.resource.data.message is string
+    && request.resource.data.status == "unread";
+
+  allow read, update, delete: if isAdmin();
+}
+
+// ============================================================
+// ELECTORAL DATA — public read, admin only via SDK/scripts
+// ============================================================
+match /electoral_data/{document} {
+  allow read: if true;
+  allow write: if false;
+}
+
+// ============================================================
+// CANDIDATE DONATION LEDGER — admin only (spec: private)
+// ============================================================
+match /donations/{donationId} {
+  allow read, create, update, delete: if isAdmin();
+}

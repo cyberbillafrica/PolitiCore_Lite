@@ -156,38 +156,106 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // ELECTION HELPERS (single-tenant)
+    // ============================================================
+
+    /*
+     * Single-tenant: no tenant gate. Election actions are
+     * available to any signed-in user that passes the per-rule
+     * role/scope checks below.
+     */
+    function electionModeEnabled() {
+      return isSignedIn();
+    }
+
+    function canReadElectionResult(data) {
+      return isAdmin()
+        || isElectionOfficer()
+        || data.submitted_by == request.auth.uid
+        || registeredAt(data.ward_id, data.polling_unit_id)
+        || hasGlobalAccess("view_election_results")
+        || hasScopedAccess("view_election_results", "ward", data.ward_id)
+        || hasScopedAccess("view_election_results", "polling_unit", data.polling_unit_id);
+    }
+
+    /*
+     * Officer review: approve / reject / clarify / reopen.
+     * Admins do NOT get approval authority (spec §27 / §33).
+     */
+    function officerReviewUpdate() {
+      return isElectionOfficer()
+        && request.resource.data.contest_id == resource.data.contest_id
+        && request.resource.data.ward_id == resource.data.ward_id
+        && request.resource.data.polling_unit_id == resource.data.polling_unit_id
+        && request.resource.data.submitted_by == resource.data.submitted_by
+        && request.resource.data.reviewed_by == request.auth.uid
+        && request.resource.data.verified == (request.resource.data.status == "approved")
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              "status", "verified", "review_notes", "reviewed_by",
+              "reviewed_at", "history", "updated_at"
+            ]);
+    }
+
+    function validOfficerTransition() {
+      return
+        // Pending → terminal
+        ((resource.data.status == "submitted" || resource.data.status == "pending_review")
+          && (request.resource.data.status == "approved"
+            || request.resource.data.status == "rejected"
+            || request.resource.data.status == "clarification_required"))
+        ||
+        // Clarification → back to queue
+        (resource.data.status == "clarification_required"
+          && (request.resource.data.status == "submitted"
+            || request.resource.data.status == "pending_review"))
+        ||
+        // Approved → reopened
+        (resource.data.status == "approved"
+          && request.resource.data.status == "reopened")
+        ||
+        // Reopened → terminal
+        (resource.data.status == "reopened"
+          && (request.resource.data.status == "approved"
+            || request.resource.data.status == "rejected"
+            || request.resource.data.status == "clarification_required"))
+        ||
+        // Rejected → back to queue
+        (resource.data.status == "rejected"
+          && (request.resource.data.status == "submitted"
+            || request.resource.data.status == "pending_review"));
+    }
+
+    /*
+     * Admin correction (spec §32) — preserves identity and
+     * forces re-review. Admin may not approve.
+     */
+    function adminCorrectionUpdate() {
+      return isAdmin()
+        && request.resource.data.contest_id == resource.data.contest_id
+        && request.resource.data.ward_id == resource.data.ward_id
+        && request.resource.data.polling_unit_id == resource.data.polling_unit_id
+        && request.resource.data.submitted_by == resource.data.submitted_by
+        && request.resource.data.status == "pending_review"
+        && request.resource.data.verified == false
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["results", "status", "verified", "history", "updated_at"]);
+    }
+
+    // ============================================================
     // USERS
     // ============================================================
 
     match /users/{userId} {
 
-      /*
-       * Signed-in users can read the user directory (leaderboard,
-       * member lists, dashboards). Unauthenticated visitors may
-       * not enumerate accounts.
-       */
       allow read: if isSignedIn();
 
-      /*
-       * Admins can manage users.
-       */
       allow create: if isAdmin();
 
-      /*
-       * Self-registration.
-       *
-       * A new client-created account must begin as:
-       *   access_role = member
-       *   points = 0
-       */
       allow create: if isOwner(userId)
         && request.resource.data.access_role == "member"
         && request.resource.data.points == 0;
 
-      /*
-       * Ordinary users may update their own profile but may not
-       * alter security-sensitive fields.
-       */
       allow update: if isOwner(userId)
         && request.resource.data.access_role
           == resource.data.access_role
@@ -207,12 +275,6 @@ service cloud.firestore {
     // SITE SETTINGS
     // ============================================================
 
-    /*
-     * The root layout and the maintenance guard fetch
-     * site_settings/general for every visitor - including
-     * unauthenticated ones - so read must be public.
-     * Writes are admin-only.
-     */
     match /site_settings/{settingsId} {
       allow read: if true;
 
@@ -284,10 +346,6 @@ service cloud.firestore {
 
     match /news/{newsId} {
 
-      /*
-       * Public visitors can read published articles.
-       * Legacy published:true remains supported.
-       */
       allow read: if
         resource.data.status == "published"
         || resource.data.published == true
@@ -310,19 +368,6 @@ service cloud.firestore {
     // ============================================================
     // PUBLIC CONTENT (SINGLE CAMPAIGN, FLAT DOCS)
     // ============================================================
-
-    /*
-     * The public site reads one fixed document per content type:
-     *
-     *   biographies/main
-     *   manifestos/main
-     *   galleries/main
-     *   portal_content/main
-     *
-     * Admins manage them. Manifesto additionally gates public
-     * reads on status == "published"; biography, gallery, and
-     * portal content are open reads by design.
-     */
 
     match /biographies/{docId} {
       allow read: if true;
@@ -357,10 +402,6 @@ service cloud.firestore {
 
     match /contact_messages/{messageId} {
 
-      /*
-       * Anyone can submit a message through the public contact
-       * form. Only admins can read or manage the inbox.
-       */
       allow create: if request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() < 200
@@ -390,10 +431,6 @@ service cloud.firestore {
 
     match /organizational_assignments/{assignmentId} {
 
-      /*
-       * A member may inspect their own assignments.
-       * Admins can read everything (member management).
-       */
       allow read: if isAdmin()
         || (
           isSignedIn()
@@ -427,17 +464,8 @@ service cloud.firestore {
 
     match /user_access/{accessId} {
 
-      /*
-       * The access index is never client-readable.
-       *
-       * This is deliberately restricted because it is itself
-       * security-sensitive authorization information.
-       */
       allow read: if false;
 
-      /*
-       * Only administrators can maintain it.
-       */
       allow create, update: if isAdmin()
         && request.resource.data.user_id is string
         && request.resource.data.permission is string
@@ -452,11 +480,6 @@ service cloud.firestore {
 
     match /campaign_activities/{activityId} {
 
-      /*
-       * Administrators can see all activities.
-       *
-       * Non-admin users require effective activity access.
-       */
       allow read: if isAdmin();
 
       allow read: if isSignedIn()
@@ -466,12 +489,6 @@ service cloud.firestore {
           resource.data.scope_id
         );
 
-      /*
-       * Creation must:
-       *   - identify caller as creator
-       *   - use a valid scope
-       *   - grant the caller create_activity authority
-       */
       allow create: if isSignedIn()
         && request.resource.data.created_by == request.auth.uid
         && hasAccess(
@@ -480,9 +497,6 @@ service cloud.firestore {
           request.resource.data.scope_id
         );
 
-      /*
-       * Admins or authorized scope managers can modify.
-       */
       allow update: if isAdmin();
 
       allow update: if isSignedIn()
@@ -523,18 +537,9 @@ service cloud.firestore {
 
     match /campaign_field_reports/{reportId} {
 
-      /*
-       * Users can always see their own reports.
-       */
       allow read: if isSignedIn()
         && resource.data.submitted_by == request.auth.uid;
 
-      /*
-       * Admins can read all reports.
-       *
-       * Coordinators/reviewers can read reports for scopes
-       * they are authorized to review.
-       */
       allow read: if isAdmin();
 
       allow read: if isSignedIn()
@@ -544,10 +549,6 @@ service cloud.firestore {
           resource.data.scope_id
         );
 
-      /*
-       * A report must belong to the caller and the caller's
-       * authorized organizational scope.
-       */
       allow create: if isSignedIn()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
@@ -557,9 +558,6 @@ service cloud.firestore {
           request.resource.data.scope_id
         );
 
-      /*
-       * Review/update.
-       */
       allow update: if isAdmin();
 
       allow update: if isSignedIn()
@@ -616,57 +614,157 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // ELECTION RESULTS
+    // ELECTION CONFIG (cycles, contests, parties, candidates, settings)
+    // ============================================================
+
+    match /election_cycles/{cycleId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /election_contests/{contestId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /political_parties/{partyId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /election_candidates/{candidateId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /election_settings/{settingsId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin();
+    }
+
+    // ============================================================
+    // ELECTION RESULTS — full lifecycle
     // ============================================================
 
     match /election_results/{resultId} {
 
-      /*
-       * Coordinator scoping is enforced in the client query layer.
-       * The rules intentionally keep reads to admin/election officer
-       * access plus a member's own registered polling unit to avoid
-       * expensive per-assignment traversals in Firestore rules.
-       */
-      allow read: if isAdminOrElectionOfficer();
+      allow read: if canReadElectionResult(resource.data);
+
+      allow create: if electionModeEnabled()
+        && !exists(
+          /databases/$(database)/documents/election_results/$(resultId)
+        )
+        && request.resource.data.submitted_by == request.auth.uid
+        && request.resource.data.contest_id is string
+        && request.resource.data.ward_id is string
+        && request.resource.data.polling_unit_id is string
+        && request.resource.data.results is list
+        && request.resource.data.results.size() > 0
+        && request.resource.data.status == "submitted"
+        && request.resource.data.verified == false
+        && request.resource.data.cloudinary_url is string
+        && (
+          // Support both ID formats: contest__pu and ward__pu
+          resultId == request.resource.data.contest_id + "__"
+                      + request.resource.data.polling_unit_id
+          || resultId == request.resource.data.ward_id + "__"
+                      + request.resource.data.polling_unit_id
+        )
+        && (
+          isAdminOrElectionOfficer()
+          || registeredAt(
+              request.resource.data.ward_id,
+              request.resource.data.polling_unit_id
+            )
+        );
+
+      // Officer review (approve / reject / clarify / reopen).
+      allow update: if officerReviewUpdate() && validOfficerTransition();
+
+      // Admin correction (forces re-review).
+      allow update: if adminCorrectionUpdate();
+
+      // Immutable record.
+      allow delete: if false;
+    }
+
+    // ============================================================
+    // POLLING UNIT REPORTS
+    // ============================================================
+
+    match /pu_reports/{reportId} {
+
+      allow read: if isAdmin();
 
       allow read: if isSignedIn()
-        && callerMemberships().hasAny(["campaign_member"])
-        && resource.data.polling_unit_id == callerProfile().polling_unit_id;
+        && (
+          resource.data.submitted_by == request.auth.uid
+          || isElectionOfficer()
+          || hasGlobalAccess("view_election_results")
+          || hasScopedAccess("view_election_results", "ward", resource.data.ward_id)
+          || hasScopedAccess("view_election_results", "polling_unit", resource.data.polling_unit_id)
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.submitted_by == request.auth.uid
+        && request.resource.data.status == "submitted"
+        && (
+          isAdminOrElectionOfficer()
+          || registeredAt(
+              request.resource.data.ward_id,
+              request.resource.data.polling_unit_id
+            )
+        );
+
+      allow update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // ELECTION INCIDENTS
+    // ============================================================
+
+    match /election_incidents/{incidentId} {
+
+      allow read: if isAdmin();
 
       allow read: if isSignedIn()
-        && resource.data.submitted_by == request.auth.uid;
-
-      /*
-       * One result document per PU.
-       *
-       * The deterministic document ID prevents a second submission.
-       */
-      allow create: if isAdminOrElectionOfficer()
-        || (
-          isSignedIn()
-          && callerMemberships().hasAny(["campaign_member"])
-          && !exists(
-            /databases/$(database)/documents/election_results/$(resultId)
-          )
-          && request.resource.data.submitted_by == request.auth.uid
-          && request.resource.data.verified == false
-          && request.resource.data.polling_unit_id == callerProfile().polling_unit_id
-          && resultId
-            == request.resource.data.ward_id
-               + "__"
-               + request.resource.data.polling_unit_id
-          && canSubmitElectionActivity(
-            request.resource.data.ward_id,
-            request.resource.data.polling_unit_id
+        && (
+          resource.data.reported_by == request.auth.uid
+          || isElectionOfficer()
+          || hasGlobalAccess("view_election_results")
+          || hasScopedAccess("view_election_results", "ward", resource.data.ward_id)
+          || (
+            resource.data.polling_unit_id != null
+            && hasScopedAccess(
+              "view_election_results",
+              "polling_unit",
+              resource.data.polling_unit_id
+            )
           )
         );
 
-      /*
-       * Only administrators can verify/change election results.
-       */
-      allow update: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reported_by == request.auth.uid
+        && request.resource.data.status == "reported"
+        && request.resource.data.description is string
+        && (
+          isAdminOrElectionOfficer()
+          || (
+            isCampaignMember()
+            && callerProfile().ward_id == request.resource.data.ward_id
+          )
+        );
 
-      allow delete: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // ELECTORAL DATA — public read, admin only via SDK/scripts
+    // ============================================================
+
+    match /electoral_data/{document} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // ============================================================

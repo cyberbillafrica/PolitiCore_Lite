@@ -1,0 +1,90 @@
+// ELECTION HELPERS
+// ============================================================
+
+function electionModeEnabled() {
+  return userExists()
+    && callerTenantId() != null
+    && exists(/databases/$(database)/documents/tenants/$(callerTenantId()))
+    && get(/databases/$(database)/documents/tenants/$(callerTenantId()))
+        .data.election_mode_enabled == true;
+}
+
+function registeredAt(wardId, pollingUnitId) {
+  return isCampaignMember()
+    && callerProfile().ward_id == wardId
+    && callerProfile().polling_unit_id == pollingUnitId;
+}
+
+function canReadElectionResult(data) {
+  return sameTenant(data)
+    && (
+      isAdmin()
+      || isElectionOfficer()
+      || registeredAt(data.ward_id, data.polling_unit_id)
+      || hasGlobalAccess("view_election_results")
+      || hasScopedAccess("view_election_results", "ward", data.ward_id)
+      || hasScopedAccess("view_election_results", "polling_unit", data.polling_unit_id)
+    );
+}
+
+// ============================================================
+// ELECTION RESULT UPDATE HELPERS
+// ============================================================
+
+// Officers are the only actors who can approve/reject/clarify/reopen.
+// Admins do NOT get approval authority (spec §27 / §33).
+function officerReviewUpdate() {
+  return isElectionOfficer()
+    && sameTenant(resource.data)
+    && request.resource.data.tenant_id == callerTenantId()
+    && request.resource.data.contest_id == resource.data.contest_id
+    && request.resource.data.ward_id == resource.data.ward_id
+    && request.resource.data.polling_unit_id == resource.data.polling_unit_id
+    && request.resource.data.submitted_by == resource.data.submitted_by
+    && request.resource.data.reviewed_by == request.auth.uid
+    && request.resource.data.verified == (request.resource.data.status == "approved")
+    && request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          "status", "verified", "review_notes", "reviewed_by",
+          "reviewed_at", "history", "updated_at"
+        ]);
+}
+
+function validOfficerTransition() {
+  return
+    // Pending → terminal
+    ((resource.data.status == "submitted" || resource.data.status == "pending_review")
+      && (request.resource.data.status == "approved"
+        || request.resource.data.status == "rejected"
+        || request.resource.data.status == "clarification_required"))
+    ||
+    // Clarification → back to queue
+    (resource.data.status == "clarification_required"
+      && (request.resource.data.status == "submitted"
+        || request.resource.data.status == "pending_review"))
+    ||
+    // Approved → reopened
+    (resource.data.status == "approved"
+      && request.resource.data.status == "reopened")
+    ||
+    // Reopened → terminal
+    (resource.data.status == "reopened"
+      && (request.resource.data.status == "approved"
+        || request.resource.data.status == "rejected"
+        || request.resource.data.status == "clarification_required"))
+    ||
+    // Rejected → back to queue
+    (resource.data.status == "rejected"
+      && (request.resource.data.status == "submitted"
+        || request.resource.data.status == "pending_review"));
+}
+
+// Spec §32 — admin corrections preserve identity and force re-review.
+function adminCorrectionUpdate() {
+  return isAdmin()
+    && sameTenant(resource.data)
+    && request.resource.data.tenant_id == callerTenantId()
+    && request.resource.data.contest_id == resource.data.contest_id
+    && request.resource.data.ward_id == resource.data.ward_id
+    && request.resource.data.polling_unit_id == resource.data.polling_unit_id
+    && request.resource.data.submitted_by == resource.data.submitted_by
