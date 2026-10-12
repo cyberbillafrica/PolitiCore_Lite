@@ -172,7 +172,7 @@ export default function AdminDashboard() {
             icon={<CheckSquare className="h-5 w-5" />}
             title="Tasks"
             description="Create social tasks and review member submissions."
-            href="/portal/admin/tasks"
+            href="/portal/tasks"
           />
 
           <AdminCard
@@ -194,6 +194,13 @@ export default function AdminDashboard() {
             title="Reports"
             description="Review administrative and operational reports."
             href="/portal/admin/reports"
+          />
+
+          <AdminCard
+            icon={<Vote className="h-5 w-5" />}
+            title="Election Control Center"
+            description="Configure election cycles, contests, political parties and election mode."
+            href="/portal/admin/election"
           />
 
           <AdminCard

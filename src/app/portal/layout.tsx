@@ -260,7 +260,7 @@ const adminNavigation = [
 
   {
     name: "Tasks",
-    href: "/portal/admin/tasks",
+    href: "/portal/tasks",
     icon: CheckSquare,
   },
 
@@ -292,6 +292,12 @@ const adminNavigation = [
     name: "Coordination",
     href: "/portal/campaign/coordination",
     icon: UsersRound,
+  },
+
+  {
+    name: "Election Control Center",
+    href: "/portal/admin/election",
+    icon: Vote,
   },
 
   {

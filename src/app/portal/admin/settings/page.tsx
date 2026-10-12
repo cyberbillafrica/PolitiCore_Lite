@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   getSiteSettings,
   updateSiteSettings,
@@ -34,6 +35,8 @@ import {
   Tag,
   Plus,
   Trash2,
+  Vote,
+  ArrowRight,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -152,6 +155,34 @@ export default function AdminSettingsPage() {
           )}
         </button>
       </div>
+
+      {/*
+        Election Control Center.
+
+        The election controls (cycles, the active contest, parties and
+        candidates) live on their own page; this is the settings-menu
+        entry point to it. Nothing below is changed by this link.
+      */}
+      <Link
+        href="/portal/admin/election"
+        className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 px-5 py-4 transition-colors hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white">
+            <Vote className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-bold text-gray-900 dark:text-white">
+              Election Control Center
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
+              Configure election cycles, the active contest, political parties
+              and candidates.
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-400" />
+      </Link>
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-800 pb-3">

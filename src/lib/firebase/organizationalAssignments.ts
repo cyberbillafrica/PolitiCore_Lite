@@ -16,6 +16,10 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
+import {
+  revokeElectionResultAccessForAssignment,
+  syncElectionResultAccessForAssignment,
+} from "./userAccess";
 import type {
   OrganizationalAssignment,
   OrganizationalPosition,
@@ -209,6 +213,20 @@ export async function createOrganizationalAssignment(data: {
     updated_at: serverTimestamp(),
   });
 
+  /*
+   * Project the assignment into the `user_access` index the Firestore
+   * rules read for scoped election results. Only active assignments
+   * grant access.
+   */
+  if (data.status === "active") {
+    await syncElectionResultAccessForAssignment(
+      data.user_id,
+      data.position,
+      data.scope_type,
+      data.scope_id,
+    );
+  }
+
   return ref.id;
 }
 
@@ -231,10 +249,38 @@ export async function updateOrganizationalAssignment(
 ): Promise<void> {
   const assignmentRef = doc(db, COLLECTION, assignmentId);
 
+  /*
+   * Read the previous shape first: a changed scope or a suspension must
+   * revoke the projection the rules were using until now.
+   */
+  const previous = await getOrganizationalAssignment(assignmentId);
+
   await updateDoc(assignmentRef, {
     ...data,
     updated_at: serverTimestamp(),
   });
+
+  if (!previous) return;
+
+  if (previous.status === "active") {
+    await revokeElectionResultAccessForAssignment(
+      previous.user_id,
+      previous.position,
+      previous.scope_type,
+      previous.scope_id,
+    );
+  }
+
+  const nextStatus = data.status ?? previous.status;
+
+  if (nextStatus === "active") {
+    await syncElectionResultAccessForAssignment(
+      previous.user_id,
+      data.position ?? previous.position,
+      data.scope_type ?? previous.scope_type,
+      data.scope_id ?? previous.scope_id,
+    );
+  }
 }
 
 /*
@@ -248,7 +294,22 @@ export async function deleteOrganizationalAssignment(
 ): Promise<void> {
   const assignmentRef = doc(db, COLLECTION, assignmentId);
 
+  /*
+   * Read before deleting so the access projection can be revoked with
+   * the same scope values that created it.
+   */
+  const previous = await getOrganizationalAssignment(assignmentId);
+
   await deleteDoc(assignmentRef);
+
+  if (previous) {
+    await revokeElectionResultAccessForAssignment(
+      previous.user_id,
+      previous.position,
+      previous.scope_type,
+      previous.scope_id,
+    );
+  }
 }
 
 /*

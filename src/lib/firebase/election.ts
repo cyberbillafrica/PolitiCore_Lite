@@ -9,7 +9,9 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  deleteDoc,
   where,
+  Query,
   Unsubscribe,
 } from "firebase/firestore";
 
@@ -266,6 +268,27 @@ export async function createPoliticalParty(party: Omit<PoliticalParty, "id"> & {
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
   });
+}
+
+/*
+ * Update an existing political party.
+ *
+ * The document id (and therefore the party identity) is immutable; only
+ * the descriptive fields are accepted.
+ */
+export async function updatePoliticalParty(
+  partyId: string,
+  data: Partial<Omit<PoliticalParty, "id" | "created_at" | "updated_at">>,
+) {
+  const pRef = doc(db, "political_parties", partyId);
+  await updateDoc(pRef, {
+    ...data,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function deletePoliticalParty(partyId: string) {
+  await deleteDoc(doc(db, "political_parties", partyId));
 }
 
 /*
@@ -607,59 +630,154 @@ export async function correctElectionResult(data: {
  * ============================================================
  * REAL-TIME ELECTION RESULTS SUBSCRIBER
  * ============================================================
+ *
+ * `scopeConstraint` mirrors the Firestore read rule
+ * (`canReadElectionResult`): admin / election officer read anything
+ * within the active contest, everyone else is limited to the ward and
+ * polling unit their account and assignments cover.
+ *
+ * A coordinator can cover several wards at once (for example an LGA
+ * coordinator), so additional constraints may be supplied. Each is
+ * queried separately — a query the rules can prove — and the snapshots
+ * are merged by document id.
  */
+
+export interface ElectionResultScopeConstraint {
+  contest_id?: string;
+  ward_id?: string;
+  polling_unit_id?: string;
+}
+
+function buildResultQuery(
+  scopeConstraint?: ElectionResultScopeConstraint,
+): Query {
+  if (
+    scopeConstraint?.contest_id &&
+    scopeConstraint?.ward_id &&
+    scopeConstraint?.polling_unit_id
+  ) {
+    return query(
+      collection(db, "election_results"),
+      where("contest_id", "==", scopeConstraint.contest_id),
+      where("ward_id", "==", scopeConstraint.ward_id),
+      where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
+    );
+  }
+
+  if (scopeConstraint?.contest_id && scopeConstraint?.ward_id) {
+    return query(
+      collection(db, "election_results"),
+      where("contest_id", "==", scopeConstraint.contest_id),
+      where("ward_id", "==", scopeConstraint.ward_id),
+    );
+  }
+
+  if (scopeConstraint?.contest_id) {
+    return query(
+      collection(db, "election_results"),
+      where("contest_id", "==", scopeConstraint.contest_id),
+    );
+  }
+
+  if (scopeConstraint?.ward_id && scopeConstraint?.polling_unit_id) {
+    return query(
+      collection(db, "election_results"),
+      where("ward_id", "==", scopeConstraint.ward_id),
+      where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
+    );
+  }
+
+  if (scopeConstraint?.ward_id) {
+    return query(
+      collection(db, "election_results"),
+      where("ward_id", "==", scopeConstraint.ward_id),
+    );
+  }
+
+  if (scopeConstraint?.polling_unit_id) {
+    return query(
+      collection(db, "election_results"),
+      where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
+    );
+  }
+
+  return query(collection(db, "election_results"));
+}
 
 export function subscribeToElectionResults(
   onData: (results: ElectionResultDoc[], isInitialLoad: boolean) => void,
   onError?: (err: Error) => void,
-  scopeConstraint?: {
-    contest_id?: string;
-    ward_id?: string;
-    polling_unit_id?: string;
-  },
+  scopeConstraint?: ElectionResultScopeConstraint,
+  additionalConstraints?: ElectionResultScopeConstraint[],
 ): Unsubscribe {
-  let q;
+  const constraints = [
+    scopeConstraint,
+    ...(additionalConstraints ?? []),
+  ].filter(Boolean) as ElectionResultScopeConstraint[];
 
-  if (scopeConstraint?.contest_id && scopeConstraint?.ward_id && scopeConstraint?.polling_unit_id) {
-    q = query(
-      collection(db, "election_results"),
-      where("contest_id", "==", scopeConstraint.contest_id),
-      where("ward_id", "==", scopeConstraint.ward_id),
-      where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
+  /*
+   * Single query: keep the original one-listener behaviour so callers
+   * that pass nothing continue to read the whole collection.
+   */
+  if (constraints.length <= 1) {
+    let isFirstSnapshot = true;
+
+    return onSnapshot(
+      buildResultQuery(constraints[0]),
+      (snapshot) => {
+        const docs = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        })) as ElectionResultDoc[];
+
+        onData(docs, isFirstSnapshot);
+        isFirstSnapshot = false;
+      },
+      (err) => {
+        console.error("Error in election results listener:", err);
+        if (onError) onError(err);
+      },
     );
-  } else if (scopeConstraint?.contest_id) {
-    q = query(
-      collection(db, "election_results"),
-      where("contest_id", "==", scopeConstraint.contest_id),
-    );
-  } else if (scopeConstraint?.ward_id && scopeConstraint?.polling_unit_id) {
-    q = query(
-      collection(db, "election_results"),
-      where("ward_id", "==", scopeConstraint.ward_id),
-      where("polling_unit_id", "==", scopeConstraint.polling_unit_id),
-    );
-  } else {
-    q = query(collection(db, "election_results"));
   }
 
-  let isFirstSnapshot = true;
+  /*
+   * Multiple queries: merge every snapshot by document id and only
+   * report "initial load" once every listener has answered.
+   */
+  const merged = new Map<string, ElectionResultDoc>();
+  const loaded = new Array<boolean>(constraints.length).fill(false);
+  let deliveredInitialLoad = false;
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const docs = snapshot.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      })) as ElectionResultDoc[];
+  const emit = () => {
+    const docs = Array.from(merged.values());
+    const allLoaded = loaded.every(Boolean);
+    const isInitialLoad = !deliveredInitialLoad && allLoaded;
 
-      onData(docs, isFirstSnapshot);
-      isFirstSnapshot = false;
-    },
-    (err) => {
-      console.error("Error in election results listener:", err);
-      if (onError) onError(err);
-    },
+    if (isInitialLoad) deliveredInitialLoad = true;
+
+    onData(docs, isInitialLoad);
+  };
+
+  const unsubscribes = constraints.map((constraint, index) =>
+    onSnapshot(
+      buildResultQuery(constraint),
+      (snapshot) => {
+        for (const d of snapshot.docs) {
+          merged.set(d.id, { id: d.id, ...d.data() } as ElectionResultDoc);
+        }
+        loaded[index] = true;
+        emit();
+      },
+      (err) => {
+        console.error("Error in election results listener:", err);
+        if (onError) onError(err);
+      },
+    ),
   );
+
+  return () => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+  };
 }
 
 /*

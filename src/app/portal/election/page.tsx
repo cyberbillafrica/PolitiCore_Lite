@@ -46,6 +46,7 @@ import {
   getElectionSettings,
   type ElectionResultDoc,
   type ElectionPartyResult,
+  type ElectionResultScopeConstraint,
 } from "@/lib/firebase/election";
 import type {
   LGA,
@@ -187,25 +188,132 @@ export default function ElectionDashboard() {
     }
   }, [selectedCycleId, cycles]);
 
-  // Determine scope constraints for Firestore security rules
-  const scopeConstraint = useMemo(() => {
+  /*
+   * ============================================================
+   * RESULT READ SCOPE (mirrors canReadElectionResult in the rules)
+   * ============================================================
+   *
+   * Firestore is not a filter: a query must be provably readable in
+   * full, or the whole listener is rejected with permission-denied.
+   * Every listener below therefore carries an equality filter the
+   * security rule can evaluate:
+   *
+   *   - admin / election officer   -> the active contest (or the whole
+   *                                   collection when no contest is chosen)
+   *   - an active assignment       -> that ward, or every ward of the
+   *                                   assignment's LGA, or its polling unit
+   *   - the member's own record    -> their registered ward + polling unit
+   *
+   * A member with neither an assignment nor a registered polling unit
+   * cannot read anything, so no listener is opened at all rather than
+   * issuing an over-broad query that would fail.
+   */
+  const resultScope = useMemo(() => {
+    const contestFilter =
+      selectedContestId !== "all" ? selectedContestId : undefined;
+
+    const withContest = (constraint: Omit<ElectionResultScopeConstraint, "contest_id">) => ({
+      ...(contestFilter ? { contest_id: contestFilter } : {}),
+      ...constraint,
+    });
+
     if (isAdmin || profile?.access_role === "election_officer") {
-      return selectedContestId !== "all"
-        ? { contest_id: selectedContestId }
-        : undefined;
-    }
-    if (profile?.ward_id && profile?.polling_unit_id) {
       return {
-        contest_id: selectedContestId !== "all" ? selectedContestId : undefined,
-        ward_id: profile.ward_id,
-        polling_unit_id: profile.polling_unit_id,
+        constraints: [
+          contestFilter ? { contest_id: contestFilter } : {},
+        ] as ElectionResultScopeConstraint[],
+        restricted: false,
       };
     }
-    return undefined;
-  }, [isAdmin, profile, selectedContestId]);
+
+    const constraints: ElectionResultScopeConstraint[] = [];
+
+    // The member's own registered polling unit is always readable.
+    if (profile?.ward_id && profile?.polling_unit_id) {
+      constraints.push(
+        withContest({
+          ward_id: profile.ward_id,
+          polling_unit_id: profile.polling_unit_id,
+        }),
+      );
+    }
+
+    for (const assignment of assignments) {
+      if (assignment.status !== "active") continue;
+
+      /*
+       * A state-wide (or campaign-wide) assignment covers everything, so
+       * the projection in user_access grants it globally and no per-ward
+       * filter is needed or provable.
+       */
+      if (
+        assignment.scope_type === "state" ||
+        assignment.scope_type === "campaign"
+      ) {
+        return {
+          constraints: [
+            contestFilter ? { contest_id: contestFilter } : {},
+          ] as ElectionResultScopeConstraint[],
+          restricted: false,
+        };
+      }
+
+      if (assignment.scope_type === "ward" && assignment.scope_id) {
+        constraints.push(withContest({ ward_id: assignment.scope_id }));
+        continue;
+      }
+
+      if (
+        assignment.scope_type === "polling_unit" &&
+        assignment.scope_id
+      ) {
+        constraints.push(withContest({ polling_unit_id: assignment.scope_id }));
+        continue;
+      }
+
+      if (assignment.scope_type === "lga" && assignment.scope_id) {
+        const scopeId = assignment.scope_id.toLowerCase();
+        const lga = lgas.find(
+          (item) =>
+            item.id.toLowerCase() === scopeId ||
+            item.id.toLowerCase() === scopeId.replace(/-lga$/, ""),
+        );
+
+        for (const ward of lga?.wards ?? []) {
+          constraints.push(withContest({ ward_id: ward.id }));
+        }
+      }
+    }
+
+    // Collapse duplicates so one LGA assignment does not double-subscribe.
+    const seen = new Set<string>();
+    const unique = constraints.filter((constraint) => {
+      const key = JSON.stringify(constraint);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return { constraints: unique, restricted: true };
+  }, [isAdmin, profile, assignments, selectedContestId, lgas]);
 
   // Real-time Firestore Listener
   useEffect(() => {
+    /*
+     * Nothing is readable for this account: skip the listener entirely
+     * rather than issuing a query the rules would reject.
+     */
+    if (resultScope.restricted && resultScope.constraints.length === 0) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setResults([]);
+      setLoading(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
+      return;
+    }
+
+    const [primaryConstraint, ...additionalConstraints] =
+      resultScope.constraints;
+
     const unsubscribe = subscribeToElectionResults(
       (docs, isInitialLoad) => {
         setResults(docs);
@@ -278,11 +386,12 @@ export default function ElectionDashboard() {
         );
         setLoading(false);
       },
-      scopeConstraint,
+      primaryConstraint,
+      additionalConstraints,
     );
 
     return () => unsubscribe();
-  }, [lgas, scopeConstraint]);
+  }, [lgas, resultScope]);
 
   // Hierarchical Scope Filtering
   const coveredResults = useMemo(() => {

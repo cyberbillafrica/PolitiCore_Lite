@@ -8,10 +8,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
 import {
   getAllElectionResults,
-  getElectionResultsByLga,
   getElectionResultsByPollingUnit,
   getElectionResultsByWard,
+  getElectionResultsByWardAndPollingUnit,
 } from "@/lib/firebase/firestore";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { getWardById } from "@/lib/constants";
 
 import type { ElectionResultRecord } from "@/types";
@@ -119,44 +120,79 @@ export default function ElectionResultsPage() {
       setError("");
 
       try {
-        let nextResults: ElectionResultRecord[] = [];
+        /*
+         * Every read below is a query the Firestore read rule
+         * (`canReadElectionResult`) can prove in advance:
+         *
+         *   admin / officer  -> the whole collection
+         *   state / campaign -> the whole collection, backed by the global
+         *                       `user_access` projection an assignment of
+         *                       that breadth installs
+         *   ward             -> that ward
+         *   polling_unit     -> that polling unit
+         *   lga              -> one read per ward the LGA contains
+         *   the member's own -> their registered ward AND polling unit
+         *
+         * A senatorial zone cannot be expanded into wards from the
+         * electoral dataset, so it falls back to the member's own
+         * polling unit rather than to an unfiltered query.
+         */
+        const collected: ElectionResultRecord[] = [];
+
+        const addOwnRegisteredPollingUnit = async () => {
+          if (!profile.ward_id || !profile.polling_unit_id) return;
+
+          collected.push(
+            ...(await getElectionResultsByWardAndPollingUnit(
+              profile.ward_id,
+              profile.polling_unit_id,
+            )),
+          );
+        };
 
         if (role === "admin" || role === "election_officer") {
-          nextResults = await getAllElectionResults();
-        } else if (isCampaignMember && profile.polling_unit_id) {
-          nextResults = await getElectionResultsByPollingUnit(
-            profile.polling_unit_id,
-          );
+          collected.push(...(await getAllElectionResults()));
         } else if (selectedCoordinator) {
           const scopeId = selectedCoordinator.scope_id;
           const scopeType = selectedCoordinator.scope_type;
 
-          if (selectedCoordinator.position === "ward_coordinator") {
-            nextResults = await getElectionResultsByWard(scopeId);
-          } else if (selectedCoordinator.position === "lga_coordinator") {
-            nextResults = await getElectionResultsByLga(scopeId);
-          } else {
-            const allResults = await getAllElectionResults();
-            nextResults = allResults.filter((result) => {
-              const wardId = result.ward_id?.toLowerCase() ?? "";
-              const lgaId = (
-                result.lga_id ?? wardId.replace(/-ward-[^-]+$/, "")
-              ).toLowerCase();
-              const candidateScope = scopeId.toLowerCase();
+          if (scopeType === "state" || scopeType === "campaign") {
+            collected.push(...(await getAllElectionResults()));
+          } else if (scopeType === "ward") {
+            collected.push(...(await getElectionResultsByWard(scopeId)));
+          } else if (scopeType === "polling_unit") {
+            collected.push(...(await getElectionResultsByPollingUnit(scopeId)));
+          } else if (scopeType === "lga") {
+            const allLgas = await getAllEnuguLGAs();
+            const normalized = scopeId.toLowerCase();
 
-              if (scopeType === "senatorial_zone" || scopeType === "state") {
-                return (
-                  wardId.includes(candidateScope) ||
-                  lgaId.includes(candidateScope) ||
-                  candidateScope.includes(wardId) ||
-                  candidateScope.includes(lgaId)
-                );
-              }
+            const lga = allLgas.find(
+              (item) =>
+                item.id.toLowerCase() === normalized ||
+                item.id.toLowerCase() === normalized.replace(/-lga$/, ""),
+            );
 
-              return false;
-            });
+            for (const ward of lga?.wards ?? []) {
+              collected.push(...(await getElectionResultsByWard(ward.id)));
+            }
           }
+
+          // The member's own polling unit is readable regardless of scope.
+          await addOwnRegisteredPollingUnit();
+        } else {
+          await addOwnRegisteredPollingUnit();
         }
+
+        // A scoped read and the own-PU read can return the same document.
+        const byId = new Map<string, ElectionResultRecord>();
+
+        for (const result of collected) {
+          const key =
+            result.id ?? `${result.ward_id}__${result.polling_unit_id}`;
+          byId.set(key, result);
+        }
+
+        const nextResults = Array.from(byId.values());
 
         if (mounted) {
           setResults(nextResults);

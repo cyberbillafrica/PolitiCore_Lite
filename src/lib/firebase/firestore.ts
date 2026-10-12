@@ -849,6 +849,37 @@ export async function getElectionResultsByWard(
   }));
 }
 
+/**
+ * The document a member is always allowed to read, matched the way the
+ * security rule matches it.
+ *
+ * `canReadElectionResult()` grants a member their own record via
+ * `registeredAt(wardId, pollingUnitId)`, which requires BOTH the ward
+ * and the polling unit to match. A query filtered on the polling unit
+ * alone cannot be proven safe and is rejected outright, so both
+ * equalities are carried here.
+ *
+ * No `orderBy` is applied: the combined filter is the whole point, and
+ * ordering would introduce a composite-index requirement for no gain.
+ */
+export async function getElectionResultsByWardAndPollingUnit(
+  wardId: string,
+  pollingUnitId: string,
+): Promise<ElectionResultRecord[]> {
+  const q = query(
+    collection(db, "election_results"),
+    where("ward_id", "==", wardId),
+    where("polling_unit_id", "==", pollingUnitId),
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+  }));
+}
+
 export async function getElectionResultsByLga(
   lgaId: string,
 ): Promise<ElectionResultRecord[]> {

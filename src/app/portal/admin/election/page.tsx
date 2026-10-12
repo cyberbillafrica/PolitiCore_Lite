@@ -12,6 +12,8 @@ import {
   updateContest,
   getPoliticalParties,
   createPoliticalParty,
+  updatePoliticalParty,
+  deletePoliticalParty,
   getElectionSettings,
   setActiveCollationContest,
   setElectionMode as persistElectionMode,
@@ -44,6 +46,7 @@ import {
   Pause,
   XCircle,
   Edit2,
+  Trash2,
   Globe,
 } from "lucide-react";
 
@@ -103,6 +106,14 @@ export default function AdminElectionManagementPage() {
     color: "#1B4F72",
     inec_registered: true,
   });
+
+  /*
+   * Null = the modal is creating a party; otherwise it is editing the
+   * party with this document id.
+   */
+  const [editingPartyId, setEditingPartyId] = useState<string | null>(null);
+  const [partyPendingDelete, setPartyPendingDelete] =
+    useState<PoliticalParty | null>(null);
 
   const [selectedContestForCandidates, setSelectedContestForCandidates] =
     useState<string>("");
@@ -346,32 +357,71 @@ export default function AdminElectionManagementPage() {
     }
   };
 
-  const handleCreatePartySubmit = async (e: React.FormEvent) => {
+  /*
+   * Political party create AND update.
+   *
+   * The document id is the party identity and is immutable, so an edit
+   * writes only the descriptive fields while a create derives the id
+   * from the acronym.
+   */
+  const handleSavePartySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partyForm.acronym || !partyForm.name) return;
-    const pId = partyForm.acronym.toLowerCase();
     setSubmitting(true);
     setFeedback(null);
     try {
-      await createPoliticalParty({
-        id: pId,
-        acronym: partyForm.acronym.toUpperCase(),
-        name: partyForm.name,
-        color: partyForm.color,
-        inec_registered: partyForm.inec_registered,
-        status: "active",
-      });
+      if (editingPartyId) {
+        await updatePoliticalParty(editingPartyId, {
+          acronym: partyForm.acronym.toUpperCase(),
+          name: partyForm.name,
+          color: partyForm.color,
+          inec_registered: partyForm.inec_registered,
+        });
+      } else {
+        await createPoliticalParty({
+          id: partyForm.acronym.toLowerCase(),
+          acronym: partyForm.acronym.toUpperCase(),
+          name: partyForm.name,
+          color: partyForm.color,
+          inec_registered: partyForm.inec_registered,
+          status: "active",
+        });
+      }
       const updatedParties = await getPoliticalParties();
       setParties(updatedParties);
       setShowPartyModal(false);
       setFeedback({
         type: "success",
-        text: `Party ${partyForm.acronym.toUpperCase()} added to Master Registry!`,
+        text: `Party ${partyForm.acronym.toUpperCase()} ${
+          editingPartyId ? "updated" : "added to Master Registry"
+        }.`,
+      });
+      setEditingPartyId(null);
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        text: err.message || "Failed to save party.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteParty = async (party: PoliticalParty) => {
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      await deletePoliticalParty(party.id);
+      setParties((prev) => prev.filter((item) => item.id !== party.id));
+      setPartyPendingDelete(null);
+      setFeedback({
+        type: "success",
+        text: `Party ${party.acronym} removed from the Master Registry.`,
       });
     } catch (err: any) {
       setFeedback({
         type: "error",
-        text: err.message || "Failed to add party.",
+        text: err.message || "Failed to delete party.",
       });
     } finally {
       setSubmitting(false);
@@ -819,6 +869,7 @@ export default function AdminElectionManagementPage() {
             </h2>
             <button
               onClick={() => {
+                setEditingPartyId(null);
                 setPartyForm({
                   id: "",
                   acronym: "",
@@ -857,9 +908,71 @@ export default function AdminElectionManagementPage() {
                 <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-green-50 text-green-700 border border-green-200">
                   INEC Registered
                 </span>
+
+                {/* CRUD actions for this party */}
+                <div className="flex items-center gap-2 pt-1 border-t border-gray-100 w-full justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingPartyId(p.id);
+                      setPartyForm({
+                        id: p.id,
+                        acronym: p.acronym,
+                        name: p.name,
+                        color: p.color || "#1B4F72",
+                        inec_registered: p.inec_registered,
+                      });
+                      setShowPartyModal(true);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-apc-primary hover:bg-apc-light rounded"
+                  >
+                    <Edit2 className="w-3 h-3" /> Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPartyPendingDelete(p)}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 rounded"
+                  >
+                    <Trash2 className="w-3 h-3" /> Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
+
+          {/* DELETE CONFIRMATION */}
+          {partyPendingDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Delete {partyPendingDelete.acronym}?
+                </h3>
+                <p className="text-xs text-gray-600">
+                  This removes the party from the political_parties master
+                  registry. Contests that already reference it keep their stored
+                  tracked-party ids until reconfigured.
+                </p>
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setPartyPendingDelete(null)}
+                    className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => handleDeleteParty(partyPendingDelete)}
+                    className="px-4 py-2 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  >
+                    Delete Party
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1233,9 +1346,11 @@ export default function AdminElectionManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-bold text-gray-900">
-              Add Political Party to Master
+              {editingPartyId
+                ? "Edit Political Party"
+                : "Add Political Party to Master"}
             </h3>
-            <form onSubmit={handleCreatePartySubmit} className="space-y-4">
+            <form onSubmit={handleSavePartySubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Party Acronym *
@@ -1285,7 +1400,10 @@ export default function AdminElectionManagementPage() {
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
                   type="button"
-                  onClick={() => setShowPartyModal(false)}
+                  onClick={() => {
+                    setShowPartyModal(false);
+                    setEditingPartyId(null);
+                  }}
                   className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
                 >
                   Cancel
@@ -1295,7 +1413,7 @@ export default function AdminElectionManagementPage() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-bold bg-apc-primary text-white rounded-lg hover:bg-apc-dark"
                 >
-                  Save Party
+                  {editingPartyId ? "Update Party" : "Save Party"}
                 </button>
               </div>
             </form>

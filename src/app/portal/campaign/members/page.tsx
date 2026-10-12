@@ -400,6 +400,7 @@ function MemberRow({
     ward_id: string;
     polling_unit_id: string;
     membership_types: string[];
+    access_role: string;
   };
 }) {
   const ward = getWardById(member.ward_id);
@@ -433,6 +434,20 @@ function MemberRow({
                   {formatMembership(type)}
                 </span>
               ))}
+
+              {member.access_role && (
+                <span
+                  className={
+                    member.access_role === "admin"
+                      ? "rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800"
+                      : member.access_role === "election_officer"
+                        ? "rounded-full bg-apc-primary/10 px-2.5 py-1 text-xs font-semibold text-apc-primary"
+                        : "rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"
+                  }
+                >
+                  {formatRole(member.access_role)}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -530,6 +545,18 @@ function formatPosition(position: OrganizationalPosition) {
 function formatMembership(membership: string) {
   return membership
     .replace("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/*
+ * ============================================================
+ * ACCESS ROLE
+ * ============================================================
+ */
+
+function formatRole(role: string) {
+  return role
+    .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
