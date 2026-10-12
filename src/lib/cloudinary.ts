@@ -10,10 +10,10 @@
  */
 
 export const CLOUDINARY_CLOUD_NAME =
-  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dvvwuktq";
+  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "";
 
 export const CLOUDINARY_UPLOAD_PRESET =
-  process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "ifeanyichukwu-2027";
+  process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
 export type CloudinaryFolder =
   | "ifeanyi-2027/news"

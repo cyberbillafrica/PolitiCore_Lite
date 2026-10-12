@@ -36,7 +36,11 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { assignmentCoversScope } from "@/lib/permissions";
-import { useElectionMode } from "@/hooks/useElectionEngine";
+import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
+import {
+  lgasWithinContestScope,
+  describeContestScope,
+} from "@/lib/election-scope";
 import {
   subscribeToElectionResults,
   correctElectionResult,
@@ -92,6 +96,14 @@ export default function ElectionDashboard() {
   const isAdmin = profile?.access_role === "admin";
   const { electionMode, loading: electionModeLoading } = useElectionMode();
 
+  /*
+   * The ACTIVE CONTEST defines this dashboard's geographic scope.
+   * `contestLgaIds` is null for a state-wide (or wider) contest and
+   * a list of LGA ids for anything narrower — the single source of
+   * truth for every geographic filter below.
+   */
+  const { contest: activeContest, lgaIds: contestLgaIds } = useActiveContest();
+
   useEffect(() => {
     if (accessLoading) return;
 
@@ -112,6 +124,7 @@ export default function ElectionDashboard() {
   }, [profile, accessLoading, router]);
 
   const [lgas, setLgas] = useState<LGA[]>([]);
+  const [allLgas, setAllLgas] = useState<LGA[]>([]);
   const [cycles, setCycles] = useState<ElectionCycle[]>([]);
   const [contests, setContests] = useState<ElectionContest[]>([]);
   const [allParties, setAllParties] = useState<PoliticalParty[]>([]);
@@ -150,6 +163,7 @@ export default function ElectionDashboard() {
       try {
         const lgaData = await getAllEnuguLGAs();
         setLgas(lgaData);
+        setAllLgas(lgaData);
 
         const loadedSettings = await getElectionSettings();
         const loadedCycles = await getElectionCycles();
@@ -436,9 +450,59 @@ export default function ElectionDashboard() {
     });
   }, [isAdmin, profile, assignments, results, lgas]);
 
+  /*
+   * ============================================================
+   * CONTEST-SCOPED GEOGRAPHY
+   * ============================================================
+   *
+   * `lgas` is filtered down to the active contest's scope, so every
+   * LGA dropdown, ward list and PU denominator below is constrained
+   * by it. Nothing defaults to "all of Enugu" unless the active
+   * contest is state-wide (in which case `contestLgaIds` is null and
+   * lgas === allLgas).
+   */
+  const scopedLgas = useMemo(
+    () => lgasWithinContestScope(activeContest, lgas),
+    [activeContest, lgas],
+  );
+
+  // A contest confined to exactly one LGA locks the LGA selector.
+  const lgaFilterLocked =
+    contestLgaIds !== null && contestLgaIds.length === 1;
+
+  /*
+   * Results outside the contest's geographic scope must never feed
+   * the aggregate numbers even when the underlying listener can read
+   * them (admins hear the whole collection). Contest scope is the
+   * single source of truth.
+   */
+  const contestScopedResults = useMemo(() => {
+    if (!contestLgaIds) return coveredResults;
+    const allowed = new Set(contestLgaIds.map((id) => id.toLowerCase()));
+    return coveredResults.filter((r) =>
+      allowed.has((r.lga_id || "").toLowerCase()),
+    );
+  }, [coveredResults, contestLgaIds]);
+
+  // Keep the selected LGA valid if the contest scope changes.
+  useEffect(() => {
+    if (contestLgaIds === null) return;
+
+    if (!lgaFilterLocked) return;
+
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelectedLgaId(contestLgaIds[0]);
+    setSelectedWardId("all");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [contestLgaIds, lgaFilterLocked]);
+
   // Operational Submissions vs Official Results
+  const officialApprovedResults = useMemo(() => {
+    return contestScopedResults.filter((r) => r.status === "approved");
+  }, [contestScopedResults]);
+
   const operationalSubmissions = useMemo(() => {
-    return coveredResults.filter((r) => {
+    return contestScopedResults.filter((r) => {
       if (
         selectedContestId !== "all" &&
         r.contest_id &&
@@ -454,15 +518,12 @@ export default function ElectionDashboard() {
       }
       return true;
     });
-  }, [coveredResults, selectedContestId, selectedLgaId, selectedWardId]);
-
-  // Official Approved Results (Strictly Section 24 & 42)
-  const officialApprovedResults = useMemo(() => {
-    return operationalSubmissions.filter((r) => r.status === "approved");
-  }, [operationalSubmissions]);
+  }, [contestScopedResults, selectedContestId, selectedLgaId, selectedWardId]);
 
   // Current Contest Object & Tracked Parties List
   const currentContest = contests.find((c) => c.id === selectedContestId);
+  const activeContestIsSelected =
+    !!(activeContest && currentContest?.id === activeContest.id);
   const trackedParties = currentContest?.tracked_parties ?? [];
 
   // Dynamically default party comparison selectors when trackedParties loads
@@ -544,6 +605,11 @@ export default function ElectionDashboard() {
         );
       }
     } else {
+      /*
+       * Denominator is the CONTEST scope, not the whole state: with
+       * no ward/LGA drill-down chosen the total covers every LGA the
+       * active contest spans. `lgas` is already contest-scoped.
+       */
       totalPUsInScope = lgas.reduce(
         (acc, l) =>
           acc + l.wards.reduce((wAcc, w) => wAcc + w.pollingUnits.length, 0),
@@ -796,6 +862,20 @@ export default function ElectionDashboard() {
         </div>
       </div>
 
+      {/* Active contest scope banner */}
+      {activeContest && (
+        <div className="p-3 bg-apc-light/50 border border-apc-primary/20 rounded-xl flex flex-wrap items-center gap-2 text-xs">
+          <Lock className="h-3.5 w-3.5 text-apc-primary shrink-0" />
+          <span className="font-semibold text-apc-primary">
+            Active contest:
+          </span>
+          <span className="font-bold text-gray-900">{activeContest.name}</span>
+          <span className="text-gray-500">
+            · Scope: {describeContestScope(activeContest, allLgas)}
+          </span>
+        </div>
+      )}
+
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
@@ -809,10 +889,20 @@ export default function ElectionDashboard() {
               setSelectedLgaId(e.target.value);
               setSelectedWardId("all");
             }}
-            className="px-3 py-1.5 border rounded-lg text-xs font-semibold bg-gray-50 max-w-[140px] sm:max-w-[180px] truncate"
+            disabled={lgaFilterLocked}
+            title={
+              lgaFilterLocked
+                ? "Locked to the active contest's LGA"
+                : undefined
+            }
+            className="px-3 py-1.5 border rounded-lg text-xs font-semibold bg-gray-50 max-w-[140px] sm:max-w-[180px] truncate disabled:bg-gray-100"
           >
-            <option value="all">All LGAs</option>
-            {lgas.map((lga) => (
+            {/*
+             * A single-LGA contest has no "All LGAs" option — the
+             * selector is LOCKED to the contest's LGA.
+             */}
+            {!lgaFilterLocked && <option value="all">All LGAs</option>}
+            {scopedLgas.map((lga) => (
               <option key={lga.id} value={lga.id}>
                 {lga.name}
               </option>

@@ -9,9 +9,9 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
 import { assignmentCoversScope } from "@/lib/permissions";
-import { useElectionMode } from "@/hooks/useElectionEngine";
+import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +67,16 @@ export default function IncidentsPage() {
     }
     loadLgas();
   }, []);
+
+  /*
+   * The LGA selector is constrained to the ACTIVE CONTEST's scope
+   * (see src/lib/election-scope.ts).
+   */
+  const { contest: incidentActiveContest } = useActiveContest();
+  const scopedLgaOptions = lgasWithinContestScope(
+    incidentActiveContest,
+    lgas,
+  );
 
   const resolvedLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
 
@@ -312,7 +322,7 @@ export default function IncidentsPage() {
                     required
                   >
                     <option value="">Select LGA</option>
-                    {lgas.map((l) => (
+                    {scopedLgaOptions.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}
                       </option>

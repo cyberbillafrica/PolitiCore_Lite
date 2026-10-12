@@ -436,6 +436,18 @@ export async function updateContest(
 }
 
 /*
+ * Delete a contest permanently.
+ *
+ * Admin-only by election_contests rules. The active contest pointer
+ * on election_settings is the caller's responsibility to reassign —
+ * the UI confirms before calling.
+ */
+export async function deleteContest(contestId: string) {
+  const contestRef = doc(db, "election_contests", contestId);
+  await deleteDoc(contestRef);
+}
+
+/*
  * ============================================================
  * CANDIDATES SERVICES
  * ============================================================

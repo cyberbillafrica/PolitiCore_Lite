@@ -263,6 +263,7 @@ export interface UserProfile {
   gender: string;
 
   // Registered electoral location
+  lga_id?: string;
   ward_id: string;
   polling_unit_id: string;
 

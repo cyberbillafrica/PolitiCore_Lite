@@ -10,6 +10,7 @@ import {
   getContestsByCycle,
   createContest,
   updateContest,
+  deleteContest,
   getPoliticalParties,
   createPoliticalParty,
   updatePoliticalParty,
@@ -84,6 +85,17 @@ export default function AdminElectionManagementPage() {
   });
 
   const [showContestModal, setShowContestModal] = useState(false);
+
+  /*
+   * Null = the modal is creating a contest; otherwise it is editing
+   * the contest with this document id (the immutable identity).
+   */
+  const [editingContestId, setEditingContestId] = useState<string | null>(
+    null,
+  );
+  const [contestPendingDelete, setContestPendingDelete] =
+    useState<ElectionContest | null>(null);
+
   const [contestForm, setContestForm] = useState({
     id: "",
     election_cycle_id: "",
@@ -93,6 +105,7 @@ export default function AdminElectionManagementPage() {
     scope_id: "enugu-state",
     state_id: "enugu-state",
     senatorial_zone_id: "",
+    election_date: "",
     selectedLgas: [] as string[],
     tracked_parties: ["apc", "pdp", "lp", "apga", "adc"],
     focus_party_id: "apc",
@@ -351,6 +364,87 @@ export default function AdminElectionManagementPage() {
       setFeedback({
         type: "error",
         text: err.message || "Failed to create contest.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /*
+   * Contest create AND edit. The document id is the contest's
+   * immutable identity, so an edit writes only the descriptive and
+   * configuration fields. Election date is included per spec.
+   */
+  const handleSaveContestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile || !contestForm.name) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const payload = {
+        contest_type: contestForm.contest_type,
+        name: contestForm.name,
+        scope_type: contestForm.scope_type,
+        scope_id: contestForm.scope_id,
+        state_id: contestForm.state_id,
+        senatorial_zone_id: contestForm.senatorial_zone_id,
+        lga_ids: contestForm.selectedLgas,
+        election_date: contestForm.election_date || undefined,
+        tracked_parties: contestForm.tracked_parties,
+        focus_party_id: contestForm.focus_party_id,
+      };
+
+      if (editingContestId) {
+        await updateContest(editingContestId, payload);
+        setContests((prev) =>
+          prev.map((c) =>
+            c.id === editingContestId ? { ...c, ...payload } : c,
+          ),
+        );
+      } else {
+        await createContest({
+          id: contestForm.id,
+          election_cycle_id: selectedCycleId,
+          ...payload,
+          userId: profile.id || "admin",
+        });
+        const updated = await getContestsByCycle(selectedCycleId);
+        setContests(updated);
+      }
+
+      setShowContestModal(false);
+      setEditingContestId(null);
+      setFeedback({
+        type: "success",
+        text: editingContestId
+          ? `Contest '${contestForm.name}' updated.`
+          : "Election Contest created & configured successfully!",
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        text: err.message || "Failed to save contest.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteContest = async (contest: ElectionContest) => {
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      await deleteContest(contest.id);
+      setContests((prev) => prev.filter((item) => item.id !== contest.id));
+      setContestPendingDelete(null);
+      setFeedback({
+        type: "success",
+        text: `Contest '${contest.name}' deleted.`,
+      });
+    } catch (err: any) {
+      setFeedback({
+        type: "error",
+        text: err.message || "Failed to delete contest.",
       });
     } finally {
       setSubmitting(false);
@@ -725,23 +819,24 @@ export default function AdminElectionManagementPage() {
               Contests under{" "}
               {cycles.find((c) => c.id === selectedCycleId)?.name}
             </h2>
-            <button
-              onClick={() => {
-                setContestForm({
-                  id: `contest-${Date.now()}`,
-                  election_cycle_id: selectedCycleId,
-                  contest_type: "governorship",
-                  name: "",
-                  scope_type: "state",
-                  scope_id: "enugu-state",
-                  state_id: "enugu-state",
-                  senatorial_zone_id: "",
-                  selectedLgas: [],
-                  tracked_parties: ["apc", "pdp", "lp", "apga", "adc"],
-                  focus_party_id: "apc",
-                });
-                setShowContestModal(true);
-              }}
+            <button                        onClick={() => {
+                          setEditingContestId(null);
+                          setContestForm({
+                            id: `contest-${Date.now()}`,
+                            election_cycle_id: selectedCycleId,
+                            contest_type: "governorship",
+                            name: "",
+                            scope_type: "state",
+                            scope_id: "enugu-state",
+                            state_id: "enugu-state",
+                            senatorial_zone_id: "",
+                            election_date: "",
+                            selectedLgas: [],
+                            tracked_parties: ["apc", "pdp", "lp", "apga", "adc"],
+                            focus_party_id: "apc",
+                          });
+                          setShowContestModal(true);
+                        }}
               className="px-4 py-2 bg-apc-primary text-white text-xs font-bold rounded-lg hover:bg-apc-dark flex items-center gap-2"
             >
               <Plus className="w-4 h-4" /> Add New Contest
@@ -825,7 +920,7 @@ export default function AdminElectionManagementPage() {
 
                   {/* Controls */}
                   <div className="border-t pt-3 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() =>
                           handleToggleContestStatus(
@@ -847,6 +942,40 @@ export default function AdminElectionManagementPage() {
                           </>
                         )}
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingContestId(c.id);
+                          setContestForm({
+                            id: c.id,
+                            election_cycle_id: c.election_cycle_id,
+                            contest_type: c.contest_type,
+                            name: c.name,
+                            scope_type: c.scope_type,
+                            scope_id: c.scope_id ?? "",
+                            state_id: c.state_id ?? "enugu-state",
+                            senatorial_zone_id:
+                              c.senatorial_zone_id ?? "",
+                            election_date: c.election_date ?? "",
+                            selectedLgas: c.lga_ids ?? [],
+                            tracked_parties: c.tracked_parties ?? [],
+                            focus_party_id: c.focus_party_id ?? "apc",
+                          });
+                          setShowContestModal(true);
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-apc-primary hover:bg-apc-light rounded"
+                      >
+                        <Edit2 className="w-3 h-3" /> Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setContestPendingDelete(c)}
+                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <Trash2 className="w-3 h-3" /> Delete
+                      </button>
                     </div>
 
                     <span className="text-gray-400 font-mono text-[11px]">
@@ -856,6 +985,43 @@ export default function AdminElectionManagementPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* CONTEST DELETE CONFIRMATION */}
+      {contestPendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">
+              Delete contest?
+            </h3>
+            <p className="text-xs text-gray-600">
+              This permanently removes{' '}
+              <span className="font-semibold">{contestPendingDelete.name}</span>{' '}
+              from the contest registry. Results uploaded against it keep their
+              historical contest_id but will no longer appear in contest
+              selectors.
+              {settings?.active_contest_id === contestPendingDelete.id &&
+                " This is the ACTIVE collation contest — reassign the active contest afterwards."}
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setContestPendingDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => handleDeleteContest(contestPendingDelete)}
+                className="px-4 py-2 text-xs font-bold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Delete Contest
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1183,9 +1349,13 @@ export default function AdminElectionManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-bold text-gray-900">
-              Create New Contest
+              {editingContestId ? "Edit Contest" : "Create New Contest"}
             </h3>
-            <form onSubmit={handleCreateContestSubmit} className="space-y-4">
+            <form onSubmit={handleSaveContestSubmit} className="space-y-4">
+              {/*
+               * The contest id is its immutable identity: shown read-only
+               * during an edit, editable only on create.
+               */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   Contest ID *
@@ -1193,11 +1363,31 @@ export default function AdminElectionManagementPage() {
                 <input
                   type="text"
                   value={contestForm.id}
+                  readOnly={!!editingContestId}
                   onChange={(e) =>
                     setContestForm({ ...contestForm, id: e.target.value })
                   }
-                  className="w-full px-3 py-2 border rounded-lg text-xs"
+                  className={`w-full px-3 py-2 border rounded-lg text-xs ${
+                    editingContestId ? "bg-gray-100 font-mono" : ""
+                  }`}
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Election Date
+                </label>
+                <input
+                  type="date"
+                  value={contestForm.election_date}
+                  onChange={(e) =>
+                    setContestForm({
+                      ...contestForm,
+                      election_date: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg text-xs"
                 />
               </div>
 
@@ -1333,7 +1523,7 @@ export default function AdminElectionManagementPage() {
                   disabled={submitting}
                   className="px-4 py-2 text-xs font-bold bg-apc-primary text-white rounded-lg hover:bg-apc-dark"
                 >
-                  Save Contest
+                  {editingContestId ? "Update Contest" : "Save Contest"}
                 </button>
               </div>
             </form>

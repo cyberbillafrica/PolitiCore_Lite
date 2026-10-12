@@ -32,13 +32,18 @@ export async function signUpVolunteer(
 
     membership_types: MembershipType[];
 
+    lga_id?: string;
     ward_id: string;
     polling_unit_id: string;
 
-    facebook_username?: string;
-    x_username?: string;
-    instagram_username?: string;
-    tiktok_username?: string;
+    facebook_name?: string;
+    facebook_profile_url?: string;
+    x_name?: string;
+    x_profile_url?: string;
+    instagram_name?: string;
+    instagram_profile_url?: string;
+    tiktok_name?: string;
+    tiktok_profile_url?: string;
   },
 ) {
   try {
@@ -50,8 +55,20 @@ export async function signUpVolunteer(
 
     const user = userCredential.user;
 
+    /*
+     * Filter out undefined fields — Firestore rejects undefined
+     * values, so dropped optional fields must be omitted entirely,
+     * not written as undefined.
+     */
+    const cleanedUserData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(userData)) {
+      if (value !== undefined) {
+        cleanedUserData[key] = value;
+      }
+    }
+
     await setDoc(doc(db, "users", user.uid), {
-      ...userData,
+      ...cleanedUserData,
 
       email,
 
@@ -114,6 +131,7 @@ export async function createMemberByAdmin(
     membership_types: MembershipType[];
     access_role: Role;
 
+    lga_id?: string;
     ward_id: string;
     polling_unit_id: string;
 
@@ -142,12 +160,24 @@ export async function createMemberByAdmin(
 
     const newUser = userCredential.user;
 
+    /*
+     * Filter out undefined fields — Firestore rejects undefined
+     * values, so dropped optional fields must be omitted entirely,
+     * not written as undefined.
+     */
+    const cleanedUserData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(userData)) {
+      if (value !== undefined) {
+        cleanedUserData[key] = value;
+      }
+    }
+
     /**
      * Create the Firestore user profile through the
      * primary Firestore connection.
      */
     await setDoc(doc(db, "users", newUser.uid), {
-      ...userData,
+      ...cleanedUserData,
 
       email,
 

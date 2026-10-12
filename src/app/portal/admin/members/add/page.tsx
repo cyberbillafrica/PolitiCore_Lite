@@ -161,15 +161,24 @@ export default function AddMemberPage() {
       {
         full_name: form.full_name,
         phone: form.phone,
+        gender: form.gender || undefined,
+
         ward_id: form.ward_id,
         polling_unit_id: form.polling_unit_id,
+        lga_id: selectedLgaId || undefined,
+
         membership_types: form.membership_types,
         access_role: form.access_role,
-        facebook_username: form.facebook_username || undefined,
-        x_username: form.x_username || undefined,
-        instagram_username: form.instagram_username || undefined,
-        tiktok_username: form.tiktok_username || undefined,
-        gender: form.gender || undefined,
+
+        /*
+         * The profile displays read `*_name` plus the profile URL
+         * where collected; keep both so the display and the raw
+         * handle stay in sync.
+         */
+        ...(form.facebook_username ? { facebook_username: form.facebook_username, facebook_name: form.facebook_username } : {}),
+        ...(form.x_username ? { x_username: form.x_username, x_name: form.x_username } : {}),
+        ...(form.instagram_username ? { instagram_username: form.instagram_username, instagram_name: form.instagram_username } : {}),
+        ...(form.tiktok_username ? { tiktok_username: form.tiktok_username, tiktok_name: form.tiktok_username } : {}),
       },
     );
 

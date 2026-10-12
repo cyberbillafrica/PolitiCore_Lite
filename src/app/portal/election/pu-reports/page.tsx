@@ -9,9 +9,9 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
 import { assignmentCoversScope } from "@/lib/permissions";
-import { useElectionMode } from "@/hooks/useElectionEngine";
+import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +68,15 @@ export default function PUReportsPage() {
     }
     loadLgas();
   }, []);
+
+  /*
+   * The LGA selector is constrained to the ACTIVE CONTEST's scope
+   * (see src/lib/election-scope.ts). For admins and election officers
+   * the whole contest span is choosable; members were already locked
+   * to their registered ward below.
+   */
+  const { contest: puActiveContest } = useActiveContest();
+  const scopedLgaOptions = lgasWithinContestScope(puActiveContest, lgas);
 
   const resolvedLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
 
@@ -315,7 +324,7 @@ export default function PUReportsPage() {
                     required
                   >
                     <option value="">Select LGA</option>
-                    {lgas.map((l) => (
+                    {scopedLgaOptions.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}
                       </option>
