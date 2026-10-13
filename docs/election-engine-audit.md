@@ -2,7 +2,7 @@
 
 This document presents a comprehensive, read-only audit of the election engine implementation across the four primary election pages and associated Firestore security rules, verifying every specification claim against actual lines of code.
 
----
+--
 
 ## J-E1 — Audit `src/app/portal/election/upload/page.tsx`
 
