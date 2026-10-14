@@ -17,6 +17,7 @@ import {
   isWithinContestScope,
 } from "@/lib/election-scope";
 import { useElectionMode } from "@/hooks/useElectionEngine";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
   LGA,
   ElectionCycle,
@@ -363,7 +364,8 @@ export default function ElectionUploadPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       <div>
-        <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1">
+        <BackToDashboardLink />
+        <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1 mt-2">
           <Vote className="w-4 h-4" />
           <span>ELECTION OPERATIONS DESK</span>
         </div>

@@ -10,8 +10,10 @@ import {
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
-import { assignmentCoversScope } from "@/lib/permissions";
+import { buildElectionReadScope } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
+import type { ElectionIncidentScopeConstraint } from "@/lib/firebase/election";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,8 +96,42 @@ export default function IncidentsPage() {
   }, [resolvedLgaId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Real-time Incidents Listener
+  /*
+   * Real-time Incidents Listener.
+   *
+   * Each listener carries an equality filter the
+   * `election_incidents` read rule can prove in advance (own
+   * reports, or ward / PU reads backed by the caller's
+   * `user_access` projection), so members no longer trigger a
+   * collection-wide query the rules reject.
+   */
   useEffect(() => {
+    if (accessLoading || !profile) {
+      return;
+    }
+
+    const scope = buildElectionReadScope(profile, assignments, lgas);
+
+    const constraints: ElectionIncidentScopeConstraint[] = [];
+
+    if (!scope.unrestricted) {
+      constraints.push(...scope.geoConstraints);
+
+      // A member always reads their own reports.
+      if (profile.id) {
+        constraints.push({ reported_by: profile.id });
+      }
+    }
+
+    if (!scope.unrestricted && constraints.length === 0) {
+      // Nothing is provably readable — open no listener at all.
+      setIncidents([]);
+      setLoading(false);
+      return;
+    }
+
+    const [primary, ...additional] = constraints;
+
     const unsubscribe = subscribeToElectionIncidents(
       (docs) => {
         setIncidents(docs);
@@ -108,33 +144,23 @@ export default function IncidentsPage() {
         );
         setLoading(false);
       },
+      primary,
+      additional,
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [accessLoading, profile, assignments, lgas]);
 
   const selectedLga = lgas.find((l) => l.id === form.lga_id);
   const wards = selectedLga?.wards ?? [];
   const selectedWard = wards.find((w) => w.id === form.ward_id);
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
-  // Scoped Filter for Non-Admins
-  const filteredIncidents = incidents.filter((inc) => {
-    if (isAdmin) return true;
-    const activeAssignments = assignments.filter((a) => a.status === "active");
-    if (activeAssignments.length === 0) {
-      return inc.reported_by === profile?.id;
-    }
-    return (
-      activeAssignments.some((a) =>
-        assignmentCoversScope(
-          a,
-          { scope_type: "ward", scope_id: inc.ward_id },
-          lgas,
-        ),
-      ) || inc.reported_by === profile?.id
-    );
-  });
+  /*
+   * No client-side scope filter: the queries above already return
+   * exactly what this account is allowed to read.
+   */
+  const filteredIncidents = incidents;
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -236,7 +262,8 @@ export default function IncidentsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <BackToDashboardLink />
+          <h1 className="mt-2 text-2xl font-bold text-gray-900">
             Election Incident Reports
           </h1>
           <p className="text-sm text-gray-500">

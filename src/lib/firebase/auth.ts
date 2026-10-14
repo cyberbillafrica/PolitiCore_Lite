@@ -9,7 +9,13 @@ import {
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  serverTimestamp,
+  onSnapshot,
+  type Unsubscribe,
+} from "firebase/firestore";
 
 import { auth, db, firebaseConfig } from "./config";
 
@@ -255,6 +261,69 @@ export async function logOut() {
 /**
  * Subscribes to Firebase authentication state changes.
  */
+/*
+ * ============================================================
+ * MEMBER SUSPENSION ENFORCEMENT
+ * ============================================================
+ *
+ * Firebase Auth sign-in can succeed for a suspended member — the
+ * app's job is to detect the suspension and kick the member out.
+ * Detection happens twice:
+ *
+ *   1. At sign-in: AuthContext reads the profile and signs out
+ *      immediately when status === "suspended".
+ *   2. Mid-session: subscribeToUserStatus() watches the caller's
+ *      own /users/{uid} document and ejects them the moment an
+ *      admin suspends them.
+ *
+ * Both paths leave a one-time notice for the login screen:
+ * "Your account has been suspended. Please contact an
+ * administrator."
+ */
+
+export const SUSPENSION_NOTICE_STORAGE_KEY =
+  "politicore.auth.suspendedNotice";
+
+/** Flag the one-time suspension notice for the login screen. */
+export function flagSuspensionNotice(): void {
+  try {
+    window.sessionStorage.setItem(SUSPENSION_NOTICE_STORAGE_KEY, "1");
+  } catch {
+    /* Storage unavailable — the notice simply is not shown. */
+  }
+}
+
+/** Consume the one-time suspension notice (called by the login page). */
+export function consumeSuspensionNotice(): boolean {
+  try {
+    if (window.sessionStorage.getItem(SUSPENSION_NOTICE_STORAGE_KEY)) {
+      window.sessionStorage.removeItem(SUSPENSION_NOTICE_STORAGE_KEY);
+      return true;
+    }
+  } catch {
+    /* Storage unavailable. */
+  }
+  return false;
+}
+
+/*
+ * Live watch on the caller's own /users/{uid} document. The rules
+ * keep own-profile reads allowed precisely so this check can run
+ * and sign the member out.
+ */
+export function subscribeToUserStatus(
+  userId: string,
+  onSuspended: () => void,
+): Unsubscribe {
+  return onSnapshot(doc(db, "users", userId), (snapshot) => {
+    const data = snapshot.data() as { status?: string } | undefined;
+
+    if (data?.status === "suspended") {
+      onSuspended();
+    }
+  });
+}
+
 export function onAuthStateChange(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }

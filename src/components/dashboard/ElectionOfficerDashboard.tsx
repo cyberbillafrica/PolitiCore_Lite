@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -10,13 +11,22 @@ import {
   FileText,
   MapPin,
   Upload,
-  Activity,
   ShieldCheck,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useActiveContest } from "@/hooks/useElectionEngine";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
+import {
+  describeContestScope,
+  lgasWithinContestScope,
+} from "@/lib/election-scope";
+import {
+  subscribeToElectionResults,
+  subscribeToElectionIncidents,
+  subscribeToPUReports,
+} from "@/lib/firebase/election";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -29,6 +39,7 @@ type ActionCardProps = {
   description: string;
   href: string;
   action: string;
+  disabled?: boolean;
 };
 
 type StatCardProps = {
@@ -44,31 +55,125 @@ type StatCardProps = {
 
 export default function ElectionOfficerDashboard() {
   const { profile } = useAuth();
+  const { contest: activeContest } = useActiveContest();
+  const lookup = useElectoralLookup();
+
+  /*
+   * Live activity counters. Officers are unconditional readers in
+   * the rules (isElectionOfficer()), but every query here is still
+   * an equality-filtered, provable read — no collection-wide fetch.
+   */
+  const [puReportCount, setPuReportCount] = useState(0);
+  const [incidentCount, setIncidentCount] = useState(0);
+  const [resultCount, setResultCount] = useState(0);
+  const [approvedPuCount, setApprovedPuCount] = useState(0);
+
+  const officerId = profile?.id ?? "";
+
+  useEffect(() => {
+    if (!officerId) return;
+
+    const unsubscribe = subscribeToPUReports(
+      (docs) => setPuReportCount(docs.length),
+      (err) => console.error("Officer PU report count failed:", err),
+      { submitted_by: officerId },
+    );
+
+    return () => unsubscribe();
+  }, [officerId]);
+
+  useEffect(() => {
+    if (!officerId) return;
+
+    const unsubscribe = subscribeToElectionIncidents(
+      (docs) => setIncidentCount(docs.length),
+      (err) => console.error("Officer incident count failed:", err),
+      { reported_by: officerId },
+    );
+
+    return () => unsubscribe();
+  }, [officerId]);
+
+  useEffect(() => {
+    if (!officerId) return;
+
+    // Submitted OR reviewed by this officer — one listener per
+    // provable query, merged by document id.
+    const unsubscribe = subscribeToElectionResults(
+      (docs) => setResultCount(docs.length),
+      (err) => console.error("Officer result count failed:", err),
+      { submitted_by: officerId },
+      [{ reviewed_by: officerId }],
+    );
+
+    return () => unsubscribe();
+  }, [officerId]);
+
+  const activeContestId = activeContest?.id ?? "";
+
+  useEffect(() => {
+    if (!activeContestId) {
+      setApprovedPuCount(0);
+      return;
+    }
+
+    const unsubscribe = subscribeToElectionResults(
+      (docs) => {
+        const approved = docs.filter((doc) => doc.status === "approved");
+        const distinct = new Set(approved.map((doc) => doc.polling_unit_id));
+        setApprovedPuCount(distinct.size);
+      },
+      (err) => console.error("Officer coverage count failed:", err),
+      { contest_id: activeContestId },
+    );
+
+    return () => unsubscribe();
+  }, [activeContestId]);
+
+  /*
+   * Contest scope is the single source of truth for the operational
+   * geography: officers act inside the active contest's scope —
+   * never "all wards and polling units" of the state.
+   */
+  const scopedLgas = useMemo(
+    () => lgasWithinContestScope(activeContest, lookup.lgas),
+    [activeContest, lookup.lgas],
+  );
+
+  const scopePuCount = useMemo(
+    () =>
+      scopedLgas.reduce(
+        (acc, lga) =>
+          acc + lga.wards.reduce((wAcc, ward) => wAcc + ward.pollingUnits.length, 0),
+        0,
+      ),
+    [scopedLgas],
+  );
+
+  const scopeWardCount = useMemo(
+    () => scopedLgas.reduce((acc, lga) => acc + lga.wards.length, 0),
+    [scopedLgas],
+  );
+
+  const scopeLabel = describeContestScope(activeContest, lookup.lgas);
+  const hasActiveContest = Boolean(activeContest);
+
+  const coveragePercent =
+    hasActiveContest && scopePuCount > 0
+      ? `${((approvedPuCount / scopePuCount) * 100).toFixed(1)}%`
+      : "N/A";
 
   if (!profile) return null;
 
   /*
-   * EO users are not restricted to profile.ward_id / profile.polling_unit_id
-   * when reporting election activity.
-   *
-   * We still display their registered electoral area for identification,
-   * but all operational actions point to the full election-operation routes.
+   * The officer's registered electoral area is shown for identity
+   * only; operational actions point at the contest-scoped routes.
    */
-
-  const registeredWard = profile.ward_id ? getWardById(profile.ward_id) : null;
-
-  const registeredPollingUnit =
-    profile.ward_id && profile.polling_unit_id
-      ? getPollingUnitById(profile.ward_id, profile.polling_unit_id)
-      : null;
-
-  const registeredWardLabel = registeredWard
-    ? `${registeredWard.code} — ${registeredWard.name}`
-    : "Not assigned";
-
-  const registeredPollingUnitLabel = registeredPollingUnit
-    ? `${registeredPollingUnit.code} — ${registeredPollingUnit.name}`
-    : "Not assigned";
+  const registered = lookup.describe(
+    profile.lga_id,
+    profile.ward_id,
+    profile.polling_unit_id,
+  );
 
   return (
     <div className="space-y-6 pb-10">
@@ -90,29 +195,53 @@ export default function ElectionOfficerDashboard() {
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75 sm:text-base">
               Monitor election activities, submit polling-unit reports, report
-              incidents, and upload election results across all wards and
-              polling units.
+              incidents, and upload election results across every polling unit
+              within the active contest&apos;s scope.
             </p>
           </div>
 
           <div className="shrink-0 rounded-xl bg-white/10 p-4 backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15">
-                <Activity className="h-5 w-5" />
+                <MapPin className="h-5 w-5" />
               </div>
 
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-                  Access Level
+                  Operational Scope
                 </p>
                 <p className="mt-0.5 font-semibold">
-                  All Wards & Polling Units
+                  {hasActiveContest
+                    ? "All polling units within the active contest's scope"
+                    : "No active contest"}
                 </p>
               </div>
             </div>
           </div>
         </div>
       </section>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Active contest scope banner                                         */}
+      {/* ------------------------------------------------------------------ */}
+
+      {hasActiveContest ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-apc-primary/20 bg-apc-light/50 p-3 text-xs">
+          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-apc-primary" />
+          <span className="font-semibold text-apc-primary">Active contest:</span>
+          <span className="font-bold text-gray-900">{activeContest?.name}</span>
+          <span className="text-gray-500">· Scope: {scopeLabel}</span>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            <strong>No active contest — election operations are unavailable.</strong>{" "}
+            An administrator must activate a contest in the Election Control
+            Center before reports, incidents or results can be submitted.
+          </span>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Operational stats                                                  */}
@@ -133,29 +262,33 @@ export default function ElectionOfficerDashboard() {
           <StatCard
             icon={<ClipboardList className="h-5 w-5" />}
             label="PU Reports"
-            value="—"
-            description="Reports submitted"
+            value={puReportCount}
+            description="Reports submitted by you"
           />
 
           <StatCard
             icon={<AlertTriangle className="h-5 w-5" />}
             label="Incidents"
-            value="—"
-            description="Incidents reported"
+            value={incidentCount}
+            description="Incidents reported by you"
           />
 
           <StatCard
             icon={<Upload className="h-5 w-5" />}
             label="Results"
-            value="—"
-            description="Results uploaded"
+            value={resultCount}
+            description="Results submitted or reviewed by you"
           />
 
           <StatCard
             icon={<CheckCircle2 className="h-5 w-5" />}
             label="Coverage"
-            value="—"
-            description="Reporting coverage"
+            value={coveragePercent}
+            description={
+              hasActiveContest
+                ? `${approvedPuCount} of ${scopePuCount} PUs approved in scope`
+                : "No active contest"
+            }
           />
         </div>
       </section>
@@ -171,18 +304,21 @@ export default function ElectionOfficerDashboard() {
           </h2>
 
           <p className="mt-1 text-sm text-gray-500">
-            Start an election activity report from here.
+            {hasActiveContest
+              ? "Start an election activity report from here."
+              : "Unavailable until a contest is active."}
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <ActionCard
             icon={<ClipboardList className="h-6 w-6 text-blue-600" />}
             iconBackground="bg-blue-100"
             title="PU Report"
-            description="Submit an operational report for any polling unit."
+            description="Submit an operational report for any polling unit in scope."
             href="/portal/election/pu-reports"
             action="Submit PU Report"
+            disabled={!hasActiveContest}
           />
 
           <ActionCard
@@ -192,6 +328,7 @@ export default function ElectionOfficerDashboard() {
             description="Record an election incident and associate it with a polling unit."
             href="/portal/election/incidents"
             action="Report Incident"
+            disabled={!hasActiveContest}
           />
 
           <ActionCard
@@ -201,6 +338,16 @@ export default function ElectionOfficerDashboard() {
             description="Submit polling-unit election results for the official record."
             href="/portal/election/upload"
             action="Upload Result"
+            disabled={!hasActiveContest}
+          />
+
+          <ActionCard
+            icon={<CheckCircle2 className="h-6 w-6 text-purple-600" />}
+            iconBackground="bg-purple-100"
+            title="Review Submissions"
+            description="Approve, reject, or clarify submitted polling-unit results before they appear on the central dashboard."
+            href="/portal/election/operations"
+            action="Open Review Queue"
           />
         </div>
       </section>
@@ -217,8 +364,8 @@ export default function ElectionOfficerDashboard() {
                 <CardTitle className="text-lg">Electoral Coverage</CardTitle>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Election officers can report across all registered wards and
-                  polling units.
+                  Election officers can report across all polling units within
+                  the active contest&apos;s scope.
                 </p>
               </div>
 
@@ -235,30 +382,40 @@ export default function ElectionOfficerDashboard() {
                   <p className="text-sm text-gray-500">Operational scope</p>
 
                   <p className="mt-1 font-semibold text-gray-900">
-                    All Wards & Polling Units
+                    {hasActiveContest ? scopeLabel : "No active contest"}
                   </p>
                 </div>
 
-                <div className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                  Full Access
+                <div
+                  className={
+                    hasActiveContest
+                      ? "rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700"
+                      : "rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700"
+                  }
+                >
+                  {hasActiveContest ? "Contest-Scoped" : "Unavailable"}
                 </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg bg-white p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                    Wards
+                    Wards in scope
                   </p>
 
-                  <p className="mt-1 text-lg font-bold text-gray-900">All</p>
+                  <p className="mt-1 text-lg font-bold text-gray-900">
+                    {hasActiveContest ? scopeWardCount.toLocaleString() : "0"}
+                  </p>
                 </div>
 
                 <div className="rounded-lg bg-white p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                    Polling Units
+                    Polling Units in scope
                   </p>
 
-                  <p className="mt-1 text-lg font-bold text-gray-900">All</p>
+                  <p className="mt-1 text-lg font-bold text-gray-900">
+                    {hasActiveContest ? scopePuCount.toLocaleString() : "0"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -293,16 +450,22 @@ export default function ElectionOfficerDashboard() {
                 value={profile.full_name || "Not provided"}
               />
 
-              <InfoRow label="Registered Ward" value={registeredWardLabel} />
+              <InfoRow label="Registered LGA" value={registered.lgaLabel} />
+
+              <InfoRow label="Registered Ward" value={registered.wardLabel} />
 
               <InfoRow
                 label="Registered Polling Unit"
-                value={registeredPollingUnitLabel}
+                value={registered.pollingUnitLabel}
               />
 
               <InfoRow
                 label="Operational Access"
-                value="All wards and polling units"
+                value={
+                  hasActiveContest
+                    ? `All polling units within ${scopeLabel}`
+                    : "No active contest"
+                }
               />
             </div>
           </CardContent>
@@ -374,8 +537,9 @@ export default function ElectionOfficerDashboard() {
 
             <p className="mt-1 text-sm leading-6 text-blue-800/80">
               As an Election Officer, you can submit election activity reports
-              for any ward and polling unit. Ordinary members remain restricted
-              to their registered electoral area.
+              for any polling unit within the active contest&apos;s scope.
+              Ordinary members remain restricted to their registered electoral
+              area.
             </p>
           </div>
         </div>
@@ -421,9 +585,14 @@ function ActionCard({
   description,
   href,
   action,
+  disabled = false,
 }: ActionCardProps) {
   return (
-    <Card className="border-0 shadow-sm transition-shadow hover:shadow-md">
+    <Card
+      className={`border-0 shadow-sm transition-shadow ${
+        disabled ? "opacity-60" : "hover:shadow-md"
+      }`}
+    >
       <CardContent className="p-5">
         <div
           className={`flex h-12 w-12 items-center justify-center rounded-xl ${iconBackground}`}
@@ -437,13 +606,23 @@ function ActionCard({
           {description}
         </p>
 
-        <Link
-          href={href}
-          className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-apc-primary hover:underline"
-        >
-          {action}
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        {disabled ? (
+          <span
+            title="No active contest — election operations are unavailable"
+            className="mt-5 inline-flex cursor-not-allowed items-center gap-1.5 text-sm font-semibold text-gray-400"
+          >
+            {action}
+            <ArrowRight className="h-4 w-4" />
+          </span>
+        ) : (
+          <Link
+            href={href}
+            className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-apc-primary hover:underline"
+          >
+            {action}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
       </CardContent>
     </Card>
   );

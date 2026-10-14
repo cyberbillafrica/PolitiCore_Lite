@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatNumber } from "@/lib/utils";
 import { Medal, Loader2 } from "lucide-react";
 import { getLeaderboard } from "@/lib/firebase/firestore";
-import { getWardById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 interface LeaderboardUser {
   id: string;
@@ -19,6 +19,7 @@ export default function LeaderboardPage() {
   const [leaders, setLeaders] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const lookup = useElectoralLookup();
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +71,6 @@ export default function LeaderboardPage() {
           ) : (
             <div className="space-y-4">
               {leaders.map((user, idx) => {
-                const ward = getWardById(user.ward_id);
                 return (
                   <div
                     key={user.id}
@@ -95,7 +95,7 @@ export default function LeaderboardPage() {
                         {user.full_name ?? "Member"}
                       </p>
                       <p className="text-sm text-gray-500">
-                        {ward ? ward.name : "Ward not set"}
+                        {lookup.wardLabel(user.ward_id)}
                       </p>
                     </div>
                     <div className="text-right">

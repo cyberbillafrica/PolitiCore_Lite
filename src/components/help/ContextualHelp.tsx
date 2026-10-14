@@ -14,7 +14,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   HELP_ARTICLES,
   HELP_CATEGORIES,
+  PUBLIC_INTRO,
   ROLE_INTRO,
+  helpArticlesForRoute,
   type HelpArticle,
   type HelpRole,
 } from "@/lib/help-content";
@@ -98,7 +100,19 @@ export default function ContextualHelp() {
     })).filter(({ articles }) => articles.length > 0);
   }, [query]);
 
-  const intro = ROLE_INTRO[role];
+  const intro = profile ? ROLE_INTRO[role] : PUBLIC_INTRO;
+
+  /*
+   * Page-specific help: the articles that belong to the current
+   * route are surfaced at the top of the panel.
+   */
+  const pageArticles = useMemo(
+    () =>
+      helpArticlesForRoute(pathname ?? "")
+        .map((id) => HELP_ARTICLES.find((article) => article.id === id))
+        .filter((article): article is HelpArticle => Boolean(article)),
+    [pathname],
+  );
 
   const openAndReveal = useCallback((articleId: string) => {
     setOpen(true);
@@ -141,8 +155,6 @@ export default function ContextualHelp() {
     return () => window.removeEventListener(HELP_OPEN_EVENT, onOpenHelp);
   }, [openAndReveal]);
 
-  if (!profile) return null;
-
   const toggleArticle = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -153,7 +165,7 @@ export default function ContextualHelp() {
       {/* Floating help button */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-5 z-40 flex items-center gap-2 rounded-full bg-apc-primary p-3 text-xs font-bold text-white shadow-xl transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-apc-primary/50"
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-apc-primary p-3 text-xs font-bold text-white shadow-xl transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-apc-primary/50"
         title="Portal Guidance & Help"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -214,6 +226,24 @@ export default function ContextualHelp() {
 
             {/* Content */}
             <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
+              {!searching && pageArticles.length > 0 && (
+                <div className="rounded-xl border border-apc-primary/20 bg-white p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-apc-primary">
+                    Help for this page
+                  </p>
+
+                  <div className="mt-3 space-y-2">
+                    {pageArticles.map((article) => (
+                      <ArticleBody
+                        key={article.id}
+                        article={article}
+                        onNavigate={() => setOpen(false)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {!searching && (
                 <div className="rounded-xl border border-apc-primary/20 bg-apc-primary/5 p-4">
                   <p className="text-sm font-bold text-apc-dark">

@@ -23,6 +23,7 @@ import {
 } from "@/lib/firebase/election";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { describeContestScope } from "@/lib/election-scope";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
   ElectionCycle,
   ElectionContest,
@@ -575,7 +576,8 @@ export default function AdminElectionManagementPage() {
       {/* Header */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1">
+          <BackToDashboardLink />
+          <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1 mt-2">
             <Shield className="w-4 h-4" />
             <span>ADMIN ELECTION ENGINE MANAGEMENT</span>
           </div>

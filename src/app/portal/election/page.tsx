@@ -41,6 +41,8 @@ import {
   lgasWithinContestScope,
   describeContestScope,
 } from "@/lib/election-scope";
+import { lgaIdForResult } from "@/lib/election-read-scope";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import {
   subscribeToElectionResults,
   correctElectionResult,
@@ -480,9 +482,9 @@ export default function ElectionDashboard() {
     if (!contestLgaIds) return coveredResults;
     const allowed = new Set(contestLgaIds.map((id) => id.toLowerCase()));
     return coveredResults.filter((r) =>
-      allowed.has((r.lga_id || "").toLowerCase()),
+      allowed.has(lgaIdForResult(lgas, r.lga_id, r.ward_id).toLowerCase()),
     );
-  }, [coveredResults, contestLgaIds]);
+  }, [coveredResults, contestLgaIds, lgas]);
 
   // Keep the selected LGA valid if the contest scope changes.
   useEffect(() => {
@@ -510,7 +512,11 @@ export default function ElectionDashboard() {
       ) {
         return false;
       }
-      if (selectedLgaId !== "all" && r.lga_id !== selectedLgaId) {
+      if (
+        selectedLgaId !== "all" &&
+        lgaIdForResult(lgas, r.lga_id, r.ward_id).toLowerCase() !==
+          selectedLgaId.toLowerCase()
+      ) {
         return false;
       }
       if (selectedWardId !== "all" && r.ward_id !== selectedWardId) {
@@ -518,7 +524,13 @@ export default function ElectionDashboard() {
       }
       return true;
     });
-  }, [contestScopedResults, selectedContestId, selectedLgaId, selectedWardId]);
+  }, [
+    contestScopedResults,
+    selectedContestId,
+    selectedLgaId,
+    selectedWardId,
+    lgas,
+  ]);
 
   // Current Contest Object & Tracked Parties List
   const currentContest = contests.find((c) => c.id === selectedContestId);
@@ -589,7 +601,7 @@ export default function ElectionDashboard() {
 
     let totalPUsInScope = 0;
     if (selectedWardId !== "all") {
-      for (const l of lgas) {
+      for (const l of scopedLgas) {
         const w = l.wards.find((item) => item.id === selectedWardId);
         if (w) {
           totalPUsInScope = w.pollingUnits.length;
@@ -597,7 +609,7 @@ export default function ElectionDashboard() {
         }
       }
     } else if (selectedLgaId !== "all") {
-      const l = lgas.find((item) => item.id === selectedLgaId);
+      const l = scopedLgas.find((item) => item.id === selectedLgaId);
       if (l) {
         totalPUsInScope = l.wards.reduce(
           (acc, w) => acc + w.pollingUnits.length,
@@ -608,9 +620,10 @@ export default function ElectionDashboard() {
       /*
        * Denominator is the CONTEST scope, not the whole state: with
        * no ward/LGA drill-down chosen the total covers every LGA the
-       * active contest spans. `lgas` is already contest-scoped.
+       * active contest spans. `scopedLgas` is the contest-scoped list
+       * — the state-wide `lgas` list would wrongly report 4,108.
        */
-      totalPUsInScope = lgas.reduce(
+      totalPUsInScope = scopedLgas.reduce(
         (acc, l) =>
           acc + l.wards.reduce((wAcc, w) => wAcc + w.pollingUnits.length, 0),
         0,
@@ -644,40 +657,103 @@ export default function ElectionDashboard() {
     trackedParties,
     comparePartyA,
     comparePartyB,
-    lgas,
+    scopedLgas,
   ]);
 
-  // Chart Data per Ward
-  const wardChartData = useMemo(() => {
-    const wardMap = new Map<string, Record<string, unknown>>();
+  /*
+   * ============================================================
+   * RESULT CENTER AGGREGATION LEVEL (contest-driven)
+   * ============================================================
+   *
+   * The result-center cards aggregate at the level the active
+   * contest dictates:
+   *
+   *   state / national contest -> LGA rows (ward rows would be far
+   *                               too many at state scale)
+   *   LGA-scoped contest       -> Ward rows, plus ONE summary row
+   *                               for the whole contest scope
+   *   ward-scoped contest      -> Polling-unit rows
+   */
+  const aggregationLevel: "lga" | "ward" | "pu" = useMemo(() => {
+    const scopeType = String(activeContest?.scope_type ?? "");
+
+    if (scopeType === "ward" || scopeType === "polling_unit") return "pu";
+    if (!activeContest || contestLgaIds === null) return "lga";
+    return "ward";
+  }, [activeContest, contestLgaIds]);
+
+  const aggregationTitle =
+    aggregationLevel === "lga"
+      ? "LGA by LGA Official Results"
+      : aggregationLevel === "ward"
+        ? "Ward by Ward Official Results"
+        : "Polling Unit by Polling Unit Official Results";
+
+  // Chart rows grouped at the contest's aggregation level.
+  const levelChartData = useMemo(() => {
+    const groupMap = new Map<string, Record<string, unknown>>();
 
     for (const r of officialApprovedResults) {
-      let wardName = r.ward_id;
+      let groupName = r.polling_unit_id || r.ward_id;
+
       for (const l of lgas) {
         const w = l.wards.find((item) => item.id === r.ward_id);
-        if (w) {
-          wardName = w.name;
-          break;
+        if (!w) continue;
+
+        if (aggregationLevel === "lga") {
+          groupName = l.name;
+        } else if (aggregationLevel === "ward") {
+          groupName = `${w.code} — ${w.name}`;
+        } else {
+          const pu = w.pollingUnits.find(
+            (item) => item.id === r.polling_unit_id,
+          );
+          groupName = pu ? `${pu.code} — ${pu.name}` : r.polling_unit_id;
         }
+        break;
       }
 
-      if (!wardMap.has(wardName)) {
-        const initObj: Record<string, any> = { ward: wardName };
+      if (!groupMap.has(groupName)) {
+        const initObj: Record<string, unknown> = { group: groupName };
         for (const p of trackedParties) {
           initObj[p.toUpperCase()] = 0;
         }
-        wardMap.set(wardName, initObj);
+        groupMap.set(groupName, initObj);
       }
 
-      const entry = wardMap.get(wardName)!;
+      const entry = groupMap.get(groupName)!;
       for (const pr of r.results) {
         const pKey = pr.party.toUpperCase();
         entry[pKey] = ((entry[pKey] as number) || 0) + (Number(pr.votes) || 0);
       }
     }
 
-    return Array.from(wardMap.values());
-  }, [officialApprovedResults, lgas, trackedParties]);
+    return Array.from(groupMap.values());
+  }, [officialApprovedResults, lgas, trackedParties, aggregationLevel]);
+
+  /*
+   * A contest narrower than the whole state gets ONE summary row
+   * covering the entire contest scope, shown above the breakdown.
+   */
+  const scopeSummaryRow = useMemo(() => {
+    if (contestLgaIds === null) return null;
+
+    const row: Record<string, unknown> = {
+      group: activeContest ? activeContest.name : "Contest scope",
+    };
+    for (const p of trackedParties) {
+      row[p.toUpperCase()] = 0;
+    }
+
+    for (const r of officialApprovedResults) {
+      for (const pr of r.results) {
+        const pKey = pr.party.toUpperCase();
+        row[pKey] = ((row[pKey] as number) || 0) + (Number(pr.votes) || 0);
+      }
+    }
+
+    return row;
+  }, [contestLgaIds, activeContest, officialApprovedResults, trackedParties]);
 
   // Pie Chart Data
   const pieChartData = useMemo(() => {
@@ -812,7 +888,8 @@ export default function ElectionDashboard() {
       {/* Contest Selector & Specs Header (Spec Section 40) */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1">
+          <BackToDashboardLink />
+          <div className="flex items-center gap-2 text-apc-primary font-semibold text-xs tracking-wide uppercase mb-1 mt-2">
             <Vote className="w-4 h-4" />
             <span>CONTEST-AWARE ELECTION DASHBOARD</span>
           </div>
@@ -898,10 +975,16 @@ export default function ElectionDashboard() {
             className="px-3 py-1.5 border rounded-lg text-xs font-semibold bg-gray-50 max-w-[140px] sm:max-w-[180px] truncate disabled:bg-gray-100"
           >
             {/*
-             * A single-LGA contest has no "All LGAs" option — the
-             * selector is LOCKED to the contest's LGA.
+             * A single-LGA contest has no "all" option at all — the
+             * selector is LOCKED to the contest's LGA. A multi-LGA
+             * contest may widen to "all in scope", never beyond the
+             * contest's LGA set.
              */}
-            {!lgaFilterLocked && <option value="all">All LGAs</option>}
+            {!lgaFilterLocked && (
+              <option value="all">
+                {contestLgaIds ? "All In Scope" : "All LGAs"}
+              </option>
+            )}
             {scopedLgas.map((lga) => (
               <option key={lga.id} value={lga.id}>
                 {lga.name}
@@ -917,7 +1000,7 @@ export default function ElectionDashboard() {
           >
             <option value="all">All Wards</option>
             {selectedLgaId !== "all" &&
-              lgas
+              scopedLgas
                 .find((l) => l.id === selectedLgaId)
                 ?.wards.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -1105,19 +1188,58 @@ export default function ElectionDashboard() {
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>Ward by Ward Official Results</CardTitle>
+            <CardTitle>{aggregationTitle}</CardTitle>
           </CardHeader>
           <CardContent>
+            {scopeSummaryRow && (
+              <div className="mb-4 overflow-x-auto rounded-xl border border-gray-100 bg-gray-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  Contest scope summary
+                </p>
+
+                <table className="mt-2 w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-400">
+                      <th className="py-1 pr-3 font-semibold">Scope</th>
+                      {trackedParties.map((p) => (
+                        <th key={p} className="py-1 pr-3 font-semibold">
+                          {p.toUpperCase()}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <tr>
+                      <td className="py-1 pr-3 font-semibold text-gray-900">
+                        {String(scopeSummaryRow.group)}
+                      </td>
+                      {trackedParties.map((p) => (
+                        <td
+                          key={p}
+                          className="py-1 pr-3 font-mono font-semibold text-gray-900"
+                        >
+                          {Number(
+                            scopeSummaryRow[p.toUpperCase()] ?? 0,
+                          ).toLocaleString()}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="h-80">
-              {wardChartData.length === 0 ? (
+              {levelChartData.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                   No approved election results available in this scope.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={wardChartData}>
+                  <BarChart data={levelChartData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="ward" />
+                    <XAxis dataKey="group" />
                     <YAxis />
                     <Tooltip />
                     {trackedParties.map((p) => (

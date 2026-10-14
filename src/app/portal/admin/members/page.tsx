@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import {
   deleteCampaignMember,
+  setMemberSuspended,
   updateCampaignMemberProfile,
   updateMemberAccessRole,
   updateMemberMembershipTypes,
@@ -16,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertTriangle,
+  Ban,
   CheckCircle2,
   Eye,
   Loader2,
@@ -25,6 +27,7 @@ import {
   Search,
   ShieldAlert,
   Trash2,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
@@ -45,12 +48,16 @@ interface MemberRecord {
   email?: string;
   phone?: string;
   gender?: string;
+  lga_id?: string;
   ward_id?: string;
   polling_unit_id?: string;
   access_role?: Role;
   membership_types?: MembershipType[];
   points?: number;
   rank?: string;
+
+  /** "suspended" blocks the member; absent means active. */
+  status?: string;
 }
 
 interface EditForm {
@@ -101,6 +108,10 @@ export default function AdminMembersPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<MemberRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Suspension state
+  const [suspendTarget, setSuspendTarget] = useState<MemberRecord | null>(null);
+  const [suspending, setSuspending] = useState(false);
 
   const [toast, setToast] = useState("");
   const [actionError, setActionError] = useState("");
@@ -180,6 +191,30 @@ export default function AdminMembersPage() {
 
     return map;
   }, [lgas]);
+
+  const lgaLabels = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const lga of lgas) {
+      map.set(lga.id, lga.name);
+    }
+
+    return map;
+  }, [lgas]);
+
+  /*
+   * A member's LGA: their stored lga_id when present, otherwise the
+   * LGA that owns their registered ward. "Not assigned" when neither
+   * resolves — never an empty string or undefined in the UI.
+   */
+  const lgaNameFor = (member: MemberRecord) => {
+    const lgaId =
+      (member.lga_id ?? "").trim() || deriveLgaIdFromWard(lgas, member.ward_id);
+
+    if (!lgaId) return "Not assigned";
+
+    return lgaLabels.get(lgaId) ?? lgaId;
+  };
 
   /*
    * ----------------------------------------------------------
@@ -311,6 +346,7 @@ export default function AdminMembersPage() {
         email: form.email.trim(),
         phone: form.phone.trim(),
         gender: form.gender,
+        lga_id: form.lgaId,
         ward_id: form.ward_id,
         polling_unit_id: form.polling_unit_id,
       });
@@ -336,6 +372,7 @@ export default function AdminMembersPage() {
                 email: form.email.trim(),
                 phone: form.phone.trim(),
                 gender: form.gender,
+                lga_id: form.lgaId,
                 ward_id: form.ward_id,
                 polling_unit_id: form.polling_unit_id,
                 access_role: form.access_role,
@@ -389,6 +426,59 @@ export default function AdminMembersPage() {
       );
     } finally {
       setDeleting(false);
+    }
+  };
+
+  /*
+   * ----------------------------------------------------------
+   * SUSPEND / UN-SUSPEND
+   * ----------------------------------------------------------
+   *
+   * Suspension never deletes the profile: the member is simply
+   * blocked from the portal (their prior submissions remain
+   * intact). AuthContext signs a suspended member out immediately
+   * and blocks their next login.
+   */
+
+  const handleSuspendToggle = async () => {
+    if (!suspendTarget || !profile?.id) return;
+
+    setSuspending(true);
+    setActionError("");
+
+    const wasSuspended = suspendTarget.status === "suspended";
+    const nextSuspended = !wasSuspended;
+
+    try {
+      await setMemberSuspended(
+        suspendTarget.id,
+        nextSuspended,
+        profile.id,
+      );
+
+      setMembers((prev) =>
+        prev.map((member) =>
+          member.id === suspendTarget.id
+            ? { ...member, status: nextSuspended ? "suspended" : "active" }
+            : member,
+        ),
+      );
+
+      setToast(
+        `${suspendTarget.full_name || "Member"} ${
+          nextSuspended ? "suspended." : "restored."
+        }`,
+      );
+      setSuspendTarget(null);
+    } catch (err) {
+      console.error("Failed to update member status:", err);
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update this member's status right now.",
+      );
+    } finally {
+      setSuspending(false);
     }
   };
 
@@ -579,7 +669,7 @@ export default function AdminMembersPage() {
                   <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Contact</th>
-                    <th className="px-4 py-3">Ward / Polling Unit</th>
+                    <th className="px-4 py-3">LGA / Ward / Polling Unit</th>
                     <th className="px-4 py-3">Role &amp; Membership</th>
                     <th className="px-4 py-3 text-right">Points</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -599,6 +689,11 @@ export default function AdminMembersPage() {
                         <p className="text-xs text-gray-400">
                           {member.gender || "—"}
                         </p>
+                        {member.status === "suspended" && (
+                          <span className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                            Suspended
+                          </span>
+                        )}
                       </td>
 
                       <td className="px-4 py-3 text-gray-600">
@@ -609,16 +704,19 @@ export default function AdminMembersPage() {
                       </td>
 
                       <td className="px-4 py-3 text-gray-600">
+                        <p className="text-xs font-medium text-gray-500">
+                          {lgaNameFor(member)}
+                        </p>
                         <p>
                           {member.ward_id
                             ? wardLabels.get(member.ward_id) ?? member.ward_id
-                            : "—"}
+                            : "Not assigned"}
                         </p>
                         <p className="text-xs text-gray-400">
                           {member.polling_unit_id
                             ? puLabels.get(member.polling_unit_id) ??
                               member.polling_unit_id
-                            : "—"}
+                            : "Not assigned"}
                         </p>
                       </td>
 
@@ -652,6 +750,30 @@ export default function AdminMembersPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Link>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActionError("");
+                              setSuspendTarget(member);
+                            }}
+                            title={
+                              member.status === "suspended"
+                                ? "Un-suspend member"
+                                : "Suspend member"
+                            }
+                            className={`rounded-lg p-2 transition-colors ${
+                              member.status === "suspended"
+                                ? "text-green-600 hover:bg-green-50"
+                                : "text-red-600 hover:bg-red-50"
+                            }`}
+                          >
+                            {member.status === "suspended" ? (
+                              <UserCheck className="h-4 w-4" />
+                            ) : (
+                              <Ban className="h-4 w-4" />
+                            )}
+                          </button>
 
                           <button
                             type="button"
@@ -971,6 +1093,94 @@ export default function AdminMembersPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : null}
                 {deleting ? "Deleting…" : "Delete Member"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* SUSPEND CONFIRM MODAL */}
+
+      {suspendTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex gap-4">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                  suspendTarget.status === "suspended"
+                    ? "bg-green-100 text-green-600"
+                    : "bg-red-100 text-red-600"
+                }`}
+              >
+                {suspendTarget.status === "suspended" ? (
+                  <UserCheck className="h-5 w-5" />
+                ) : (
+                  <Ban className="h-5 w-5" />
+                )}
+              </div>
+
+              <div>
+                <h2 className="font-bold text-gray-900">
+                  {suspendTarget.status === "suspended"
+                    ? "Un-suspend member?"
+                    : "Suspend member?"}
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {suspendTarget.status === "suspended" ? (
+                    <>
+                      <strong>
+                        {suspendTarget.full_name || suspendTarget.id}
+                      </strong>{" "}
+                      will be able to sign in and use the portal again.
+                    </>
+                  ) : (
+                    <>
+                      <strong>
+                        {suspendTarget.full_name || suspendTarget.id}
+                      </strong>{" "}
+                      will be signed out immediately and blocked from the
+                      portal until an administrator un-suspends them. Their
+                      existing submissions remain intact.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {actionError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {actionError}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSuspendTarget(null)}
+                disabled={suspending}
+                className="rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSuspendToggle}
+                disabled={suspending}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                  suspendTarget.status === "suspended"
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
+              >
+                {suspending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {suspending
+                  ? "Saving…"
+                  : suspendTarget.status === "suspended"
+                    ? "Un-suspend Member"
+                    : "Suspend Member"}
               </button>
             </div>
           </div>

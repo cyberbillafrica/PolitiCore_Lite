@@ -34,11 +34,10 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
-import { getElectoralLocation } from "@/lib/constants";
 import { useElectionMode } from "@/hooks/useElectionEngine";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
-import type { Ward, PollingUnit } from "@/data/electoral";
-import type { Permission, UserProfile } from "@/types";
+import type { Permission, UserProfile, Ward, PollingUnit } from "@/types";
 
 type NavLeaf = {
   name: string;
@@ -60,6 +59,13 @@ type NavChild = {
   adminOnly?: boolean;
   electionReporting?: boolean;
   electionModeRequired?: boolean;
+
+  /*
+   * The result review queue. Officers own it; admins may open it too
+   * (read-only / correction-only — approval authority is the
+   * officer's alone).
+   */
+  reviewQueue?: boolean;
 };
 
 type NavGroup = {
@@ -81,6 +87,7 @@ type NavItem = NavLeaf | NavGroup | ElectionGroup;
 type ElectoralLocation = {
   ward: Ward | null;
   pollingUnit: PollingUnit | null;
+  lgaName?: string | null;
 };
 
 const navigation: NavItem[] = [
@@ -184,6 +191,14 @@ const navigation: NavItem[] = [
         href: "/portal/election",
         icon: LayoutDashboard,
         adminOnly: true,
+        electionModeRequired: true,
+      },
+
+      {
+        name: "Review Queue",
+        href: "/portal/election/operations",
+        icon: CheckSquare,
+        reviewQueue: true,
         electionModeRequired: true,
       },
 
@@ -332,7 +347,12 @@ export default function PortalLayout({
   const canAccessElectionSurfaces =
     role === "election_officer" || role === "admin" || isCampaignMember;
 
-  const canViewElectionDashboard = isAdmin;
+  /*
+   * The central election dashboard and the result review queue are
+   * admin + election-officer surfaces. Officers were previously
+   * blocked here entirely.
+   */
+  const canViewElectionDashboard = isAdmin || isElectionOfficer;
 
   /*
    * Master election switch, read live from the single
@@ -363,9 +383,29 @@ export default function PortalLayout({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [pathname]);
 
+  /*
+   * The signed-in member's registered electoral area, resolved
+   * from the LIVE state-wide dataset (the bundled single-LGA
+   * fallback used to leave every other LGA blank).
+   */
+  const lookup = useElectoralLookup();
+
+  const registeredWard = lookup.wardById(profile?.ward_id);
+
+  const registeredPollingUnit = lookup.pollingUnitById(
+    profile?.ward_id,
+    profile?.polling_unit_id,
+  );
+
   const electoralLocation: ElectoralLocation | null =
-    profile?.ward_id && profile?.polling_unit_id
-      ? getElectoralLocation(profile.ward_id, profile.polling_unit_id)
+    registeredWard || registeredPollingUnit
+      ? {
+          ward: registeredWard,
+          pollingUnit: registeredPollingUnit,
+          lgaName: profile
+            ? lookup.lgaLabel(profile.lga_id, profile.ward_id)
+            : null,
+        }
       : null;
 
   const handleLogout = async () => {
@@ -508,6 +548,10 @@ export default function PortalLayout({
 
         if ("group" in item && item.group === "election") {
           const visibleChildren = item.children.filter((child) => {
+            if ("reviewQueue" in child && child.reviewQueue) {
+              return canViewElectionDashboard;
+            }
+
             if ("adminOnly" in child && child.adminOnly) {
               return canViewElectionDashboard;
             }
@@ -988,6 +1032,22 @@ function UserPanel({
       {electoralLocation &&
         (electoralLocation.ward || electoralLocation.pollingUnit) && (
           <div className="mb-3 space-y-2 rounded-lg bg-gray-50 p-3">
+            {electoralLocation.lgaName && (
+              <div className="flex items-start gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-apc-primary" />
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                    LGA
+                  </p>
+
+                  <p className="truncate text-xs font-medium text-gray-700">
+                    {electoralLocation.lgaName}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {electoralLocation.ward && (
               <div className="flex items-start gap-2">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-apc-primary" />

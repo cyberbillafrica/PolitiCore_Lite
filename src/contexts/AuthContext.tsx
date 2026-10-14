@@ -4,7 +4,12 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 import { User } from "firebase/auth";
 
-import { onAuthStateChange } from "@/lib/firebase/auth";
+import {
+  flagSuspensionNotice,
+  logOut,
+  onAuthStateChange,
+  subscribeToUserStatus,
+} from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firebase/firestore";
 
 import {
@@ -226,6 +231,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } as UserProfile)
           : null;
 
+        /*
+         * SUSPENSION CHECK AT LOGIN.
+         *
+         * Firebase Auth has already signed this user in — the app's
+         * job is to detect the suspension and kick them out before
+         * any profile state is published.
+         */
+        if (userProfile?.status === "suspended") {
+          setProfile(null);
+          setLoading(false);
+          setAccessLoading(false);
+
+          flagSuspensionNotice();
+          await logOut();
+          return;
+        }
+
         setProfile(userProfile);
 
         /*
@@ -321,6 +343,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
     };
   }, []);
+
+  /*
+   * ============================================================
+   * SUSPENSION WATCH
+   * ============================================================
+   *
+   * Ejects the signed-in member the MOMENT their /users/{uid}
+   * document is marked suspended — no route change or reload is
+   * waited for. The rules keep own-profile reads allowed precisely
+   * so this check can run and sign the member out.
+   */
+
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = subscribeToUserStatus(user.uid, () => {
+      flagSuspensionNotice();
+      setProfile(null);
+      setAssignments([]);
+      setGrants([]);
+      void logOut();
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   /*
    * ============================================================

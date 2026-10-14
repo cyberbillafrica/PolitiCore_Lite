@@ -13,7 +13,10 @@ import {
   getElectionResultsByWardAndPollingUnit,
 } from "@/lib/firebase/firestore";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
-import { getWardById } from "@/lib/constants";
+import { lgaIdForResult } from "@/lib/election-read-scope";
+import { useActiveContest } from "@/hooks/useElectionEngine";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 
 import type { ElectionResultRecord } from "@/types";
 
@@ -64,6 +67,8 @@ function formatDate(value: unknown) {
 export default function ElectionResultsPage() {
   const router = useRouter();
   const { profile, assignments, accessLoading } = useAuth();
+  const lookup = useElectoralLookup();
+  const { contest: activeContest, lgaIds: contestLgaIds } = useActiveContest();
 
   const [results, setResults] = useState<ElectionResultRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -224,16 +229,31 @@ export default function ElectionResultsPage() {
     selectedCoordinator,
   ]);
 
+  /*
+   * Contest scope is the single source of truth: results outside
+   * the active contest's LGA set never reach the selectors or the
+   * table, even when the listener could read them.
+   */
+  const scopedResults = useMemo(() => {
+    if (!contestLgaIds) return results;
+
+    const allowed = new Set(contestLgaIds.map((id) => id.toLowerCase()));
+
+    return results.filter((r) =>
+      allowed.has(lgaIdForResult(lookup.lgas, r.lga_id, r.ward_id).toLowerCase()),
+    );
+  }, [results, contestLgaIds, lookup.lgas]);
+
   const wardOptions = useMemo(
-    () => Array.from(new Set(results.map((result) => result.ward_id))),
-    [results],
+    () => Array.from(new Set(scopedResults.map((result) => result.ward_id))),
+    [scopedResults],
   );
 
   const pollingUnitOptions = useMemo(
     () =>
       Array.from(
         new Set(
-          results
+          scopedResults
             .filter(
               (result) =>
                 selectedWard === "all" || result.ward_id === selectedWard,
@@ -241,10 +261,10 @@ export default function ElectionResultsPage() {
             .map((result) => result.polling_unit_id),
         ),
       ),
-    [results, selectedWard],
+    [scopedResults, selectedWard],
   );
 
-  const visibleResults = results.filter((result) => {
+  const visibleResults = scopedResults.filter((result) => {
     if (selectedWard !== "all" && result.ward_id !== selectedWard) {
       return false;
     }
@@ -292,9 +312,11 @@ export default function ElectionResultsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Election Results</h1>
+          <BackToDashboardLink />
+          <h1 className="mt-2 text-2xl font-bold text-gray-900">Election Results</h1>
           <p className="mt-1 text-gray-600">
             Read-only view of submitted results for your assigned scope.
+            {activeContest ? ` Contest scope: ${activeContest.name}.` : ""}
           </p>
         </div>
       </div>
@@ -322,7 +344,7 @@ export default function ElectionResultsPage() {
               <option value="all">All wards</option>
               {wardOptions.map((wardId) => (
                 <option key={wardId} value={wardId}>
-                  {getWardById(wardId)?.name ?? wardId}
+                  {lookup.wardLabel(wardId)}
                 </option>
               ))}
             </select>
@@ -413,7 +435,7 @@ export default function ElectionResultsPage() {
                     className="border-b hover:bg-gray-50"
                   >
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      {getWardById(result.ward_id)?.name ?? result.ward_id}
+                      {lookup.wardLabel(result.ward_id)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
                       {result.polling_unit_id}

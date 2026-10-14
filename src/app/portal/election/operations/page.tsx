@@ -31,6 +31,7 @@ import {
 } from "@/lib/firebase/election";
 import { getEnuguElectoralData } from "@/lib/firebase/electoral";
 import { useElectionMode } from "@/hooks/useElectionEngine";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
   EnuguStateElectoralData,
   PollingUnit,
@@ -41,6 +42,14 @@ import type {
 export default function ElectionOperationsPage() {
   const router = useRouter();
   const { profile, loading: authLoading } = useAuth();
+
+  /*
+   * Officers own the review decision. Admins keep the page — but
+   * only for inspection and audit; the rules give them no approval
+   * authority (officerReviewUpdate requires isElectionOfficer).
+   */
+  const isElectionOfficer = profile?.access_role === "election_officer";
+  const isAdmin = profile?.access_role === "admin";
 
   /*
    * Master election switch. When it is OFF the review queue stays
@@ -144,7 +153,12 @@ export default function ElectionOperationsPage() {
       return;
     }
 
-    if (profile.access_role !== "election_officer") {
+    /*
+     * Regular campaign members have no access to the review queue.
+     * Officers get the full page; admins stay (inspection + audit
+     * only — no approve/reject buttons).
+     */
+    if (profile.access_role !== "election_officer" && profile.access_role !== "admin") {
       router.replace("/portal/dashboard");
     }
   }, [profile, authLoading, router]);
@@ -189,6 +203,14 @@ export default function ElectionOperationsPage() {
 
   const handleReview = async (action: "approve" | "reject" | "clarify" | "reopen") => {
     if (!selectedResult || !profile) return;
+
+    if (!isElectionOfficer) {
+      setFeedbackMsg({
+        type: "error",
+        text: "Only election officers can approve or reject results. Admins may submit corrections from the central dashboard.",
+      });
+      return;
+    }
 
     if (!electionMode) {
       setFeedbackMsg({
@@ -278,7 +300,8 @@ export default function ElectionOperationsPage() {
       {/* Header */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm mb-1">
+          <BackToDashboardLink />
+          <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm mb-1 mt-2">
             <ShieldAlert className="w-4 h-4" />
             <span>ELECTION COMMAND OPERATIONS</span>
           </div>
@@ -542,7 +565,10 @@ export default function ElectionOperationsPage() {
                 />
               </div>
 
-              {/* Action Buttons */}
+              {/* Action Buttons — election officers only. The rules
+                  deny admins approval authority, so the controls are
+                  hidden for them rather than shown and then rejected. */}
+              {isElectionOfficer ? (
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <span className="text-xs font-semibold text-slate-700 block">Officer Decision</span>
                 <div className="grid grid-cols-2 gap-2">
@@ -576,6 +602,21 @@ export default function ElectionOperationsPage() {
                   </button>
                 </div>
               </div>
+              ) : isAdmin ? (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-700 block">
+                    Admin View — Inspection Only
+                  </span>
+                  <p className="text-xs text-slate-500 leading-5">
+                    Approval authority belongs to election officers. As an
+                    administrator you can inspect the Form EC8 evidence and
+                    audit history here, and submit a result correction from the
+                    central dashboard&apos;s <span className="font-semibold">Correct</span>{" "}
+                    action — a correction returns the result to the review
+                    queue for officer verification.
+                  </p>
+                </div>
+              ) : null}
 
               {/* Audit Trail History */}
               {selectedResult.history && selectedResult.history.length > 0 && (

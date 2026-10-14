@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { useAuth } from "@/contexts/AuthContext";
 
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 import {
   formatScopeType,
@@ -97,18 +97,17 @@ export default function CampaignAreaPage() {
    * ------------------------------------------------------------
    */
 
-  const ward = getWardById(profile.ward_id);
+  const lookup = useElectoralLookup();
 
-  const pollingUnit = getPollingUnitById(
+  const registeredLocation = lookup.describe(
+    profile.lga_id,
     profile.ward_id,
     profile.polling_unit_id,
   );
 
-  const wardLabel = ward ? `${ward.code} — ${ward.name}` : "Not available";
+  const wardLabel = registeredLocation.wardLabel;
 
-  const pollingUnitLabel = pollingUnit
-    ? `${pollingUnit.code} — ${pollingUnit.name}`
-    : "Not available";
+  const pollingUnitLabel = registeredLocation.pollingUnitLabel;
 
   /*
    * ------------------------------------------------------------

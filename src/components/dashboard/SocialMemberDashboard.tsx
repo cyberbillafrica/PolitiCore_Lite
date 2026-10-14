@@ -30,7 +30,7 @@ import {
 
 import { SiFacebook, SiInstagram, SiTiktok, SiX } from "react-icons/si";
 
-import { getWardById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 interface LeaderboardUser {
   id: string;
@@ -128,6 +128,7 @@ function formatDeadline(deadline?: string | null) {
 
 export default function MemberDashboard() {
   const { profile, loading: authLoading } = useAuth();
+  const lookup = useElectoralLookup();
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [submissions, setSubmissions] = useState<FirestoreSubmission[]>([]);
@@ -718,8 +719,6 @@ export default function MemberDashboard() {
             ) : (
               <div className="space-y-3">
                 {topPerformers.map((member, index) => {
-                  const ward = getWardById(member.ward_id);
-
                   return (
                     <div
                       key={member.id}
@@ -761,7 +760,7 @@ export default function MemberDashboard() {
                         </p>
 
                         <p className="text-xs text-gray-500">
-                          {ward ? `${ward.name} Ward` : "Ward not set"}
+                          {lookup.wardLabel(member.ward_id)}
                         </p>
                       </div>
 

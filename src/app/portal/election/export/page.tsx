@@ -10,6 +10,7 @@ import {
 } from "@/lib/firebase/election";
 import { generateElectionExportPackage } from "@/lib/electionExport";
 import { useAuth } from "@/contexts/AuthContext";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type { ElectionCycle, ElectionContest } from "@/types";
 import {
   FileSpreadsheet,
@@ -106,7 +107,8 @@ export default function ElectionExportPage() {
     <div className="space-y-6 pb-12 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-apc-primary mb-1">
+          <BackToDashboardLink />
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-apc-primary mb-1 mt-2">
             <Vote className="h-4 w-4" />
             <span>Official Election Operations Export Package</span>
           </div>

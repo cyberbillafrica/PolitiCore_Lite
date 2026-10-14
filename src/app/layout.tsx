@@ -6,6 +6,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { MaintenanceGuard } from "@/components/providers/MaintenanceGuard";
 import { ToastProvider } from "@/components/ui/toast";
+import ContextualHelp from "@/components/help/ContextualHelp";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,6 +32,9 @@ export default function RootLayout({
           <ThemeProvider>
             <ToastProvider>
               <MaintenanceGuard>{children}</MaintenanceGuard>
+
+              {/* Floating help — every page, public and portal alike. */}
+              <ContextualHelp />
             </ToastProvider>
           </ThemeProvider>
         </AuthProvider>

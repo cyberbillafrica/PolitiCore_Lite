@@ -55,7 +55,7 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/lib/permissions";
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 import {
   getCampaignMemberById,
   updateCampaignMemberProfile,
@@ -96,6 +96,7 @@ export default function MemberDetailPage() {
   const params = useParams();
   const router = useRouter();
   const memberId = params.id as string;
+  const lookup = useElectoralLookup();
 
   const {
     profile,
@@ -517,26 +518,22 @@ export default function MemberDetailPage() {
           />
           <ElectoralField
             label="LGA"
-            value="Nkanu West"
+            value={lookup.lgaLabel(member.lga_id, member.ward_id)}
             icon={<MapPin className="h-4 w-4" />}
           />
-          {member.ward_id && (
-            <ElectoralField
-              label="Ward"
-              value={getWardById(member.ward_id)?.name ?? member.ward_id}
-              icon={<MapPin className="h-4 w-4" />}
-            />
-          )}
-          {member.polling_unit_id && (
-            <ElectoralField
-              label="Polling Unit"
-              value={
-                getPollingUnitById(member.ward_id, member.polling_unit_id)
-                  ?.name ?? member.polling_unit_id
-              }
-              icon={<MapPin className="h-4 w-4" />}
-            />
-          )}
+          <ElectoralField
+            label="Ward"
+            value={lookup.wardLabel(member.ward_id)}
+            icon={<MapPin className="h-4 w-4" />}
+          />
+          <ElectoralField
+            label="Polling Unit"
+            value={lookup.pollingUnitLabel(
+              member.ward_id,
+              member.polling_unit_id,
+            )}
+            icon={<MapPin className="h-4 w-4" />}
+          />
         </CardContent>
       </Card>
 
@@ -1188,17 +1185,24 @@ function AssignmentRow({
   onDelete: () => void;
 }) {
   const isActive = assignment.status === "active";
+  const lookup = useElectoralLookup();
 
   const getScopeDisplay = () => {
     if (assignment.scope_type === "ward") {
-      const ward = getWardById(assignment.scope_id);
-      return ward?.name ?? assignment.scope_id;
+      return lookup.wardById(assignment.scope_id)?.name ?? assignment.scope_id;
     }
     if (assignment.scope_type === "lga") {
-      return "Nkanu West LGA";
+      return lookup.lgaById(assignment.scope_id)?.name ?? assignment.scope_id;
     }
     if (assignment.scope_type === "senatorial_zone") {
-      return "Enugu East Senatorial Zone";
+      // Zones are not part of the electoral dataset — label them
+      // from the scope id rather than a hardcoded zone name.
+      const label = assignment.scope_id
+        .split("-")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+      return label ? `${label} Senatorial Zone` : "Senatorial zone";
     }
     if (assignment.scope_type === "state") {
       return "Enugu State";

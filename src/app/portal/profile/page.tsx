@@ -11,11 +11,12 @@ import { ExternalLink, MapPin, ShieldCheck, User, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 export default function ProfilePage() {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const lookup = useElectoralLookup();
 
   // ─────────────────────────────────────────────
   // Authentication
@@ -54,21 +55,15 @@ export default function ProfilePage() {
   }
 
   // ─────────────────────────────────────────────
-  // Electoral information
+  // Electoral information (live, state-wide lookup —
+  // never the bundled single-LGA fallback)
   // ─────────────────────────────────────────────
 
-  const ward = getWardById(profile.ward_id);
-
-  const pollingUnit = getPollingUnitById(
+  const location = lookup.describe(
+    profile.lga_id,
     profile.ward_id,
     profile.polling_unit_id,
   );
-
-  const wardLabel = ward ? `${ward.code} — ${ward.name}` : "Not set";
-
-  const pollingUnitLabel = pollingUnit
-    ? `${pollingUnit.code} — ${pollingUnit.name}`
-    : "Not set";
 
   // ─────────────────────────────────────────────
   // Membership / role labels
@@ -195,9 +190,14 @@ export default function ProfilePage() {
 
             <ProfileField label="Access Level" value={accessRoleLabel} />
 
-            <ProfileField label="Ward" value={wardLabel} />
+            <ProfileField label="LGA" value={location.lgaLabel} />
 
-            <ProfileField label="Polling Unit" value={pollingUnitLabel} />
+            <ProfileField label="Ward" value={location.wardLabel} />
+
+            <ProfileField
+              label="Polling Unit"
+              value={location.pollingUnitLabel}
+            />
           </div>
         </CardContent>
       </Card>

@@ -294,6 +294,35 @@ export async function deleteCampaignMember(memberId: string): Promise<void> {
 
 /*
  * ============================================================
+ * MEMBER SUSPENSION
+ * ============================================================
+ *
+ * A suspended member is blocked from the portal until an admin
+ * lifts the suspension. The profile document is NEVER deleted, so
+ * the member's prior submissions (PU reports, incidents, results)
+ * remain intact and auditable.
+ *
+ * Writes `status` ("suspended" / "active") plus optional audit
+ * fields. Admin-only by the `users` rules (`allow update: if
+ * isAdmin()`), so this write passes the rules as written.
+ */
+export async function setMemberSuspended(
+  memberId: string,
+  suspended: boolean,
+  adminUserId: string,
+): Promise<void> {
+  const memberRef = doc(db, "users", memberId);
+
+  await updateDoc(memberRef, {
+    status: suspended ? "suspended" : "active",
+    suspended_at: suspended ? serverTimestamp() : null,
+    suspended_by: suspended ? adminUserId : null,
+    updated_at: serverTimestamp(),
+  });
+}
+
+/*
+ * ============================================================
  * UPDATE MEMBER PROFILE
  * ============================================================
  */

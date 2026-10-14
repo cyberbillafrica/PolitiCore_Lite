@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { useAuth } from "@/contexts/AuthContext";
 
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 import { useOrganizationalAssignments } from "@/hooks/useOrganizationalAssignments";
 
@@ -397,15 +397,17 @@ function MemberRow({
     full_name: string;
     email: string;
     phone: string;
+    lga_id?: string;
     ward_id: string;
     polling_unit_id: string;
     membership_types: string[];
     access_role: string;
   };
 }) {
-  const ward = getWardById(member.ward_id);
+  const lookup = useElectoralLookup();
 
-  const pollingUnit = getPollingUnitById(
+  const location = lookup.describe(
+    member.lga_id,
     member.ward_id,
     member.polling_unit_id,
   );
@@ -458,11 +460,13 @@ function MemberRow({
           <div className="flex items-center gap-2 text-gray-600">
             <MapPin className="h-4 w-4 text-gray-400" />
 
-            <span>{ward ? ward.name : member.ward_id}</span>
+            <span>{location.wardLabel}</span>
           </div>
 
+          <p className="mt-1 pl-6 text-xs text-gray-500">{location.lgaLabel}</p>
+
           <p className="mt-1 pl-6 text-xs text-gray-400">
-            {pollingUnit ? pollingUnit.name : member.polling_unit_id}
+            {location.pollingUnitLabel}
           </p>
         </div>
 

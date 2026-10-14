@@ -524,19 +524,6 @@ export const HELP_ARTICLES: HelpArticle[] = [
     ],
   },
   {
-    id: "donation-ledger",
-    title: "The donation ledger (private, administrators only)",
-    category: "administration",
-    roles: ["admin"],
-    keywords: ["donations", "ledger", "finance", "pledged", "received"],
-    body: [
-      "The donation ledger is a private, administrators-only record of contributions received directly by the candidate and campaign. It is an audit and analytics ledger — money is not collected through this application, and no member can donate through the portal.",
-      "When recording a donation you capture: the donor's name and contact details, the amount and date received, how it arrived (cash, bank transfer, POS, cheque or other), its purpose category (for example campaign fund, event sponsorship or logistics), the council or ward it's associated with, any external receipt or reference number, and notes.",
-      "A donation is recorded as received, pledged or cancelled. The page provides summaries and totals, searching and filtering, and every record keeps an audit history of who created or changed it and when — treat the ledger as a formal financial record.",
-    ],
-    related: [{ label: "Open Donation Records Ledger", href: "/portal/admin/donations" }],
-  },
-  {
     id: "public-content",
     title: "Public content: news, biography, manifesto, gallery, broadcast",
     category: "administration",
@@ -559,17 +546,6 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       "Messages sent through the public Contact page arrive in the Contact Messages page. Read them here and follow up outside the portal using the contact details the sender provided.",
       "This is the campaign's public inbox — check it regularly so public enquiries aren't missed.",
-    ],
-  },
-  {
-    id: "audit-logs",
-    title: "Audit logs and system health",
-    category: "administration",
-    roles: ["admin"],
-    keywords: ["audit", "history", "health", "checks"],
-    body: [
-      "Audit logs record sensitive activity across the system — including donation ledger changes and election configuration — showing what was done, by whom and when. Use them when you need to answer “who changed this?”.",
-      "System Health runs checks on the portal's critical parts, including the election module, and highlights anything that needs attention. If something in the portal seems broken, check here first.",
     ],
   },
   {
@@ -682,6 +658,67 @@ export const HELP_ARTICLES: HelpArticle[] = [
       "If a failure keeps happening, note what you were doing and tell an administrator. Developers get the technical detail automatically — you don't need to capture error codes.",
     ],
   },
+  {
+    id: "account-suspended",
+    title: "“I was signed out and told my account is suspended.”",
+    category: "troubleshooting",
+    roles: ["all"],
+    keywords: ["suspended", "blocked", "signed out", "cannot log in"],
+    body: [
+      "When an administrator suspends an account you are signed out immediately — even mid-session — and your next sign-in attempt is refused with the message “Your account has been suspended. Please contact an administrator.”",
+      "Suspension blocks portal access only: the records you already submitted (polling-unit reports, incidents, results) remain in the system unchanged.",
+      "Only an administrator can lift a suspension. Contact one to review your account; once you are un-suspended you sign in normally again.",
+    ],
+  },
+
+  /* ----------------------------------------------------------
+   * PUBLIC PAGES (before signing in)
+   * ---------------------------------------------------------- */
+  {
+    id: "registering-as-a-volunteer",
+    title: "Registering as a volunteer",
+    category: "getting-started",
+    roles: ["all"],
+    keywords: ["register", "volunteer", "sign up", "join", "registration"],
+    body: [
+      "The public Volunteer page is how supporters join the campaign. Registration is open to anyone — you do not need an account first.",
+      "You choose how to take part: as a Campaign Member (ground work — reports, assignments and election duties at your registered polling unit), a Social Member (online tasks, points and the leaderboard), or both.",
+      "The form captures your name, contact details, the LGA, ward and polling unit where you are registered to vote, and — optionally — your Facebook, X, Instagram and TikTok profiles so administrators can verify your social activity.",
+      "Choose your LGA first: the ward list then shows only wards inside that LGA, and the polling-unit list only units inside the chosen ward. An administrator reviews new registrations; after approval you sign in with the email and password you registered with.",
+    ],
+    related: [{ label: "Open the Volunteer registration form", href: "/volunteer" }],
+  },
+  {
+    id: "resetting-your-password",
+    title: "Resetting your password",
+    category: "getting-started",
+    roles: ["all"],
+    keywords: ["password", "forgot", "reset", "locked out", "cannot sign in"],
+    body: [
+      "There is no self-service password reset in this portal. If you have forgotten your password or cannot sign in, contact a campaign administrator and ask them to reset your access.",
+      "Sign-in problems can also come from a wrong email address — make sure you use the address the account was registered with.",
+      "For account security, password resets are handled individually by administrators, never through public broadcasts.",
+    ],
+    related: [{ label: "Go to the sign-in page", href: "/login" }],
+  },
+  {
+    id: "inec-officer-registration",
+    title: "INEC officer registration & roster",
+    category: "administration",
+    roles: ["all", "admin"],
+    keywords: ["inec", "spo", "po", "apo", "ad-hoc", "roster"],
+    body: [
+      "Supporters can apply to serve as INEC ad-hoc staff through the public INEC Officer Registration page. The form captures full name, NIN, phone, address, LGA, ward, the position applied for (SPO, PO or APO), educational qualifications and bank account details.",
+      "Applications land on the administrators' INEC Officers roster, where admins can search applicants, filter by LGA and position, inspect credentials in a detail popup, export CSV files and print official reports.",
+      "Applying does not create a portal account — it is a separate roster. Administrators manage the roster at the Admin → INEC Officers page.",
+    ],
+    related: [
+      {
+        label: "Open the INEC Officer application form",
+        href: "/register-inec-officer",
+      },
+    ],
+  },
 ];
 
 /* --------------------------------------------------------------
@@ -694,7 +731,7 @@ export const ROLE_INTRO: Record<
   admin: {
     heading: "You are an administrator",
     text: "You manage members, content, elections and records for the whole campaign. These articles cover your main tools.",
-    articles: ["admin-overview", "manage-members", "election-administration", "donation-ledger"],
+    articles: ["admin-overview", "manage-members", "election-administration", "public-content"],
   },
   election_officer: {
     heading: "You are an Election Officer",
@@ -712,4 +749,107 @@ export const ROLE_INTRO: Record<
     articles: ["social-tasks", "leaderboard", "membership-types", "your-profile"],
   },
 };
+
+/* --------------------------------------------------------------
+ * "Start here" picks for visitors who are not signed in.
+ * -------------------------------------------------------------- */
+export const PUBLIC_INTRO: {
+  heading: string;
+  text: string;
+  articles: string[];
+} = {
+  heading: "Welcome to PolitiCore",
+  text: "Browse the guide before you sign in — it explains what the portal does and how to join. Signed-in members see role-specific starting points here.",
+  articles: [
+    "what-is-the-portal",
+    "registering-as-a-volunteer",
+    "resetting-your-password",
+  ],
+};
+
+/* --------------------------------------------------------------
+ * Route → help articles.
+ *
+ * The floating help panel opens with the current page's articles
+ * first ("Help for this page"). Keys are matched as route PREFIXES
+ * against the current pathname — the longest matching prefix wins —
+ * so a member-detail route falls back to its list's entry.
+ * -------------------------------------------------------------- */
+export const HELP_ROUTE_MAP: Record<string, string[]> = {
+  /* Public site */
+  "/": ["what-is-the-portal"],
+  "/login": [
+    "signing-in-and-out",
+    "resetting-your-password",
+    "account-suspended",
+  ],
+  "/volunteer": ["registering-as-a-volunteer", "membership-types"],
+  "/register-inec-officer": ["inec-officer-registration"],
+  "/about": ["what-is-the-portal"],
+  "/news": ["public-content"],
+  "/biography": ["public-content"],
+  "/manifesto": ["public-content"],
+  "/gallery": ["public-content"],
+  "/structure": ["organizational-scope"],
+  "/contact": ["contact-messages"],
+
+  /* Portal */
+  "/portal/dashboard": ["understanding-the-dashboard"],
+  "/portal/profile": ["your-profile"],
+  "/portal/guide": ["what-is-the-portal", "navigation-and-menus"],
+  "/portal/tasks": ["social-tasks"],
+  "/portal/leaderboard": ["leaderboard"],
+  "/portal/campaign/area": ["my-area", "organizational-scope"],
+  "/portal/campaign/members": ["member-directory"],
+  "/portal/campaign/assignments": ["assignments"],
+  "/portal/campaign/activities": ["activities"],
+  "/portal/campaign/reports": ["field-reports"],
+  "/portal/campaign/issues": ["issues"],
+  "/portal/campaign/coordination": ["coordination"],
+  "/portal/campaign": ["campaign-council-overview"],
+  "/portal/election": ["election-dashboard", "election-concepts"],
+  "/portal/election/operations": ["officer-review", "result-statuses"],
+  "/portal/election/pu-reports": ["pu-reports"],
+  "/portal/election/incidents": ["election-incidents"],
+  "/portal/election/results": ["election-dashboard", "result-statuses"],
+  "/portal/election/upload": ["result-upload"],
+  "/portal/election/export": ["election-dashboard"],
+  "/portal/admin/election": [
+    "election-administration",
+    "election-concepts",
+  ],
+  "/portal/admin/members": ["manage-members", "account-suspended"],
+  "/portal/admin/analytics": ["campaign-analytics"],
+  "/portal/admin/reports": ["campaign-analytics"],
+  "/portal/admin/news": ["public-content"],
+  "/portal/admin/biography": ["public-content"],
+  "/portal/admin/manifesto": ["public-content"],
+  "/portal/admin/gallery": ["public-content"],
+  "/portal/admin/announcements": [
+    "public-content",
+    "notification-center-vs-popups",
+  ],
+  "/portal/admin/contact-messages": ["contact-messages"],
+  "/portal/admin/structure": ["organizational-scope"],
+  "/portal/admin/inec-officers": ["inec-officer-registration"],
+  "/portal/admin/about": ["public-content"],
+  "/portal/admin/settings": ["admin-overview"],
+  "/portal/admin": ["admin-overview"],
+  "/portal": ["navigation-and-menus", "roles-explained"],
+};
+
+/**
+ * The help articles that belong to a route (longest-prefix match).
+ */
+export function helpArticlesForRoute(pathname: string): string[] {
+  const parts = (pathname || "").split("/").filter(Boolean);
+
+  for (let i = parts.length; i > 0; i -= 1) {
+    const prefix = `/${parts.slice(0, i).join("/")}`;
+    const hit = HELP_ROUTE_MAP[prefix];
+    if (hit) return hit;
+  }
+
+  return [];
+}
 

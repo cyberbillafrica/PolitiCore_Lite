@@ -61,6 +61,27 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // ACCOUNT STATUS (suspension)
+    // ============================================================
+
+    /*
+     * A suspended member is blocked from the platform. This is the
+     * second layer — the app signs suspended members out reactively
+     * (see src/contexts/AuthContext.tsx) and blocks their next
+     * login. Reading the caller's own /users document stays allowed
+     * so the client can detect the suspension and sign out. An
+     * ABSENT `status` field counts as active.
+     */
+    function isActiveUser() {
+      return isSignedIn()
+        && userExists()
+        && (
+          !callerProfile().keys().hasAny(["status"])
+          || callerProfile().status != "suspended"
+        );
+    }
+
+    // ============================================================
     // MEMBERSHIP TYPES
     // ============================================================
 
@@ -662,9 +683,11 @@ service cloud.firestore {
 
     match /election_results/{resultId} {
 
-      allow read: if canReadElectionResult(resource.data);
+      allow read: if isActiveUser()
+        && canReadElectionResult(resource.data);
 
-      allow create: if electionModeEnabled()
+      allow create: if isActiveUser()
+        && electionModeEnabled()
         && !exists(
           /databases/$(database)/documents/election_results/$(resultId)
         )
@@ -708,9 +731,9 @@ service cloud.firestore {
 
     match /pu_reports/{reportId} {
 
-      allow read: if isAdmin();
+      allow read: if isActiveUser() && isAdmin();
 
-      allow read: if isSignedIn()
+      allow read: if isActiveUser()
         && (
           resource.data.submitted_by == request.auth.uid
           || isElectionOfficer()
@@ -719,7 +742,7 @@ service cloud.firestore {
           || hasScopedAccess("view_election_results", "polling_unit", resource.data.polling_unit_id)
         );
 
-      allow create: if isSignedIn()
+      allow create: if isActiveUser()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
         && (
@@ -739,9 +762,9 @@ service cloud.firestore {
 
     match /election_incidents/{incidentId} {
 
-      allow read: if isAdmin();
+      allow read: if isActiveUser() && isAdmin();
 
-      allow read: if isSignedIn()
+      allow read: if isActiveUser()
         && (
           resource.data.reported_by == request.auth.uid
           || isElectionOfficer()
@@ -757,7 +780,7 @@ service cloud.firestore {
           )
         );
 
-      allow create: if isSignedIn()
+      allow create: if isActiveUser()
         && request.resource.data.reported_by == request.auth.uid
         && request.resource.data.status == "reported"
         && request.resource.data.description is string

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 
-import { signIn } from "@/lib/firebase/auth";
+import { consumeSuspensionNotice, signIn } from "@/lib/firebase/auth";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
@@ -15,8 +15,20 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [suspendedNotice, setSuspendedNotice] = useState(false);
 
   const router = useRouter();
+
+  /*
+   * One-time notice shown when a suspended member was signed out
+   * (either at sign-in or mid-session) by the suspension check in
+   * AuthContext. Consume it so it appears exactly once.
+   */
+  useEffect(() => {
+    if (consumeSuspensionNotice()) {
+      setSuspendedNotice(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -56,6 +68,14 @@ export default function LoginPage() {
                 Access your member portal
               </p>
             </div>
+
+            {/* Suspension notice */}
+            {suspendedNotice && (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                Your account has been suspended. Please contact an
+                administrator.
+              </div>
+            )}
 
             {/* Error */}
             {error && (

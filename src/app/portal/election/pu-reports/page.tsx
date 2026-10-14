@@ -8,10 +8,14 @@ import {
   type PUReportDoc,
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
-import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import {
+  getAllEnuguLGAs,
+} from "@/lib/firebase/electoral";
 import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
-import { assignmentCoversScope } from "@/lib/permissions";
+import { buildElectionReadScope } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
+import BackToDashboardLink from "@/components/election/BackToDashboardLink";
+import type { PUReportScopeConstraint } from "@/lib/firebase/election";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,8 +96,42 @@ export default function PUReportsPage() {
   }, [resolvedLgaId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Real-time PU Reports Listener
+  /*
+   * Real-time PU Reports Listener.
+   *
+   * Every listener carries an equality filter the `pu_reports` read
+   * rule can prove in advance (own submissions, or ward / PU reads
+   * backed by the caller's `user_access` projection). Over-fetching
+   * and filtering client-side is what used to make the whole query
+   * fail with "Missing or insufficient permissions" for members.
+   */
   useEffect(() => {
+    if (accessLoading || !profile) {
+      return;
+    }
+
+    const scope = buildElectionReadScope(profile, assignments, lgas);
+
+    const constraints: PUReportScopeConstraint[] = [];
+
+    if (!scope.unrestricted) {
+      constraints.push(...scope.geoConstraints);
+
+      // A member always reads their own submissions.
+      if (profile.id) {
+        constraints.push({ submitted_by: profile.id });
+      }
+    }
+
+    if (!scope.unrestricted && constraints.length === 0) {
+      // Nothing is provably readable — open no listener at all.
+      setReports([]);
+      setLoading(false);
+      return;
+    }
+
+    const [primary, ...additional] = constraints;
+
     const unsubscribe = subscribeToPUReports(
       (docs) => {
         setReports(docs);
@@ -104,40 +142,23 @@ export default function PUReportsPage() {
         setLoadError("PU reports could not be loaded. Please try again.");
         setLoading(false);
       },
+      primary,
+      additional,
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [accessLoading, profile, assignments, lgas]);
 
   const selectedLga = lgas.find((l) => l.id === form.lga_id);
   const wards = selectedLga?.wards ?? [];
   const selectedWard = wards.find((w) => w.id === form.ward_id);
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
-  // Scoped Filter for Non-Admins
-  const filteredReports = reports.filter((r) => {
-    if (isAdmin) return true;
-    const activeAssignments = assignments.filter((a) => a.status === "active");
-    if (activeAssignments.length === 0) {
-      // Members can always view their own submitted PU reports
-      return r.submitted_by === profile?.id;
-    }
-    return (
-      activeAssignments.some(
-        (a) =>
-          assignmentCoversScope(
-            a,
-            { scope_type: "ward", scope_id: r.ward_id },
-            lgas,
-          ) ||
-          assignmentCoversScope(
-            a,
-            { scope_type: "polling_unit", scope_id: r.polling_unit_id },
-            lgas,
-          ),
-      ) || r.submitted_by === profile?.id
-    );
-  });
+  /*
+   * No client-side scope filter: the queries above already return
+   * exactly what this account is allowed to read.
+   */
+  const filteredReports = reports;
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -240,7 +261,8 @@ export default function PUReportsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <BackToDashboardLink />
+          <h1 className="mt-2 text-2xl font-bold text-gray-900">
             Polling Unit Reports
           </h1>
           <p className="text-sm text-gray-500">

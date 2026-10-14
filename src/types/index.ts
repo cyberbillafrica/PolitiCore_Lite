@@ -283,6 +283,18 @@ export interface UserProfile {
   // System access
   access_role: Role;
 
+  /*
+   * Account status. Valid values: "active" (default) and
+   * "suspended". An ABSENT field counts as active.
+   *
+   * A suspended member is blocked from the portal until an admin
+   * lifts the suspension (see docs/member-suspension.md). The
+   * optional audit fields record when and by whom.
+   */
+  status?: string;
+  suspended_at?: unknown;
+  suspended_by?: string | null;
+
   // Membership
   membership_types: MembershipType[];
 

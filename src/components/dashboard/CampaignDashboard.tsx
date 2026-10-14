@@ -25,7 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { useAuth } from "@/contexts/AuthContext";
 
-import { getWardById, getPollingUnitById } from "@/lib/constants";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 import {
   formatScopeType,
@@ -143,18 +143,17 @@ export default function CampaignDashboard() {
    * ------------------------------------------------------------
    */
 
-  const ward = getWardById(profile.ward_id);
+  const lookup = useElectoralLookup();
 
-  const pollingUnit = getPollingUnitById(
+  const location = lookup.describe(
+    profile.lga_id,
     profile.ward_id,
     profile.polling_unit_id,
   );
 
-  const wardLabel = ward ? `${ward.code} — ${ward.name}` : "Not set";
-
-  const pollingUnitLabel = pollingUnit
-    ? `${pollingUnit.code} — ${pollingUnit.name}`
-    : "Not set";
+  const lgaLabel = location.lgaLabel;
+  const wardLabel = location.wardLabel;
+  const pollingUnitLabel = location.pollingUnitLabel;
 
   /*
    * ------------------------------------------------------------
@@ -252,7 +251,9 @@ export default function CampaignDashboard() {
 
         {/* Registered location strip */}
 
-        <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <div className="grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <LocationStrip label="Registered LGA" value={lgaLabel} />
+
           <LocationStrip label="Registered Ward" value={wardLabel} />
 
           <LocationStrip
@@ -724,7 +725,13 @@ export default function CampaignDashboard() {
         </CardHeader>
 
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <InfoBox
+              label="LGA"
+              value={lgaLabel}
+              icon={<MapPin className="h-4 w-4" />}
+            />
+
             <InfoBox
               label="Ward"
               value={wardLabel}
