@@ -102,3 +102,42 @@ Query-level scoping lives in `src/lib/firebase/election.ts`
 (`subscribeToElectionResults` / `subscribeToPUReports` /
 `subscribeToElectionIncidents`): one provable equality query per
 constraint, merged by document id.
+
+## LGA set capture & constituency reference (round 4)
+
+**Problem.** A contest such as *Enugu North and South Federal
+Constituency* (which covers only `enugu-north` + `enugu-south`) showed
+"Scope: Unrestricted", an "All LGAs" filter and the whole state's
+4,108 polling units as the coverage denominator. Root cause: the
+create/edit contest modal had no LGA picker — `selectedLgas` was sent
+to `createContest` but nothing in the UI ever set it, so constituency
+contests were stored with `lga_ids: []`, which `resolveContestLgaIds`
+rightly treats as "no restriction".
+
+**Fix — two layers:**
+
+1. **Contest creation now captures the LGA set.** The admin contest
+   modal (`portal/admin/election`) shows an "LGAs Covered by this
+   Constituency / Zone" checkbox list for `senatorial_zone`,
+   `federal_constituency` and `state_constituency` contests, and
+   refuses to save without at least one LGA. When the typed name or
+   scope id matches the constituency reference, a one-click
+   "Use These LGAs" suggestion fills the real composition.
+2. **Constituency reference fallback** (`src/data/constituencies.ts`)
+   for rows created before the picker existed. Resolution order in
+   `resolveContestLgaIds` is now:
+
+   1. the contest's explicit `lga_ids` (always authoritative),
+   2. the reference (Enugu's 3 senatorial districts and 8 federal
+      constituencies → LGA ids), matched on scope_type + normalized
+      name/scope_id word sets (order-, separator- and year-insensitive),
+   3. `null` = unrestricted — the app never guesses beyond the known
+      geography; state constituencies are intentionally not listed
+      and must be captured through the form.
+
+`describeContestScope` no longer says "Unrestricted" for a
+constituency contest with no LGA set — it says
+"Not configured (all LGAs shown)" so a missing scope is visible and
+fixable instead of silently widening every total.
+
+Regression check: `npx tsx scripts/check-contest-scope.ts`.

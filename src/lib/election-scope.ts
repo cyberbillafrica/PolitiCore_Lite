@@ -33,6 +33,16 @@
  * is treated as unrestricted rather than as excluding everything,
  * which would silently break every operation.
  *
+ * Resolution order for zone / constituency contests:
+ *
+ *   1. the contest's explicit `lga_ids` (set by the admin contest
+ *      form — always authoritative)
+ *   2. the constituency reference in `src/data/constituencies`,
+ *      which knows the real LGA composition of Enugu's
+ *      senatorial districts and federal constituencies (covers
+ *      contests created before the form captured `lga_ids`)
+ *   3. `null` (unrestricted) — never guess beyond what is known
+ *
  * Hierarchy used by the scope checks below:
  *
  *   Contest scope
@@ -41,6 +51,7 @@
  *                 └── Polling Unit  ("polling_unit")
  */
 
+import { lookupConstituencyLgaIds } from "@/data/constituencies";
 import type { ElectionContest, LGA } from "@/types";
 
 /**
@@ -73,10 +84,20 @@ export function resolveContestLgaIds(
     case "senatorial_zone":
     case "federal_constituency":
     case "state_constituency": {
-      // These contests span a defined set of LGAs. When the set is
-      // not configured we must not exclude anything.
+      // These contests span a defined set of LGAs — captured on the
+      // contest document by the admin contest form.
       const ids = (contest.lga_ids ?? []).filter(Boolean);
-      return ids.length > 0 ? ids : null;
+      if (ids.length > 0) return ids;
+
+      /*
+       * Legacy rows (created before the form captured the LGA set)
+       * fall back to the constituency reference, which knows the
+       * real LGA composition of Enugu's constituencies. Without
+       * this, a constituency contest would silently widen to the
+       * whole state ("All LGAs", every polling unit in Enugu).
+       */
+      const referenced = lookupConstituencyLgaIds(contest);
+      return referenced.length > 0 ? referenced : null;
     }
 
     default:
@@ -207,7 +228,12 @@ export function describeContestScope(
     case "federal_constituency":
     case "state_constituency": {
       const ids = resolveContestLgaIds(contest);
-      if (!ids) return "Unrestricted";
+      /*
+       * "Unrestricted" hid misconfiguration: a constituency contest
+       * with no LGA set looked intentional. Call out the gap so an
+       * admin fixes the contest instead of trusting the totals.
+       */
+      if (!ids) return "Not configured (all LGAs shown)";
       return ids.map(nameFor).join(" / ");
     }
     default:

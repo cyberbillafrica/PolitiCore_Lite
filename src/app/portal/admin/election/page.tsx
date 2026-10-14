@@ -23,6 +23,7 @@ import {
 } from "@/lib/firebase/election";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { describeContestScope } from "@/lib/election-scope";
+import { lookupConstituency } from "@/data/constituencies";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
   ElectionCycle,
@@ -51,6 +52,18 @@ import {
   Trash2,
   Globe,
 } from "lucide-react";
+
+/*
+ * Contest scopes that span a defined set of LGAs. For these the
+ * LGA set IS the geographic scope of the contest — the election
+ * dashboard's filters, ward lists and polling-unit denominators
+ * all derive from it (see src/lib/election-scope.ts).
+ */
+const CONTEST_SCOPES_WITH_LGAS: ContestScopeType[] = [
+  "senatorial_zone",
+  "federal_constituency",
+  "state_constituency",
+];
 
 export default function AdminElectionManagementPage() {
   const router = useRouter();
@@ -110,6 +123,30 @@ export default function AdminElectionManagementPage() {
     selectedLgas: [] as string[],
     tracked_parties: ["apc", "pdp", "lp", "apga", "adc"],
     focus_party_id: "apc",
+  });
+
+  /*
+   * Inline validation message for the contest modal. Kept separate
+   * from `feedback` because the page-level banner sits behind the
+   * modal overlay and would never be seen.
+   */
+  const [contestFormError, setContestFormError] = useState<string | null>(
+    null,
+  );
+
+  const scopeNeedsLgas = CONTEST_SCOPES_WITH_LGAS.includes(
+    contestForm.scope_type,
+  );
+
+  /*
+   * The constituency reference (if any) for the name / scope id
+   * currently typed in the form — shown as a one-click suggestion so
+   * the captured LGA set matches the real constituency geography.
+   */
+  const constituencySuggestion = lookupConstituency({
+    scope_type: contestForm.scope_type,
+    scope_id: contestForm.scope_id,
+    name: contestForm.name,
   });
 
   const [showPartyModal, setShowPartyModal] = useState(false);
@@ -379,6 +416,21 @@ export default function AdminElectionManagementPage() {
   const handleSaveContestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile || !contestForm.name) return;
+
+    /*
+     * A zone / constituency contest without an LGA set would be
+     * treated as "unrestricted" — its dashboard would silently
+     * cover all of Enugu. Refuse to save until the LGAs it spans
+     * are captured.
+     */
+    if (scopeNeedsLgas && contestForm.selectedLgas.length === 0) {
+      setContestFormError(
+        "Select at least one LGA — the LGA set is this contest's geographic scope, and drives the dashboard filters and polling-unit totals.",
+      );
+      return;
+    }
+    setContestFormError(null);
+
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -838,6 +890,7 @@ export default function AdminElectionManagementPage() {
                             focus_party_id: "apc",
                           });
                           setShowContestModal(true);
+                          setContestFormError(null);
                         }}
               className="px-4 py-2 bg-apc-primary text-white text-xs font-bold rounded-lg hover:bg-apc-dark flex items-center gap-2"
             >
@@ -964,6 +1017,7 @@ export default function AdminElectionManagementPage() {
                             tracked_parties: c.tracked_parties ?? [],
                             focus_party_id: c.focus_party_id ?? "apc",
                           });
+                          setContestFormError(null);
                           setShowContestModal(true);
                         }}
                         className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-apc-primary hover:bg-apc-light rounded"
@@ -1427,6 +1481,10 @@ export default function AdminElectionManagementPage() {
                         ...contestForm,
                         contest_type: ct,
                         scope_type: st,
+                        // A state / national contest has no LGA set.
+                        selectedLgas: CONTEST_SCOPES_WITH_LGAS.includes(st)
+                          ? contestForm.selectedLgas
+                          : [],
                       });
                     }}
                     className="w-full px-3 py-2 border rounded-lg text-xs"
@@ -1465,6 +1523,105 @@ export default function AdminElectionManagementPage() {
                   className="w-full px-3 py-2 border rounded-lg text-xs"
                 />
               </div>
+
+              {/*
+               * GEOGRAPHIC SCOPE — the LGAs this constituency / zone
+               * spans. This set drives every contest-scoped surface:
+               * the election dashboard's LGA filter, ward list and
+               * polling-unit denominators, and result scoping.
+               */}
+              {scopeNeedsLgas && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    LGAs Covered by this Constituency / Zone *
+                  </label>
+                  <p className="text-[11px] text-gray-500 mb-2">
+                    This LGA set is the contest's geographic scope: the
+                    election dashboard limits its LGA filter, ward list and
+                    polling-unit totals to exactly these LGAs.
+                  </p>
+
+                  {constituencySuggestion &&
+                    JSON.stringify(
+                      [...constituencySuggestion.lga_ids].sort(),
+                    ) !==
+                      JSON.stringify(
+                        [...contestForm.selectedLgas].sort(),
+                      ) && (
+                      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-apc-primary/30 bg-apc-light/30 px-3 py-2 text-[11px]">
+                        <span className="font-semibold text-apc-primary">
+                          {constituencySuggestion.name} covers:
+                        </span>
+                        <span className="text-gray-700">
+                          {constituencySuggestion.lga_ids
+                            .map(
+                              (id) =>
+                                lgas.find((l) => l.id === id)?.name ?? id,
+                            )
+                            .join(", ")}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setContestForm({
+                              ...contestForm,
+                              selectedLgas: [
+                                ...constituencySuggestion.lga_ids,
+                              ],
+                            })
+                          }
+                          className="ml-auto px-2 py-1 rounded bg-apc-primary text-white text-[10px] font-bold hover:bg-apc-dark"
+                        >
+                          Use These LGAs
+                        </button>
+                      </div>
+                    )}
+
+                  <div className="grid grid-cols-2 gap-1.5 rounded-lg border bg-gray-50 p-3 max-h-40 overflow-y-auto">
+                    {lgas.map((lga) => {
+                      const isChecked =
+                        contestForm.selectedLgas.includes(lga.id);
+                      return (
+                        <label
+                          key={lga.id}
+                          className="flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setContestForm({
+                                  ...contestForm,
+                                  selectedLgas: [
+                                    ...contestForm.selectedLgas,
+                                    lga.id,
+                                  ],
+                                });
+                              } else {
+                                setContestForm({
+                                  ...contestForm,
+                                  selectedLgas:
+                                    contestForm.selectedLgas.filter(
+                                      (x) => x !== lga.id,
+                                    ),
+                                });
+                              }
+                            }}
+                            className="rounded text-apc-primary"
+                          />
+                          <span>{lga.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {contestForm.selectedLgas.length} LGA
+                    {contestForm.selectedLgas.length === 1 ? "" : "s"} selected
+                  </p>
+                </div>
+              )}
 
               {/* Tracked Parties Selection */}
               <div>
@@ -1511,6 +1668,12 @@ export default function AdminElectionManagementPage() {
                   })}
                 </div>
               </div>
+
+              {contestFormError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                  {contestFormError}
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
