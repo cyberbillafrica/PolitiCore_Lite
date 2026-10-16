@@ -29,8 +29,11 @@ import {
   getElectionCycles,
   getContestsByCycle,
 } from "@/lib/firebase/election";
+import { deleteElectionResultWithAudit } from "@/lib/firebase/election-audit";
 import { getEnuguElectoralData } from "@/lib/firebase/electoral";
-import { useElectionMode } from "@/hooks/useElectionEngine";
+import { isWithinContestScope } from "@/lib/election-scope";
+import { resolveUserNames } from "@/lib/userNames";
+import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
   EnuguStateElectoralData,
@@ -58,6 +61,18 @@ export default function ElectionOperationsPage() {
    */
   const { electionMode, loading: electionModeLoading } = useElectionMode();
 
+  /*
+   * Round-4: the review desk operates inside the ACTIVE contest's
+   * scope. Results from LGAs the active contest does not cover are
+   * not reviewable here — for anyone, admin included.
+   */
+  const {
+    contest: activeContest,
+    loading: contestLoading,
+    lgaIds: contestLgaIds,
+  } = useActiveContest();
+  const noActiveContest = !contestLoading && !activeContest;
+
   const [electoralData, setElectoralData] = useState<EnuguStateElectoralData | null>(null);
   const [cycles, setCycles] = useState<ElectionCycle[]>([]);
   const [contests, setContests] = useState<ElectionContest[]>([]);
@@ -71,6 +86,21 @@ export default function ElectionOperationsPage() {
   const [reviewNotes, setReviewNotes] = useState("");
   const [submittingAction, setSubmittingAction] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  /*
+   * Delete flow (officer/admin): requires a reason, writes the full
+   * snapshot into election_audit in the same batch as the delete.
+   */
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+
+  /*
+   * Batch-resolved display names (submitters, reviewers). One lookup
+   * per snapshot — see src/lib/userNames.ts.
+   */
+  const [userNames, setUserNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
 
   // Fetch electoral data taxonomy and contests
   useEffect(() => {
@@ -167,7 +197,8 @@ export default function ElectionOperationsPage() {
   useEffect(() => {
     if (!profile) return;
 
-    const scopeConstraint = selectedContestId !== "all" ? { contest_id: selectedContestId } : undefined;
+    const scopeConstraint =
+      selectedContestId !== "all" ? { contest_id: selectedContestId } : undefined;
 
     const unsubscribe = subscribeToElectionResults(
       (data) => {
@@ -184,6 +215,38 @@ export default function ElectionOperationsPage() {
     return () => unsubscribe();
   }, [profile, selectedContestId]);
 
+  /*
+   * One batched name lookup per snapshot: submitters and reviewers
+   * resolve to display names, never raw doc ids.
+   */
+  useEffect(() => {
+    const uids = results
+      .flatMap((r) => [r.submitted_by, r.reviewed_by])
+      .filter((uid): uid is string => typeof uid === "string" && uid !== "");
+
+    if (uids.length === 0) return;
+
+    let cancelled = false;
+    resolveUserNames(uids).then((resolved) => {
+      if (cancelled) return;
+      setUserNames((prev) => new Map([...prev, ...resolved]));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [results]);
+
+  /*
+   * The active contest scopes the review queue: only results inside
+   * its geographic footprint are listed and reviewable.
+   */
+  const resultsInScope = activeContest
+    ? results.filter((r) =>
+        isWithinContestScope(activeContest, { lgaId: r.lga_id }),
+      )
+    : results;
+
   if (authLoading || loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -193,7 +256,7 @@ export default function ElectionOperationsPage() {
     );
   }
 
-  const filteredResults = results.filter((res) => {
+  const filteredResults = resultsInScope.filter((res) => {
     if (selectedContestId !== "all" && res.contest_id && res.contest_id !== selectedContestId) {
       return false;
     }
@@ -201,8 +264,20 @@ export default function ElectionOperationsPage() {
     return res.status === statusFilter;
   });
 
+  const isResultOutOfScope = (result: ElectionResultDoc) =>
+    !activeContest ||
+    !isWithinContestScope(activeContest, { lgaId: result.lga_id });
+
   const handleReview = async (action: "approve" | "reject" | "clarify" | "reopen") => {
     if (!selectedResult || !profile) return;
+
+    if (isResultOutOfScope(selectedResult)) {
+      setFeedbackMsg({
+        type: "error",
+        text: "This result is outside the active contest's scope and cannot be reviewed here.",
+      });
+      return;
+    }
 
     if (!isElectionOfficer) {
       setFeedbackMsg({
@@ -238,6 +313,8 @@ export default function ElectionOperationsPage() {
         action,
         notes: reviewNotes.trim(),
         existingDoc: selectedResult,
+        actorName: profile.full_name || null,
+        actorRole: profile.access_role || null,
       });
 
       setFeedbackMsg({
@@ -252,6 +329,67 @@ export default function ElectionOperationsPage() {
       setFeedbackMsg({
         type: "error",
         text: errorObj.message || "Failed to process review action.",
+      });
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const pendingDelete = showDeleteForm && !!selectedResult;
+
+  /*
+   * Permanent deletion (officer/admin). Requires a reason; the full
+   * document snapshot goes into the append-only election_audit
+   * collection in the SAME batch as the delete, so the trail always
+   * explains what was removed and by whom.
+   */
+  const handleDelete = async () => {
+    if (!selectedResult || !profile) return;
+
+    if (isResultOutOfScope(selectedResult)) {
+      setFeedbackMsg({
+        type: "error",
+        text: "This result is outside the active contest's scope and cannot be deleted here.",
+      });
+      return;
+    }
+
+    if (!deleteReason.trim()) {
+      setFeedbackMsg({
+        type: "error",
+        text: "A reason is required when deleting an election result.",
+      });
+      return;
+    }
+
+    setSubmittingAction(true);
+    setFeedbackMsg(null);
+
+    try {
+      await deleteElectionResultWithAudit({
+        resultDocId: selectedResult.id,
+        existingDoc: selectedResult,
+        actor: {
+          id: profile.id || "unknown",
+          name: profile.full_name || "Unknown member",
+          role: profile.access_role || "member",
+        },
+        reason: deleteReason.trim(),
+      });
+
+      setFeedbackMsg({
+        type: "success",
+        text: `Result permanently deleted. The audit trail (election_audit) now holds the full snapshot and your reason.`,
+      });
+      setDeleteReason("");
+      setShowDeleteForm(false);
+      setSelectedResult(null);
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      console.error("Delete action error:", err);
+      setFeedbackMsg({
+        type: "error",
+        text: errorObj.message || "Failed to delete the result.",
       });
     } finally {
       setSubmittingAction(false);
@@ -318,20 +456,20 @@ export default function ElectionOperationsPage() {
           <div>
             <span className="text-slate-500 block">Pending Queue</span>
             <span className="text-lg font-bold text-amber-600">
-              {results.filter((r) => r.status === "submitted" || r.status === "pending_review").length}
+              {resultsInScope.filter((r) => r.status === "submitted" || r.status === "pending_review").length}
             </span>
           </div>
           <div className="h-8 w-px bg-slate-200" />
           <div>
             <span className="text-slate-500 block">Approved</span>
             <span className="text-lg font-bold text-emerald-600">
-              {results.filter((r) => r.status === "approved").length}
+              {resultsInScope.filter((r) => r.status === "approved").length}
             </span>
           </div>
           <div className="h-8 w-px bg-slate-200" />
           <div>
             <span className="text-slate-500 block">Total Submissions</span>
-            <span className="text-lg font-bold text-slate-800">{results.length}</span>
+            <span className="text-lg font-bold text-slate-800">{resultsInScope.length}</span>
           </div>
         </div>
       </div>
@@ -343,6 +481,17 @@ export default function ElectionOperationsPage() {
             <strong>Election mode is OFF.</strong> The review queue is
             read-only and no review action can be submitted until an
             administrator turns election mode back on.
+          </span>
+        </div>
+      )}
+
+      {noActiveContest && (
+        <div className="flex items-start gap-2 p-4 rounded-xl text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            <strong>No active contest — election operations are unavailable.</strong>{" "}
+            The review desk is limited to results inside the active contest's
+            scope; activate a contest to resume reviews.
           </span>
         </div>
       )}
@@ -457,7 +606,10 @@ export default function ElectionOperationsPage() {
                         </span>
                       </div>
                       <div className="text-xs text-slate-600 font-medium pt-1">
-                        Total Cast Votes: <span className="text-slate-900 font-bold">{totalVotes}</span> | Submitter ID: {res.submitted_by}
+                        Total Cast Votes: <span className="text-slate-900 font-bold">{totalVotes}</span> | Submitted by{" "}
+                        <span className="text-slate-800 font-semibold">
+                          {userNames.get(res.submitted_by) ?? "Unknown member"}
+                        </span>
                       </div>
                     </div>
 
@@ -504,7 +656,10 @@ export default function ElectionOperationsPage() {
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
                 <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
                   <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Submitter ID:</span> {selectedResult.submitted_by}
+                  <span>Submitted by:</span>
+                  <span>
+                    {userNames.get(selectedResult.submitted_by) ?? "Unknown member"}
+                  </span>
                 </div>
                 {selectedResult.created_at ? (
                   <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
@@ -615,6 +770,64 @@ export default function ElectionOperationsPage() {
                     action — a correction returns the result to the review
                     queue for officer verification.
                   </p>
+                </div>
+              ) : null}
+
+              {/* Delete with audit — officer AND admin. Requires a
+                  reason; the full snapshot is written into the
+                  append-only election_audit collection in the same
+                  batch as the delete. */}
+              {isElectionOfficer || isAdmin ? (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  {!pendingDelete ? (
+                    <button
+                      onClick={() => {
+                        setShowDeleteForm(true);
+                        setDeleteReason("");
+                      }}
+                      disabled={submittingAction || electionModeLoading || !electionMode}
+                      className="w-full px-3 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-red-700 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <XCircle className="w-4 h-4" /> Delete Result (Permanent)
+                    </button>
+                  ) : (
+                    <div className="space-y-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                      <p className="text-xs font-bold text-red-800">
+                        Permanently delete this result?
+                      </p>
+                      <p className="text-[11px] text-red-700">
+                        This cannot be undone. The full document snapshot and
+                        your reason will be written to the immutable election
+                        audit trail before the record is removed.
+                      </p>
+                      <textarea
+                        value={deleteReason}
+                        onChange={(e) => setDeleteReason(e.target.value)}
+                        placeholder="Reason for deletion (required)..."
+                        rows={2}
+                        className="w-full text-xs p-2.5 rounded-lg border border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleDelete}
+                          disabled={submittingAction || !deleteReason.trim()}
+                          className="flex-1 px-3 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {submittingAction ? "Deleting..." : "Confirm Delete"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowDeleteForm(false);
+                            setDeleteReason("");
+                          }}
+                          disabled={submittingAction}
+                          className="px-3 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : null}
 

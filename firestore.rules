@@ -278,6 +278,61 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // ACTIVE CONTEST SCOPE (round 4)
+    // ============================================================
+
+    /*
+     * No upload may leave the active contest's footprint. The active
+     * contest is election_settings.default.active_contest_id, and its
+     * geographic scope is checked against the submitted LGA:
+     *
+     *   national / state  -> every LGA allowed
+     *   lga               -> exactly scope_id
+     *   zone/constituency -> LGA must be listed on lga_ids; an absent
+     *                        or empty lga_ids stays unrestricted (the
+     *                        client resolves legacy rows via the
+     *                        constituency reference)
+     */
+    function hasActiveContest() {
+      return exists(electionSettingsDoc())
+        && get(electionSettingsDoc()).data.keys().hasAny(["active_contest_id"])
+        && get(electionSettingsDoc()).data.active_contest_id is string
+        && get(electionSettingsDoc()).data.active_contest_id.size() > 0;
+    }
+
+    function activeContestDoc() {
+      return /databases/$(database)/documents/election_contests/
+        $(get(electionSettingsDoc()).data.active_contest_id);
+    }
+
+    function contestAllowsLga(contestData) {
+      return
+        contestData.scope_type in ["national", "state"]
+        || (
+          contestData.scope_type == "lga"
+          && contestData.scope_id == request.resource.data.lga_id
+        )
+        || (
+          contestData.scope_type in
+            ["senatorial_zone", "federal_constituency", "state_constituency"]
+          && (
+            !contestData.keys().hasAny(["lga_ids"])
+            || !(contestData.lga_ids is list)
+            || contestData.lga_ids.size() == 0
+            || request.resource.data.lga_id in contestData.lga_ids
+          )
+        );
+    }
+
+    function activeContestAllowsLga() {
+      return hasActiveContest()
+        && exists(activeContestDoc())
+        && request.resource.data.lga_id is string
+        && request.resource.data.lga_id.size() > 0
+        && contestAllowsLga(get(activeContestDoc()).data);
+    }
+
+    // ============================================================
     // USERS
     // ============================================================
 
@@ -693,6 +748,7 @@ service cloud.firestore {
         )
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.contest_id is string
+        && request.resource.data.lga_id is string
         && request.resource.data.ward_id is string
         && request.resource.data.polling_unit_id is string
         && request.resource.data.results is list
@@ -707,6 +763,14 @@ service cloud.firestore {
           || resultId == request.resource.data.ward_id + "__"
                       + request.resource.data.polling_unit_id
         )
+        // Round 4: submission target is the ACTIVE contest, and the
+        // polling unit must sit inside its geographic scope. (The
+        // result_submitted audit entry is written in the same client
+        // batch — see src/lib/firebase/election.ts.)
+        && hasActiveContest()
+        && request.resource.data.contest_id
+            == get(electionSettingsDoc()).data.active_contest_id
+        && activeContestAllowsLga()
         && (
           isAdminOrElectionOfficer()
           || registeredAt(
@@ -721,7 +785,113 @@ service cloud.firestore {
       // Admin correction (forces re-review).
       allow update: if adminCorrectionUpdate();
 
-      // Immutable record.
+      /*
+       * Permanent deletion (round 4). Officers and admins may delete
+       * a submitted result — but only in a batch that ALSO writes the
+       * append-only audit entry carrying the full snapshot and a
+       * reason. getAfter() proves the batch contains that entry before
+       * the delete commits; both writes commit or neither does.
+       */
+      allow delete: if isActiveUser()
+        && isAdminOrElectionOfficer()
+        && getAfter(
+          /databases/$(database)/documents/election_audit/$(resultId + "__deleted__" + request.auth.uid)
+        ).data.action == "result_deleted"
+        && getAfter(
+          /databases/$(database)/documents/election_audit/$(resultId + "__deleted__" + request.auth.uid)
+        ).data.target_doc_id == resultId
+        && getAfter(
+          /databases/$(database)/documents/election_audit/$(resultId + "__deleted__" + request.auth.uid)
+        ).data.reason is string
+        && getAfter(
+          /databases/$(database)/documents/election_audit/$(resultId + "__deleted__" + request.auth.uid)
+        ).data.reason.size() > 0
+        && getAfter(
+          /databases/$(database)/documents/election_audit/$(resultId + "__deleted__" + request.auth.uid)
+        ).data.snapshot is map;
+    }
+
+    // ============================================================
+    // ELECTION AUDIT — APPEND-ONLY TRAIL
+    // ============================================================
+
+    match /election_audit/{auditId} {
+      allow read: if isActiveUser() && isAdminOrElectionOfficer();
+
+      /*
+       * Create is split by actor so the trail covers the whole
+       * lifecycle yet stays unforgeable:
+       *
+       *   - Officers/admins may append any correctly shaped entry
+       *     (review actions, corrections, deletions with snapshot).
+       *   - A member may ONLY append their own "result_submitted"
+       *     entry, and only when the result it points at — written in
+       *     the same batch — is their own submission (proven via
+       *     getAfter() on the target).
+       */
+      allow create: if isActiveUser()
+        && request.resource.data.action in [
+          "result_submitted", "result_corrected",
+          "result_approved", "result_rejected",
+          "result_clarification_required", "result_reopened",
+          "result_deleted"
+        ]
+        && request.resource.data.target_collection in
+          ["election_results", "pu_reports", "election_incidents"]
+        && request.resource.data.target_doc_id is string
+        && request.resource.data.target_doc_id.size() > 0
+        && request.resource.data.actor_id == request.auth.uid
+        && request.resource.data.actor_name is string
+        && request.resource.data.actor_role is string
+        && request.resource.data.at == request.time
+        && request.resource.data.metadata is map
+        && (
+          // Deletions: audit goes in the same batch as the delete.
+          request.resource.data.action != "result_deleted"
+          || (
+            !isMember()
+            && request.resource.data.reason is string
+            && request.resource.data.reason.size() > 0
+            && request.resource.data.snapshot is map
+          )
+        )
+        && (
+          isAdminOrElectionOfficer()
+          || (
+            request.resource.data.action == "result_submitted"
+            && request.resource.data.target_collection == "election_results"
+            && getAfter(
+              /databases/$(database)/documents/election_results/$(request.resource.data.target_doc_id)
+            ).data.submitted_by == request.auth.uid
+          )
+        );
+
+      /*
+       * Re-delete edge case: if a deleted target gets resubmitted and
+       * deleted again, the deterministic delete entry
+       * (<target>__deleted__<uid>) is overwritten by its own author —
+       * and ONLY by its own author, only for the same target, and
+       * only with another result_deleted entry. Every other path stays
+       * read-only forever.
+       */
+      allow update: if isActiveUser()
+        && isAdminOrElectionOfficer()
+        && auditId == request.resource.data.target_doc_id
+                       + "__deleted__" + request.auth.uid
+        && request.resource.data.action == "result_deleted"
+        && resource.data.action == "result_deleted"
+        && resource.data.target_doc_id
+            == request.resource.data.target_doc_id
+        && resource.data.actor_id == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.snapshot is map;
+
+      /*
+       * The trail is append-only: an audit entry can never be
+       * modified (except the ruled re-delete overwrite above) or
+       * removed by anyone, including admins.
+       */
       allow delete: if false;
     }
 
@@ -745,6 +915,10 @@ service cloud.firestore {
       allow create: if isActiveUser()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
+        && request.resource.data.ward_id is string
+        // Round 4: nobody — admin included — writes outside the
+        // active contest's geographic scope.
+        && activeContestAllowsLga()
         && (
           isAdminOrElectionOfficer()
           || registeredAt(
@@ -784,6 +958,10 @@ service cloud.firestore {
         && request.resource.data.reported_by == request.auth.uid
         && request.resource.data.status == "reported"
         && request.resource.data.description is string
+        && request.resource.data.ward_id is string
+        // Round 4: nobody — admin included — writes outside the
+        // active contest's geographic scope.
+        && activeContestAllowsLga()
         && (
           isAdminOrElectionOfficer()
           || (

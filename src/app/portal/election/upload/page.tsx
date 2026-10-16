@@ -5,25 +5,22 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   submitElectionResultWithEvidence,
-  getElectionCycles,
-  getContestsByCycle,
   getPoliticalParties,
-  getElectionSettings,
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import {
+  contestCoversPollingUnit,
   deriveLgaIdFromWard,
-  isWithinContestScope,
+  describeContestScope,
+  lgasWithinContestScope,
 } from "@/lib/election-scope";
-import { useElectionMode } from "@/hooks/useElectionEngine";
+import {
+  useElectionMode,
+  useActiveContest,
+} from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
-import type {
-  LGA,
-  ElectionCycle,
-  ElectionContest,
-  PoliticalParty,
-} from "@/types";
+import type { LGA, PoliticalParty } from "@/types";
 import {
   Upload,
   Loader2,
@@ -62,13 +59,20 @@ export default function ElectionUploadPage() {
     profile?.access_role === "admin" ||
     profile?.access_role === "election_officer";
 
-  const [lgas, setLgas] = useState<LGA[]>([]);
-  const [cycles, setCycles] = useState<ElectionCycle[]>([]);
-  const [contests, setContests] = useState<ElectionContest[]>([]);
-  const [allParties, setAllParties] = useState<PoliticalParty[]>([]);
+  /*
+   * Round-4: the ACTIVE contest (election_settings.active_contest_id)
+   * is the one and only submission target. There is no longer a
+   * "pick whichever contest" fallback here — if no contest is active
+   * the whole upload form is disabled.
+   */
+  const {
+    contest: activeContest,
+    loading: contestLoading,
+    lgaIds: contestLgaIds,
+  } = useActiveContest();
 
-  const [selectedCycleId, setSelectedCycleId] = useState<string>("");
-  const [selectedContestId, setSelectedContestId] = useState<string>("");
+  const [lgas, setLgas] = useState<LGA[]>([]);
+  const [allParties, setAllParties] = useState<PoliticalParty[]>([]);
 
   /*
    * No LGA is assumed. The LGA is the member's registered LGA (or the
@@ -94,29 +98,12 @@ export default function ElectionUploadPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(true);
 
-  // Load LGAs, Cycles, Contests, Parties & Active Settings
+  // Load LGAs & parties
   useEffect(() => {
     async function initData() {
       try {
         const lgaData = await getAllEnuguLGAs();
         setLgas(lgaData);
-
-        const loadedSettings = await getElectionSettings();
-        const loadedCycles = await getElectionCycles();
-        setCycles(loadedCycles);
-
-        const defaultCycleId =
-          loadedSettings?.active_election_cycle_id ||
-          loadedCycles[0]?.id ||
-          "general-election-2027";
-        setSelectedCycleId(defaultCycleId);
-
-        const loadedContests = await getContestsByCycle(defaultCycleId);
-        setContests(loadedContests);
-
-        const activeContestId =
-          loadedSettings?.active_contest_id || loadedContests[0]?.id || "";
-        setSelectedContestId(activeContestId);
 
         const loadedParties = await getPoliticalParties();
         setAllParties(loadedParties);
@@ -129,16 +116,16 @@ export default function ElectionUploadPage() {
     initData();
   }, []);
 
-  // Update contests when cycle changes
-  useEffect(() => {
-    if (!selectedCycleId) return;
-    getContestsByCycle(selectedCycleId).then((cList) => {
-      setContests(cList);
-      if (cList.length > 0 && !cList.some((c) => c.id === selectedContestId)) {
-        setSelectedContestId(cList[0].id);
-      }
-    });
-  }, [selectedCycleId]);
+  /*
+   * LGA options for admin/officer are limited to the active contest's
+   * scope. A single-LGA contest locks the selector to that LGA.
+   */
+  const scopedLgaOptions = lgasWithinContestScope(activeContest, lgas);
+  const singleLgaLocked =
+    !!activeContest &&
+    !!contestLgaIds &&
+    contestLgaIds.length === 1 &&
+    scopedLgaOptions.length === 1;
 
   /*
    * Place the submitter in the LGA that owns their registered ward once
@@ -159,8 +146,7 @@ export default function ElectionUploadPage() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Selected Contest Details & Tracked Parties
-  const currentContest = contests.find((c) => c.id === selectedContestId);
-  const currentCycle = cycles.find((c) => c.id === selectedCycleId);
+  const currentContest = activeContest;
 
   const trackedPartiesList = currentContest?.tracked_parties ?? [];
 
@@ -199,11 +185,30 @@ export default function ElectionUploadPage() {
       initialVotes[p.id] = 0;
     }
     setPartyVotes(initialVotes);
-  }, [selectedContestId, trackedPartiesKey, trackedPartyObjects]);
+  }, [activeContest?.id, trackedPartyObjects]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const selectedLga = lgas.find((lga) => lga.id === form.lga_id);
-  const wards = selectedLga?.wards ?? [];
+  /*
+   * A single-LGA contest locks the geographic selector to that LGA —
+   * there is nothing else to choose.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!singleLgaLocked) return;
+
+    const lockedLgaId = scopedLgaOptions[0]?.id ?? "";
+    if (!lockedLgaId) return;
+
+    setForm((prev) =>
+      prev.lga_id === lockedLgaId
+        ? prev
+        : { ...prev, lga_id: lockedLgaId, ward_id: "", polling_unit_id: "" },
+    );
+  }, [singleLgaLocked, scopedLgaOptions]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const selectedLgaName = lgas.find((lga) => lga.id === form.lga_id);
+  const wards = selectedLgaName?.wards ?? [];
 
   const selectedWard = wards.find((ward) => ward.id === form.ward_id);
   const pollingUnits = selectedWard?.pollingUnits ?? [];
@@ -236,8 +241,10 @@ export default function ElectionUploadPage() {
       return;
     }
 
-    if (!selectedContestId || !currentContest) {
-      setError("Active Election Contest is required.");
+    if (!currentContest) {
+      setError(
+        "No active contest — election operations are unavailable.",
+      );
       return;
     }
 
@@ -265,14 +272,23 @@ export default function ElectionUploadPage() {
     }
 
     /*
-     * Validate that the polling unit's LGA sits inside the active
-     * contest's scope. The boundary comes from the contest
-     * (scope_type / scope_id / lga_ids) — never from a fixed LGA.
+     * Round-4: EVERY role — admin and officer included — must pick a
+     * polling unit that sits inside the active contest's geographic
+     * scope. The boundary comes from the contest (scope_type /
+     * scope_id / lga_ids), never from a fixed LGA.
      */
     if (
-      !isWithinContestScope(currentContest, { lgaId: form.lga_id }, lgas)
+      !contestCoversPollingUnit(
+        currentContest,
+        form.lga_id,
+        form.ward_id,
+        form.polling_unit_id,
+        lgas,
+      )
     ) {
-      setError("This polling unit is not within the scope of the selected contest.");
+      setError(
+        "This polling unit is not within the scope of the active contest.",
+      );
       return;
     }
 
@@ -307,8 +323,8 @@ export default function ElectionUploadPage() {
 
       // 2. Submit contest-aware result + evidence metadata to Firestore
       await submitElectionResultWithEvidence({
-        electionCycleId: selectedCycleId,
-        contestId: selectedContestId,
+        electionCycleId: currentContest.election_cycle_id,
+        contestId: currentContest.id,
         contestType: currentContest.contest_type,
         contestScope: {
           scope_type: currentContest.scope_type,
@@ -322,6 +338,8 @@ export default function ElectionUploadPage() {
         results: formattedResults,
         userId: profile?.id || "unknown",
         cloudinaryUrl,
+        actorName: profile?.full_name || null,
+        actorRole: profile?.access_role || null,
       });
 
       setMessage(
@@ -338,7 +356,7 @@ export default function ElectionUploadPage() {
     }
   };
 
-  if (loadingConfig) {
+  if (loadingConfig || contestLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
         <Loader2 className="h-8 w-8 animate-spin text-apc-primary" />
@@ -347,15 +365,19 @@ export default function ElectionUploadPage() {
     );
   }
 
-  if (contests.length === 0) {
+  if (!activeContest) {
     return (
       <div className="max-w-xl mx-auto my-12 p-8 bg-white rounded-2xl shadow-sm border border-gray-200 text-center space-y-4">
         <div className="mx-auto w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
           <ShieldAlert className="w-6 h-6" />
         </div>
-        <h2 className="text-lg font-bold text-gray-900">No Open Contests Active</h2>
+        <h2 className="text-lg font-bold text-gray-900">
+          No Active Contest
+        </h2>
         <p className="text-sm text-gray-600 leading-relaxed">
-          No open election contests are currently active for result collation. Please check back later or contact your Campaign Administrator.
+          No active contest — election operations are unavailable. An
+          administrator must activate a contest in the election control
+          centre before results can be uploaded.
         </p>
       </div>
     );
@@ -387,24 +409,15 @@ export default function ElectionUploadPage() {
         </div>
       )}
 
-      {/* Prominent Election & Contest Header Specs (Sec 20 Requirement) */}
+        {/* Prominent Election & Contest Header Specs (Sec 20 Requirement) */}
       <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 pb-3">
-          <div>
-            <span className="text-xs uppercase text-slate-400 block">
-              Election Cycle
-            </span>
-            <span className="font-bold text-base text-white">
-              {currentCycle?.name || "2027 General Election"}
-            </span>
-          </div>
-
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <span className="text-xs uppercase text-slate-400 block">
               Active Contest
             </span>
             <span className="font-bold text-base text-apc-light">
-              {currentContest?.name || "Select Contest"}
+              {currentContest?.name || "—"}
             </span>
           </div>
 
@@ -413,45 +426,16 @@ export default function ElectionUploadPage() {
               Scope / Constituency
             </span>
             <span className="font-mono text-xs bg-slate-800 px-2.5 py-1 rounded text-emerald-400">
-              {currentContest?.scope_type}: {currentContest?.scope_id}
+              {describeContestScope(currentContest, lgas)}
             </span>
           </div>
         </div>
 
-        {/* Contest Switchers */}
-        <div className="grid sm:grid-cols-2 gap-4 text-xs pt-1">
-          <div>
-            <label className="text-slate-300 block mb-1">Select Election Cycle:</label>
-            <select
-              value={selectedCycleId}
-              onChange={(e) => setSelectedCycleId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-medium"
-            >
-              {cycles.map((cy) => (
-                <option key={cy.id} value={cy.id}>
-                  {cy.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-slate-300 block mb-1">
-              Select Open Contest:
-            </label>
-            <select
-              value={selectedContestId}
-              onChange={(e) => setSelectedContestId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-medium"
-            >
-              {contests.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.contest_type}) — [{c.status}]
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <p className="text-[11px] text-slate-400">
+          The active contest fixed by the administrator defines who may
+          upload and where. Result submission is only accepted for the
+          polling units inside this scope.
+        </p>
       </div>
 
       {!isAdminOrElectionOfficer && (
@@ -491,11 +475,14 @@ export default function ElectionUploadPage() {
                     polling_unit_id: "",
                   })
                 }
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary text-xs"
+                disabled={singleLgaLocked}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary disabled:bg-gray-100 text-xs"
                 required
               >
-                <option value="">Select LGA</option>
-                {lgas.map((lga) => (
+                <option value="">
+                  {singleLgaLocked ? "Locked by contest scope" : "Select LGA"}
+                </option>
+                {scopedLgaOptions.map((lga) => (
                   <option key={lga.id} value={lga.id}>
                     {lga.name}
                   </option>
@@ -675,7 +662,8 @@ export default function ElectionUploadPage() {
             submitting ||
             trackedPartyObjects.length === 0 ||
             electionModeLoading ||
-            !electionMode
+            !electionMode ||
+            !activeContest
           }
           className="w-full bg-apc-primary text-white py-3 rounded-xl font-bold hover:bg-apc-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
         >

@@ -11,11 +11,15 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import {
   getAllEnuguLGAs,
 } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversPollingUnit, describeContestScope } from "@/lib/election-scope";
 import { buildElectionReadScope } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
-import type { PUReportScopeConstraint } from "@/lib/firebase/election";
+import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
+import {
+  NO_ACTIVE_CONTEST_MESSAGE,
+  type PUReportScopeConstraint,
+} from "@/lib/firebase/election";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +39,13 @@ export default function PUReportsPage() {
   const { profile, assignments, accessLoading } = useAuth();
   const isAdmin = profile?.access_role === "admin";
   const { electionMode, loading: electionModeLoading } = useElectionMode();
+
+  /*
+   * Round-4: the active contest scopes EVERY submission — admins and
+   * officers included. With no active contest the form is disabled.
+   */
+  const { contest: activeContest, loading: contestLoading } =
+    useActiveContest();
 
   const [lgas, setLgas] = useState<LGA[]>([]);
   const [reports, setReports] = useState<PUReportDoc[]>([]);
@@ -63,6 +74,15 @@ export default function PUReportsPage() {
 
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+
+  /*
+   * Batch-resolved submitter display names. Collected once per page
+   * load (not per row) — see src/lib/userNames.ts. A missing or
+   * nameless profile renders "Unknown member", never a doc id.
+   */
+  const [userNames, setUserNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
 
   // Load LGAs
   useEffect(() => {
@@ -160,6 +180,31 @@ export default function PUReportsPage() {
    */
   const filteredReports = reports;
 
+  /*
+   * One batched name lookup per snapshot instead of one fetch per
+   * row. resolveUserNames always returns an entry per uid, so the
+   * render map lookup can fall back to "Unknown member".
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const uids = Array.from(
+      new Set(reports.map((r) => r.submitted_by)),
+    ).filter((uid): uid is string => typeof uid === "string" && uid !== "");
+
+    if (uids.length === 0) return;
+
+    let cancelled = false;
+    resolveUserNames(uids).then((resolved) => {
+      if (cancelled) return;
+      setUserNames((prev) => new Map([...prev, ...resolved]));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reports]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -177,6 +222,11 @@ export default function PUReportsPage() {
       setFormError(
         "Election mode is currently OFF. PU report submission is disabled.",
       );
+      return;
+    }
+
+    if (!activeContest) {
+      setFormError(NO_ACTIVE_CONTEST_MESSAGE);
       return;
     }
 
@@ -203,6 +253,27 @@ export default function PUReportsPage() {
       }
     }
 
+    /*
+     * Round-4: every role — admin and officer included — may only
+     * submit inside the active contest's geographic scope. The service
+     * re-checks this too (createPUReport reads the active contest
+     * itself), so direct API posts are refused as well.
+     */
+    if (
+      !contestCoversPollingUnit(
+        activeContest,
+        form.lga_id,
+        form.ward_id,
+        form.polling_unit_id,
+        lgas,
+      )
+    ) {
+      setFormError(
+        "This polling unit is not within the scope of the active contest.",
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       let cloudinaryUrl: string | null = null;
@@ -219,6 +290,7 @@ export default function PUReportsPage() {
 
       await createPUReport({
         ward_id: form.ward_id,
+        lga_id: form.lga_id,
         polling_unit_id: form.polling_unit_id,
         submitted_by: profile?.id || "unknown",
         report_type: form.report_type,
@@ -277,7 +349,8 @@ export default function PUReportsPage() {
             setFormError("");
             setSuccessMessage("");
           }}
-          className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark transition-colors"
+          disabled={electionModeLoading || contestLoading || !electionMode || !activeContest}
+          className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark transition-colors disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
         >
           <Plus className="h-4 w-4" />
           {showForm ? "Cancel" : "Submit PU Report"}
@@ -290,6 +363,19 @@ export default function PUReportsPage() {
           <span>
             <strong>Election mode is OFF.</strong> Polling unit reports are
             read-only until an administrator turns election mode back on.
+          </span>
+        </div>
+      )}
+
+      {!contestLoading && !activeContest && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>
+              No active contest — election operations are unavailable.
+            </strong>{" "}
+            Report submission is disabled until an administrator activates a
+            contest.
           </span>
         </div>
       )}
@@ -496,7 +582,13 @@ export default function PUReportsPage() {
 
                 <button
                   type="submit"
-                  disabled={submitting || electionModeLoading || !electionMode}
+                  disabled={
+                    submitting ||
+                    electionModeLoading ||
+                    contestLoading ||
+                    !electionMode ||
+                    !activeContest
+                  }
                   className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-2 text-sm font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
                 >
                   {submitting ? (
@@ -550,6 +642,13 @@ export default function PUReportsPage() {
                       PU: {r.polling_unit_id} · Ward: {r.ward_id}
                     </span>
                   </div>
+
+                  <p className="text-xs text-gray-500">
+                    Submitted by{" "}
+                    <span className="font-semibold text-gray-700">
+                      {userNames.get(r.submitted_by) ?? UNKNOWN_MEMBER_NAME}
+                    </span>
+                  </p>
 
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">
                     {r.content}

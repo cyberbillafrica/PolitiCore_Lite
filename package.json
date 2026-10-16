@@ -6,7 +6,9 @@
     "dev": "next dev --webpack --hostname 0.0.0.0",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "bootstrap": "tsx scripts/bootstrap.ts",
+    "bootstrap:verify": "tsx scripts/verify-bootstrap.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -42,6 +44,7 @@
     "eslint-config-next": "16.3.0",
     "playwright": "^1.63.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

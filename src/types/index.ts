@@ -681,3 +681,42 @@ export interface ElectionSettings {
   updated_by?: string;
   updated_at?: unknown;
 }
+
+/*
+ * ============================================================
+ * ELECTION AUDIT TRAIL (election_audit)
+ * ============================================================
+ *
+ * Append-only log of state changes to election results (submit /
+ * approve / reject / clarify / reopen / delete). Written by the
+ * client under strict rules: officers and admins may CREATE an
+ * entry; nobody may update or delete one.
+ */
+
+export type ElectionAuditAction =
+  | "result_submitted"
+  | "result_corrected"
+  | "result_approved"
+  | "result_rejected"
+  | "result_clarification_required"
+  | "result_reopened"
+  | "result_deleted";
+
+export interface ElectionAuditEntry {
+  id: string;
+  action: ElectionAuditAction;
+  target_collection: string;
+  target_doc_id: string;
+  actor_id: string;
+  /** Display-name snapshot of the actor at action time. */
+  actor_name: string;
+  /** Role snapshot at action time ("admin" | "election_officer" | ..."). */
+  actor_role: string;
+  at: unknown;
+  /** Required for delete actions; optional otherwise. */
+  reason: string | null;
+  /** FULL contents of the deleted document (delete actions only). */
+  snapshot?: Record<string, unknown> | null;
+  /** Extra context, e.g. the previous status. */
+  metadata?: Record<string, unknown> | null;
+}

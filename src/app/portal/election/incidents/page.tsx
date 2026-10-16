@@ -9,11 +9,12 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard, lgasWithinContestScope } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversWard, describeContestScope } from "@/lib/election-scope";
 import { buildElectionReadScope } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
-import type { ElectionIncidentScopeConstraint } from "@/lib/firebase/election";
+import { NO_ACTIVE_CONTEST_MESSAGE, type ElectionIncidentScopeConstraint } from "@/lib/firebase/election";
+import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
 import type { LGA } from "@/types";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +33,13 @@ export default function IncidentsPage() {
   const { profile, assignments, accessLoading } = useAuth();
   const { electionMode, loading: electionModeLoading } = useElectionMode();
   const isAdmin = profile?.access_role === "admin";
+
+  /*
+   * Round-4: the active contest scopes EVERY submission — admins and
+   * officers included. With no active contest reporting is disabled.
+   */
+  const { contest: activeContest, loading: contestLoading } =
+    useActiveContest();
 
   const [lgas, setLgas] = useState<LGA[]>([]);
   const [incidents, setIncidents] = useState<ElectionIncidentDoc[]>([]);
@@ -60,6 +68,15 @@ export default function IncidentsPage() {
 
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+
+  /*
+   * Batch-resolved reporter display names — one lookup per snapshot,
+   * never a per-row fetch (see src/lib/userNames.ts). Missing
+   * profiles render "Unknown member", not a raw doc id.
+   */
+  const [userNames, setUserNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
 
   // Load the state-wide LGA list
   useEffect(() => {
@@ -162,6 +179,29 @@ export default function IncidentsPage() {
    */
   const filteredIncidents = incidents;
 
+  /*
+   * One batched name lookup per snapshot instead of one fetch per row.
+   */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const uids = Array.from(
+      new Set(incidents.map((i) => i.reported_by)),
+    ).filter((uid): uid is string => typeof uid === "string" && uid !== "");
+
+    if (uids.length === 0) return;
+
+    let cancelled = false;
+    resolveUserNames(uids).then((resolved) => {
+      if (cancelled) return;
+      setUserNames((prev) => new Map([...prev, ...resolved]));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [incidents]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -179,6 +219,11 @@ export default function IncidentsPage() {
       setFormError(
         "Election mode is currently OFF. Incident reporting is disabled.",
       );
+      return;
+    }
+
+    if (!activeContest) {
+      setFormError(NO_ACTIVE_CONTEST_MESSAGE);
       return;
     }
 
@@ -202,6 +247,19 @@ export default function IncidentsPage() {
       }
     }
 
+    /*
+     * Round-4: every role — admin and officer included — may only
+     * report inside the active contest's geographic scope. The service
+     * re-checks this too (createElectionIncident re-derives the ward's
+     * LGA itself), so direct API posts are refused as well.
+     */
+    if (!contestCoversWard(activeContest, form.lga_id, form.ward_id, lgas)) {
+      setFormError(
+        "The selected ward is not within the scope of the active contest.",
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       let cloudinaryUrl: string | null = null;
@@ -218,6 +276,7 @@ export default function IncidentsPage() {
 
       await createElectionIncident({
         ward_id: form.ward_id,
+        lga_id: form.lga_id,
         polling_unit_id: form.polling_unit_id || null,
         incident_type: form.incident_type,
         severity: form.severity,
@@ -278,7 +337,7 @@ export default function IncidentsPage() {
             setFormError("");
             setSuccessMessage("");
           }}
-          disabled={electionModeLoading || !electionMode}
+          disabled={electionModeLoading || contestLoading || !electionMode || !activeContest}
           className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
         >
           <AlertTriangle className="h-4 w-4" />
@@ -292,6 +351,19 @@ export default function IncidentsPage() {
           <span>
             <strong>Election mode is OFF.</strong> Incident reporting is
             disabled until an administrator turns election mode back on.
+          </span>
+        </div>
+      )}
+
+      {!contestLoading && !activeContest && (
+        <div className="flex items-start gap-2 p-4 bg-amber-50 text-amber-800 rounded-lg border border-amber-200 text-sm">
+          <ShieldAlert className="h-5 w-5 shrink-0" />
+          <span>
+            <strong>
+              No active contest — election operations are unavailable.
+            </strong>{" "}
+            Incident reporting is disabled until an administrator activates
+            a contest.
           </span>
         </div>
       )}
@@ -510,7 +582,13 @@ export default function IncidentsPage() {
 
                 <button
                   type="submit"
-                  disabled={submitting || electionModeLoading || !electionMode}
+                  disabled={
+                    submitting ||
+                    electionModeLoading ||
+                    contestLoading ||
+                    !electionMode ||
+                    !activeContest
+                  }
                   className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
@@ -575,6 +653,13 @@ export default function IncidentsPage() {
                         : ""}
                     </span>
                   </div>
+
+                  <p className="text-xs text-gray-500">
+                    Reported by{" "}
+                    <span className="font-semibold text-gray-700">
+                      {userNames.get(inc.reported_by) ?? UNKNOWN_MEMBER_NAME}
+                    </span>
+                  </p>
 
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">
                     {inc.description}

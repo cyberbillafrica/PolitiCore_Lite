@@ -790,6 +790,8 @@ export default function ElectionDashboard() {
         adminUserId: profile.id || "admin",
         reason: editReason,
         existingDoc: editingResult,
+        actorName: profile.full_name || null,
+        actorRole: profile.access_role || null,
       });
 
       setEditingResult(null);

@@ -11,6 +11,7 @@ import {
   updateDoc,
   deleteDoc,
   where,
+  writeBatch,
   Query,
   Unsubscribe,
 } from "firebase/firestore";
@@ -21,6 +22,13 @@ import {
   DEFAULT_ELECTION_CYCLE_2027,
   DEFAULT_CONTESTS_2027,
 } from "./election-seed";
+import { buildElectionAuditEntry } from "./election-audit";
+import {
+  contestCoversPollingUnit,
+  contestCoversWard,
+  deriveLgaIdFromWard,
+  isWithinContestScope,
+} from "@/lib/election-scope";
 import type {
   ElectionCycle,
   ElectionContest,
@@ -157,6 +165,92 @@ export interface ElectionIncidentDoc {
  * document id is a local constant.
  */
 export const ELECTION_SETTINGS_DOC_ID = "default";
+
+/*
+ * Shown on every election surface when election_settings has no
+ * active contest set. A fresh deployment starts here — the admin
+ * must activate a contest in the election control centre before
+ * any operations window opens.
+ */
+export const NO_ACTIVE_CONTEST_MESSAGE =
+  "No active contest — election operations are unavailable.";
+
+/*
+ * Round-4 scope enforcement: the ACTIVE CONTEST (and only it) is
+ * the submission target. Read straight from the settings document
+ * with no seed fallback — an unset active contest means "closed".
+ */
+async function getStrictActiveContestId(): Promise<string | null> {
+  const settingsSnap = await getDoc(
+    doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID),
+  );
+
+  const contestId = settingsSnap.exists()
+    ? ((settingsSnap.data().active_contest_id as string | null) ?? "")
+    : "";
+
+  return contestId ? contestId : null;
+}
+
+interface SubmissionActor {
+  id: string;
+  name?: string | null;
+  role?: string | null;
+}
+
+/*
+ * Optional point-in-time actor context passed by pages (the caller's
+ * profile). Audit rows snapshot name/role at write time; when absent
+ * they fall back to "Unknown member" / "member".
+ */
+interface ActorContext {
+  actorName?: string | null;
+  actorRole?: string | null;
+}
+
+/*
+ * Shared audit-entry builder for result state transitions. The
+ * audit entry and the state change always go into the SAME batch so
+ * the trail is never missing a step.
+ */
+function appendResultAuditToBatch(
+  batch: ReturnType<typeof writeBatch>,
+  data: {
+    resultDocId: string;
+    action:
+      | "result_submitted"
+      | "result_approved"
+      | "result_rejected"
+      | "result_clarification_required"
+      | "result_reopened"
+      | "result_corrected";
+    actor: SubmissionActor;
+    previousStatus: string | null;
+    newStatus: string | null;
+    reason?: string | null;
+    snapshot?: Record<string, unknown> | null;
+  },
+): void {
+  batch.set(
+    doc(collection(db, "election_audit")),
+    buildElectionAuditEntry({
+      action: data.action as Parameters<
+        typeof buildElectionAuditEntry
+      >[0]["action"],
+      target_collection: "election_results",
+      target_doc_id: data.resultDocId,
+      actor_id: data.actor.id,
+      actor_name: (data.actor.name ?? "").trim() || "Unknown member",
+      actor_role: (data.actor.role ?? "").trim() || "member",
+      reason: data.reason ?? null,
+      snapshot: data.snapshot ?? null,
+      metadata: {
+        previous_status: data.previousStatus,
+        new_status: data.newStatus,
+      },
+    }),
+  );
+}
 
 export async function getElectionSettings(): Promise<ElectionSettings | null> {
   const docRef = doc(db, "election_settings", ELECTION_SETTINGS_DOC_ID);
@@ -491,6 +585,8 @@ export async function submitElectionResultWithEvidence(data: {
   userId: string;
   cloudinaryUrl?: string | null;
   cloudinaryPublicId?: string | null;
+  actorName?: string | null;
+  actorRole?: string | null;
 }) {
   if (!data.cloudinaryUrl) {
     throw new Error(
@@ -507,6 +603,45 @@ export async function submitElectionResultWithEvidence(data: {
     throw new Error(`Cannot submit result: Contest '${contest.name}' is currently ${contest.status} and not OPEN for result submission.`);
   }
 
+  /*
+   * Round-4 scope enforcement: the CLIENT may only submit into the
+   * ACTIVE contest (election_settings.active_contest_id), read here
+   * from the settings document — never from the payload. A client
+   * that posts contest_id for any other contest is refused.
+   */
+  const activeContestId = await getStrictActiveContestId();
+  if (!activeContestId) {
+    throw new Error(NO_ACTIVE_CONTEST_MESSAGE);
+  }
+  if (data.contestId !== activeContestId) {
+    throw new Error(
+      "This contest is not the active one — result submission is only accepted for the active contest.",
+    );
+  }
+
+  /*
+   * The submitted polling unit must sit inside the active contest's
+   * geographic scope. The LGA hierarchy comes from the seeded
+   * electoral_data document, falling back to the bundled dataset.
+   */
+  const { getEnuguElectoralData } = await import("./electoral");
+  const allLgas = (await getEnuguElectoralData())?.lgas ?? [];
+  if (
+    !isWithinContestScope(contest, { lgaId: data.lgaId }, allLgas) ||
+    !contestCoversWard(contest, data.lgaId, data.wardId, allLgas) ||
+    !contestCoversPollingUnit(
+      contest,
+      data.lgaId,
+      data.wardId,
+      data.pollingUnitId,
+      allLgas,
+    )
+  ) {
+    throw new Error(
+      "This polling unit is not within the scope of the active contest.",
+    );
+  }
+
   // Deterministic ID across Contest + Polling Unit as required by Spec Section 15
   const resultDocId = `${data.contestId}__${data.pollingUnitId}`;
   const resultRef = doc(db, "election_results", resultDocId);
@@ -520,7 +655,13 @@ export async function submitElectionResultWithEvidence(data: {
     notes: `Initial result submission for contest ${data.contestId} with Form EC8 evidence`,
   };
 
-  await setDoc(resultRef, {
+  /*
+   * Snapshot of the full result payload for the audit trail (the
+   * entered state as it was written). serverTimestamp placeholders
+   * are represented as null — the audit row records the identity of
+   * the documents, their live timestamps live on the result itself.
+   */
+  const submittedSnapshot = {
     election_cycle_id: data.electionCycleId,
     contest_id: data.contestId,
     contest_type: data.contestType,
@@ -536,10 +677,36 @@ export async function submitElectionResultWithEvidence(data: {
     verified: false,
     cloudinary_url: data.cloudinaryUrl || null,
     cloudinary_public_id: data.cloudinaryPublicId || null,
+  };
+
+  /*
+   * One atomic batch: the result document AND its audit entry are
+   * written together, so a submission can never exist without its
+   * audit row (or vice versa).
+   */
+  const batch = writeBatch(db);
+
+  batch.set(resultRef, {
+    ...submittedSnapshot,
     history: [initialHistory],
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
   });
+
+  appendResultAuditToBatch(batch, {
+    resultDocId,
+    action: "result_submitted",
+    actor: {
+      id: data.userId,
+      name: data.actorName,
+      role: data.actorRole,
+    },
+    previousStatus: null,
+    newStatus: "submitted",
+    snapshot: submittedSnapshot,
+  });
+
+  await batch.commit();
 }
 
 /*
@@ -554,6 +721,8 @@ export async function reviewElectionResult(data: {
   action: "approve" | "reject" | "clarify" | "reopen";
   notes?: string;
   existingDoc: ElectionResultDoc;
+  actorName?: string | null;
+  actorRole?: string | null;
 }) {
   const resultRef = doc(db, "election_results", data.resultDocId);
 
@@ -585,7 +754,28 @@ export async function reviewElectionResult(data: {
 
   const updatedHistory = [...(data.existingDoc.history || []), historyItem];
 
-  await updateDoc(resultRef, {
+  /*
+   * One atomic batch: the review decision AND its immutable audit
+   * entry are written together. Snapshot = the previous state of the
+   * result (review actions do not receive the delete-only full
+   * snapshot requirement, but carrying the prior state makes the
+   * trail complete).
+   */
+  const auditActionMap = {
+    approve: "result_approved",
+    reject: "result_rejected",
+    clarify: "result_clarification_required",
+    reopen: "result_reopened",
+  } as const;
+
+  const {
+    id: _droppedId,
+    ...previousState
+  } = data.existingDoc as ElectionResultDoc & Record<string, unknown>;
+
+  const batch = writeBatch(db);
+
+  batch.update(resultRef, {
     status: newStatus,
     verified: newStatus === "approved",
     reviewed_by: data.officerUserId,
@@ -594,6 +784,22 @@ export async function reviewElectionResult(data: {
     history: updatedHistory,
     updated_at: serverTimestamp(),
   });
+
+  appendResultAuditToBatch(batch, {
+    resultDocId: data.resultDocId,
+    action: auditActionMap[data.action],
+    actor: {
+      id: data.officerUserId,
+      name: data.actorName,
+      role: data.actorRole,
+    },
+    previousStatus: data.existingDoc.status,
+    newStatus,
+    reason: data.notes || null,
+    snapshot: previousState as Record<string, unknown>,
+  });
+
+  await batch.commit();
 }
 
 /*
@@ -608,6 +814,8 @@ export async function correctElectionResult(data: {
   adminUserId: string;
   reason?: string;
   existingDoc: ElectionResultDoc;
+  actorName?: string | null;
+  actorRole?: string | null;
 }) {
   const resultRef = doc(db, "election_results", data.resultDocId);
 
@@ -629,13 +837,42 @@ export async function correctElectionResult(data: {
 
   const updatedHistory = [...(data.existingDoc.history || []), historyItem];
 
-  await updateDoc(resultRef, {
+  /*
+   * One atomic batch: the correction AND its immutable audit entry
+   * ("result_corrected") are written together.
+   */
+  const {
+    id: _droppedId,
+    ...previousState
+  } = data.existingDoc as ElectionResultDoc & Record<string, unknown>;
+
+  const batch = writeBatch(db);
+
+  batch.update(resultRef, {
     results: data.newResults,
     status: newStatus,
     verified: false,
     history: updatedHistory,
     updated_at: serverTimestamp(),
   });
+
+  appendResultAuditToBatch(batch, {
+    resultDocId: data.resultDocId,
+    action: "result_corrected",
+    actor: {
+      id: data.adminUserId,
+      name: data.actorName,
+      role: data.actorRole,
+    },
+    previousStatus: data.existingDoc.status,
+    newStatus,
+    reason:
+      data.reason ||
+      "Administrative correction against submitted EC8 evidence",
+    snapshot: previousState as Record<string, unknown>,
+  });
+
+  await batch.commit();
 }
 
 /*
@@ -765,25 +1002,81 @@ export function subscribeToElectionResults(
     onError,
     "election results",
   );
-}
-
-/*
+}/*
  * ============================================================
  * POLLING UNIT REPORTS SERVICE
  * ============================================================
  */
 
+/*
+ * Resolve the active contest for any operations submission (result,
+ * PU report, incident) — or abort when none is set. This is the
+ * round-4 gate that keeps every submission inside the active
+ * contest's footprint, regardless of who is submitting.
+ */
+async function requireActiveContest(): Promise<ElectionContest> {
+  const activeContestId = await getStrictActiveContestId();
+  if (!activeContestId) {
+    throw new Error(NO_ACTIVE_CONTEST_MESSAGE);
+  }
+
+  const contest = await getContest(activeContestId);
+  if (!contest) {
+    throw new Error(NO_ACTIVE_CONTEST_MESSAGE);
+  }
+  return contest;
+}
+
+/*
+ * Guard every non-result submission against the active contest's
+ * geographic scope. The ward's LGA is derived from the seeded
+ * electoral hierarchy — never trusted from the caller.
+ */
+async function assertWardWithinContestScope(
+  contest: ElectionContest,
+  wardId: string,
+): Promise<string | null> {
+  const { getAllEnuguLGAs } = await import("./electoral");
+  const allLgas = await getAllEnuguLGAs();
+
+  const lgaId = deriveLgaIdFromWard(allLgas, wardId);
+  if (!lgaId || !contestCoversWard(contest, lgaId, wardId, allLgas)) {
+    throw new Error(
+      "The selected ward is not within the scope of the active contest.",
+    );
+  }
+
+  return lgaId;
+}
+
 export async function createPUReport(data: {
   ward_id: string;
   polling_unit_id: string;
+  /** The selected LGA — persisted so rules can scope-check creates. */
+  lga_id: string;
   submitted_by: string;
   report_type: PUReportDoc["report_type"];
   title: string;
   content: string;
   cloudinary_url?: string | null;
 }) {
-  const ref = await addDoc(collection(db, "pu_reports"), {
-    ...data,
+  const contest = await requireActiveContest();
+  const resolvedLgaId = await assertWardWithinContestScope(
+    contest,
+    data.ward_id,
+  );
+
+  if (
+    data.lga_id &&
+    resolvedLgaId &&
+    data.lga_id.toLowerCase() !== resolvedLgaId.toLowerCase()
+  ) {
+    throw new Error(
+      "The selected ward does not belong to the selected LGA.",
+    );
+  }
+
+  const ref = await addDoc(collection(db, "pu_reports"), {...data,
     status: "submitted",
     created_at: serverTimestamp(),
   });
@@ -836,19 +1129,34 @@ export function subscribeToPUReports(
  * ============================================================
  * ELECTION INCIDENTS SERVICE
  * ============================================================
- */
-
-export async function createElectionIncident(data: {
+ */export async function createElectionIncident(data: {
   ward_id: string;
   polling_unit_id?: string | null;
+  /** The selected LGA — persisted so rules can scope-check creates. */
+  lga_id: string;
   incident_type: ElectionIncidentDoc["incident_type"];
   severity: ElectionIncidentDoc["severity"];
   description: string;
   reported_by: string;
   cloudinary_url?: string | null;
 }) {
-  const ref = await addDoc(collection(db, "election_incidents"), {
-    ...data,
+  const contest = await requireActiveContest();
+  const resolvedLgaId = await assertWardWithinContestScope(
+    contest,
+    data.ward_id,
+  );
+
+  if (
+    data.lga_id &&
+    resolvedLgaId &&
+    data.lga_id.toLowerCase() !== resolvedLgaId.toLowerCase()
+  ) {
+    throw new Error(
+      "The selected ward does not belong to the selected LGA.",
+    );
+  }
+
+  const ref = await addDoc(collection(db, "election_incidents"), {...data,
     status: "reported",
     created_at: serverTimestamp(),
   });
