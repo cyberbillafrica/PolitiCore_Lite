@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import Link from "next/link";
 
 import {
@@ -82,7 +84,6 @@ export default function CampaignIssuesPage() {
     }
 
     try {
-      setError(null);
 
       const data = await getScopedCampaignIssues(assignment);
 
@@ -90,7 +91,7 @@ export default function CampaignIssuesPage() {
     } catch (err) {
       console.error("Failed to load campaign issues:", err);
 
-      setError("Unable to load issues for your organizational scope.");
+      notify.error("Unable to load issues for your organizational scope.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -284,18 +285,7 @@ export default function CampaignIssuesPage() {
 
       {/* ERROR */}
 
-      {error && (
-        <Card className="border-red-200">
-          <CardContent className="p-5">
-            <div className="flex gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-red-600" />
-
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
+      
       {/* ISSUES */}
 
       <Card>
@@ -376,13 +366,12 @@ function IssueForm({
     event.preventDefault();
 
     if (!title.trim() || !description.trim()) {
-      setError("Title and description are required.");
+      notify.error("Title and description are required.");
       return;
     }
 
     try {
       setSaving(true);
-      setError(null);
 
       await createCampaignIssue({
         title,
@@ -408,7 +397,7 @@ function IssueForm({
     } catch (err) {
       console.error("Failed to create issue:", err);
 
-      setError("Unable to submit this issue.");
+      notify.error("Unable to submit this issue.");
     } finally {
       setSaving(false);
     }
@@ -509,7 +498,6 @@ function IssueForm({
             placeholder="https://..."
           />
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end">
             <button

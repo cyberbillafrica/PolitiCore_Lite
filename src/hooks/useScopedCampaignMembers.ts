@@ -6,6 +6,7 @@ import {
   getScopedCampaignMembers,
   type ScopedCampaignMember,
 } from "@/lib/firebase/campaignMembers";
+import { notify } from "@/lib/notify";
 
 import type { OrganizationalAssignment } from "@/types";
 
@@ -64,6 +65,7 @@ export function useScopedCampaignMembers(
       setScopeSupported(false);
 
       setError("Unable to load campaign members for this area.");
+      notify.error("Unable to load campaign members for this area.");
     } finally {
       setLoading(false);
     }
@@ -108,6 +110,7 @@ export function useScopedCampaignMembers(
           setMembers([]);
           setScopeSupported(false);
           setError("Unable to load campaign members for this area.");
+          notify.error("Unable to load campaign members for this area.");
         }
       } finally {
         if (isMounted) {

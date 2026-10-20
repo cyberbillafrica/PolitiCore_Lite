@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
@@ -122,8 +124,6 @@ export default function ElectionResultsPage() {
 
     const loadResults = async () => {
       setLoading(true);
-      setError("");
-
       try {
         /*
          * Every read below is a query the Firestore read rule
@@ -204,7 +204,7 @@ export default function ElectionResultsPage() {
         }
       } catch (err) {
         if (mounted) {
-          setError(
+          notify.error(
             getErrorMessage(err, "Unable to load election results right now."),
           );
         }
@@ -321,12 +321,7 @@ export default function ElectionResultsPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
+      
       {isAdminOrElectionOfficer && (
         <div className="grid gap-4 rounded-xl border bg-white p-4 shadow-sm md:grid-cols-2">
           <div>

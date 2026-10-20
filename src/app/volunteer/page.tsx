@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -315,8 +317,6 @@ export default function VolunteerPage() {
   // ─────────────────────────────────────────────
 
   const onSubmit = async (data: VolunteerFormData) => {
-    setError("");
-
     const { email, password, ...userData } = data;
 
     const { user, error: signUpError } = await signUpVolunteer(
@@ -326,7 +326,7 @@ export default function VolunteerPage() {
     );
 
     if (signUpError) {
-      setError(signUpError);
+      notify.error(signUpError);
       return;
     }
 
@@ -413,12 +413,7 @@ export default function VolunteerPage() {
 
         {/* Error */}
 
-        {error && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-            {error}
-          </div>
-        )}
-
+        
         <div className="rounded-2xl bg-white p-6 shadow-lg sm:p-8">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
             {/* ─────────────────────────────────────

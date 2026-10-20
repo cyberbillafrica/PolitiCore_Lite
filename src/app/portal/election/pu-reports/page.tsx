@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -243,28 +245,27 @@ export default function PUReportsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError("");
     setSuccessMessage("");
 
     if (electionModeLoading || !electionMode) {
-      setFormError(
+      notify.error(
         "Election mode is currently OFF. PU report submission is disabled.",
       );
       return;
     }
 
     if (!activeContest) {
-      setFormError(NO_ACTIVE_CONTEST_MESSAGE);
+      notify.error(NO_ACTIVE_CONTEST_MESSAGE);
       return;
     }
 
     if (!form.ward_id || !form.polling_unit_id) {
-      setFormError("Ward and polling unit are required.");
+      notify.error("Ward and polling unit are required.");
       return;
     }
 
     if (!form.title.trim() || !form.content.trim()) {
-      setFormError("Title and description content are required.");
+      notify.error("Title and description content are required.");
       return;
     }
 
@@ -275,7 +276,7 @@ export default function PUReportsPage() {
         form.ward_id !== profile?.ward_id ||
         form.polling_unit_id !== profile?.polling_unit_id
       ) {
-        setFormError(
+        notify.error(
           "You can only submit PU reports for your registered Ward and Polling Unit.",
         );
         return;
@@ -297,7 +298,7 @@ export default function PUReportsPage() {
         lgas,
       )
     ) {
-      setFormError(
+      notify.error(
         "This polling unit is not within the scope of the active contest.",
       );
       return;
@@ -342,7 +343,7 @@ export default function PUReportsPage() {
       setEvidencePreview(null);
     } catch (err: any) {
       console.error("Failed to create PU report:", err);
-      setFormError(err.message || "Failed to submit report. Please try again.");
+      notify.error(err.message || "Failed to submit report. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -375,7 +376,6 @@ export default function PUReportsPage() {
         <button
           onClick={() => {
             setShowForm((prev) => !prev);
-            setFormError("");
             setSuccessMessage("");
           }}
           disabled={electionModeLoading || contestLoading || !electionMode || !activeContest}
@@ -434,13 +434,7 @@ export default function PUReportsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {formError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-sm">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
+              
               {/* Location Selectors */}
               {locationLocked && !hasRegisteredPollingUnit && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

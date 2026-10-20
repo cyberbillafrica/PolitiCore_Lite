@@ -7,6 +7,18 @@ import {
   updateSiteSettings,
   SiteSettings,
   DEFAULT_SITE_SETTINGS,
+  DEFAULT_BIO_TEASER,
+  DEFAULT_MANIFESTO_TEASER,
+  DEFAULT_NEWS_SECTION,
+  DEFAULT_EVENTS_SECTION,
+  DEFAULT_CAMPAIGN_CTAS,
+  DEFAULT_DONATION_SETTINGS,
+  type CampaignCta,
+  type BiographyTeaserConfig,
+  type ManifestoTeaserConfig,
+  type NewsSectionConfig,
+  type EventsSectionConfig,
+  type DonationSettings,
 } from "@/lib/firebase/site-settings";
 import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -37,6 +49,11 @@ import {
   Trash2,
   Vote,
   ArrowRight,
+  Coins,
+  Newspaper,
+  CalendarDays,
+  UserRound,
+  ScrollText,
 } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -95,7 +112,7 @@ export default function AdminSettingsPage() {
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      alert("Image size should be less than 2MB.");
+      toast.warning("Image size should be less than 2MB.");
       return;
     }
 
@@ -107,6 +124,47 @@ export default function AdminSettingsPage() {
     };
     reader.readAsDataURL(file);
   };
+
+  // Nested homepage-config setters (deep-write into site settings).
+  const setBioTeaser = (patch: Partial<BiographyTeaserConfig>) =>
+    setSettings((prev) => ({
+      ...prev,
+      bioTeaser: { ...(prev.bioTeaser ?? DEFAULT_BIO_TEASER), ...patch },
+    }));
+  const setManifestoTeaser = (patch: Partial<ManifestoTeaserConfig>) =>
+    setSettings((prev) => ({
+      ...prev,
+      manifestoTeaser: { ...(prev.manifestoTeaser ?? DEFAULT_MANIFESTO_TEASER), ...patch },
+    }));
+  const setNewsSection = (patch: Partial<NewsSectionConfig>) =>
+    setSettings((prev) => ({
+      ...prev,
+      newsSection: { ...(prev.newsSection ?? DEFAULT_NEWS_SECTION), ...patch },
+    }));
+  const setEventsSection = (patch: Partial<EventsSectionConfig>) =>
+    setSettings((prev) => ({
+      ...prev,
+      eventsSection: { ...(prev.eventsSection ?? DEFAULT_EVENTS_SECTION), ...patch },
+    }));
+  const setDonation = (patch: Partial<DonationSettings>) =>
+    setSettings((prev) => ({
+      ...prev,
+      donation: { ...(prev.donation ?? DEFAULT_DONATION_SETTINGS), ...patch },
+    }));
+  const setCta = (id: string, patch: Partial<CampaignCta>) =>
+    setSettings((prev) => ({
+      ...prev,
+      campaignCtas: (prev.campaignCtas ?? DEFAULT_CAMPAIGN_CTAS).map((c) =>
+        c.id === id ? { ...c, ...patch } : c,
+      ),
+    }));
+
+  const bioTeaser = settings.bioTeaser ?? DEFAULT_BIO_TEASER;
+  const manifestoTeaser = settings.manifestoTeaser ?? DEFAULT_MANIFESTO_TEASER;
+  const news = settings.newsSection ?? DEFAULT_NEWS_SECTION;
+  const events = settings.eventsSection ?? DEFAULT_EVENTS_SECTION;
+  const donation = settings.donation ?? DEFAULT_DONATION_SETTINGS;
+  const campaignCtas = settings.campaignCtas ?? DEFAULT_CAMPAIGN_CTAS;
 
   if (loading) {
     return (
@@ -188,7 +246,7 @@ export default function AdminSettingsPage() {
       <div className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-800 pb-3">
         {[
           { id: "organization", label: "Organization Info", icon: Building2 },
-          { id: "homepage", label: "Homepage Hero", icon: Layout },
+          { id: "homepage", label: "Homepage", icon: Layout },
           { id: "branding", label: "Logo & Branding", icon: ImageIcon },
           { id: "geography", label: "Geographic Hierarchy", icon: Map },
           { id: "modules", label: "Active Modules", icon: ToggleLeft },
@@ -385,6 +443,59 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
 
+              {/* Hero visibility toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+                <div>
+                  <h3 className="font-extrabold text-sm text-gray-900 dark:text-white">
+                    Hero Section Visible
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    When hidden, the entire hero section is removed from the homepage.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({ ...settings, heroShow: settings.heroShow === false })
+                  }
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                    settings.heroShow !== false
+                      ? "bg-emerald-700 text-white"
+                      : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  {settings.heroShow !== false ? "SHOWN" : "HIDDEN"}
+                </button>
+              </div>
+
+              {/* Secondary hero CTA (optional) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Secondary CTA Button Label (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.heroCta2Text || ""}
+                    onChange={(e) => setSettings({ ...settings, heroCta2Text: e.target.value })}
+                    placeholder="Leave empty to hide the secondary button"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Secondary CTA Target Route (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.heroCta2Link || ""}
+                    onChange={(e) => setSettings({ ...settings, heroCta2Link: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+              </div>
+
               {/* Hero Image Section */}
               <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 space-y-4">
                 <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-800 dark:text-gray-200">
@@ -435,6 +546,500 @@ export default function AdminSettingsPage() {
                     className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-xs"
                   />
                 </div>
+              </div>
+              {/* ── CAMPAIGN CTAs ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div>
+                  <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                    <ArrowRight className="h-4 w-4 text-emerald-700" />
+                    Campaign Action Buttons (CTAs)
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Buttons are rendered below the hero, in the order listed.
+                    The Donate button opens the bank-transfer details modal and
+                    only appears when donations are enabled below.
+                  </p>
+                </div>
+
+                {campaignCtas.map((cta) => (
+                  <div
+                    key={cta.id}
+                    className="p-4 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold uppercase text-gray-500 dark:text-gray-400">
+                        {cta.kind === "donate" ? "Donate (opens modal)" : cta.kind}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCta(cta.id, { enabled: !cta.enabled })}
+                          className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-all ${
+                            cta.enabled
+                              ? "bg-emerald-700 text-white"
+                              : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                          }`}
+                        >
+                          {cta.enabled ? "SHOWN" : "HIDDEN"}
+                        </button>
+                        {cta.kind !== "donate" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSettings({
+                                ...settings,
+                                campaignCtas: campaignCtas.filter((c) => c.id !== cta.id),
+                              })
+                            }
+                            className="text-red-500 hover:text-red-700"
+                            aria-label={`Remove ${cta.label} CTA`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Button label"
+                        value={cta.label}
+                        onChange={(e) => setCta(cta.id, { label: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-xs"
+                      />
+                      {cta.kind !== "donate" ? (
+                        <input
+                          type="text"
+                          placeholder="Link target (e.g. /volunteer)"
+                          value={cta.link}
+                          onChange={(e) => setCta(cta.id, { link: e.target.value })}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-xs"
+                        />
+                      ) : (
+                        <div className="px-3 py-2.5 text-xs text-gray-400 italic">
+                          Opens the donation bank-details modal
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  {(campaignCtas.length > 0
+                    ? [
+                        { kind: "volunteer" as const, label: "Add Volunteer button" },
+                        { kind: "link" as const, label: "Add custom link button" },
+                      ]
+                    : []).map((opt) => (
+                    <button
+                      key={opt.kind}
+                      type="button"
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          campaignCtas: [
+                            ...campaignCtas,
+                            {
+                              id: `cta-${Date.now()}`,
+                              label:
+                                opt.kind === "volunteer"
+                                  ? "Volunteer for the Campaign"
+                                  : "New Action",
+                              link: opt.kind === "volunteer" ? "/volunteer" : "/",
+                              kind: opt.kind,
+                              enabled: true,
+                            },
+                          ],
+                        })
+                      }
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> {opt.label}
+                    </button>
+                  ))}
+                  {campaignCtas.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings({ ...settings, campaignCtas: DEFAULT_CAMPAIGN_CTAS })
+                      }
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl text-xs font-bold"
+                    >
+                      Restore default CTA set
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── BIOGRAPHY TEASER ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                      <UserRound className="h-4 w-4 text-emerald-700" />
+                      Biography Teaser
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Body text and portrait fall back to the published biography doc when empty.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBioTeaser({ show: !bioTeaser.show })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                      bioTeaser.show
+                        ? "bg-emerald-700 text-white"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    {bioTeaser.show ? "SHOWN" : "HIDDEN"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Section Heading
+                    </label>
+                    <input
+                      type="text"
+                      value={bioTeaser.heading}
+                      onChange={(e) => setBioTeaser({ heading: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Candidate Portrait Image URL (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={bioTeaser.imageUrl}
+                      onChange={(e) => setBioTeaser({ imageUrl: e.target.value })}
+                      placeholder="Falls back to the biography document image"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Teaser Body (2–3 paragraphs; blank lines separate paragraphs)
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={bioTeaser.body}
+                    onChange={(e) => setBioTeaser({ body: e.target.value })}
+                    className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Button Label
+                    </label>
+                    <input
+                      type="text"
+                      value={bioTeaser.buttonLabel}
+                      onChange={(e) => setBioTeaser({ buttonLabel: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Button Link
+                    </label>
+                    <input
+                      type="text"
+                      value={bioTeaser.buttonLink}
+                      onChange={(e) => setBioTeaser({ buttonLink: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── MANIFESTO TEASER ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                      <ScrollText className="h-4 w-4 text-emerald-700" />
+                      Manifesto Teaser
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Body text falls back to the published manifesto introduction when empty.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManifestoTeaser({ show: !manifestoTeaser.show })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                      manifestoTeaser.show
+                        ? "bg-emerald-700 text-white"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    {manifestoTeaser.show ? "SHOWN" : "HIDDEN"}
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Section Heading
+                  </label>
+                  <input
+                    type="text"
+                    value={manifestoTeaser.heading}
+                    onChange={(e) => setManifestoTeaser({ heading: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Teaser Body (2–3 paragraphs; blank lines separate paragraphs)
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={manifestoTeaser.body}
+                    onChange={(e) => setManifestoTeaser({ body: e.target.value })}
+                    className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Button Label
+                    </label>
+                    <input
+                      type="text"
+                      value={manifestoTeaser.buttonLabel}
+                      onChange={(e) => setManifestoTeaser({ buttonLabel: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Button Link
+                    </label>
+                    <input
+                      type="text"
+                      value={manifestoTeaser.buttonLink}
+                      onChange={(e) => setManifestoTeaser({ buttonLink: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── NEWS SECTION ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                    <Newspaper className="h-4 w-4 text-emerald-700" />
+                    News Section
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setNewsSection({ show: !news.show })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                      news.show
+                        ? "bg-emerald-700 text-white"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    {news.show ? "SHOWN" : "HIDDEN"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Section Heading
+                    </label>
+                    <input
+                      type="text"
+                      value={news.heading}
+                      onChange={(e) => setNewsSection({ heading: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Number of Articles
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={news.count}
+                      onChange={(e) =>
+                        setNewsSection({ count: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      "See All" Button Label
+                    </label>
+                    <input
+                      type="text"
+                      value={news.seeAllLabel}
+                      onChange={(e) => setNewsSection({ seeAllLabel: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      "See All" Button Link
+                    </label>
+                    <input
+                      type="text"
+                      value={news.seeAllLink}
+                      onChange={(e) => setNewsSection({ seeAllLink: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── EVENTS SECTION ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-emerald-700" />
+                    Events Section
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setEventsSection({ show: !events.show })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                      events.show
+                        ? "bg-emerald-700 text-white"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    {events.show ? "SHOWN" : "HIDDEN"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Section Heading
+                    </label>
+                    <input
+                      type="text"
+                      value={events.heading}
+                      onChange={(e) => setEventsSection({ heading: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Number of Events
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={events.count}
+                      onChange={(e) =>
+                        setEventsSection({ count: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── DONATE CONFIGURATION ── */}
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                      <Coins className="h-4 w-4 text-amber-600" />
+                      Donate — Manual Bank Transfer
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Accepts direct transfers only. Details are shown publicly in the donate modal.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDonation({ donateEnabled: !donation.donateEnabled })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all ${
+                      donation.donateEnabled
+                        ? "bg-emerald-700 text-white"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    {donation.donateEnabled ? "ENABLED" : "DISABLED"}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      value={donation.bankName}
+                      onChange={(e) => setDonation({ bankName: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Account Name
+                    </label>
+                    <input
+                      type="text"
+                      value={donation.accountName}
+                      onChange={(e) => setDonation({ accountName: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                      Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={donation.accountNumber}
+                      onChange={(e) => setDonation({ accountNumber: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                    Donation Note / Reference Instructions (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={donation.donationNote}
+                    onChange={(e) => setDonation({ donationNote: e.target.value })}
+                    placeholder='e.g. "For enquiries, WhatsApp +234..." or reference format'
+                    className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+
+                {donation.donateEnabled &&
+                  (!donation.bankName || !donation.accountName || !donation.accountNumber) && (
+                    <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                      Donations are enabled but bank details are incomplete — fill all three
+                      fields before going live.
+                    </p>
+                  )}
               </div>
             </CardContent>
           </Card>

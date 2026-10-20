@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -231,30 +233,29 @@ export default function ElectionUploadPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
     setMessage("");
 
     if (!electionMode) {
-      setError(
+      notify.error(
         "Election mode is currently OFF. Result submission is disabled.",
       );
       return;
     }
 
     if (!currentContest) {
-      setError(
+      notify.error(
         "No active contest — election operations are unavailable.",
       );
       return;
     }
 
     if (!form.ward_id || !form.polling_unit_id) {
-      setError("Ward and polling unit are required.");
+      notify.error("Ward and polling unit are required.");
       return;
     }
 
     if (!evidenceFile) {
-      setError("Form EC8 / official result sheet photo evidence is required.");
+      notify.error("Form EC8 / official result sheet photo evidence is required.");
       return;
     }
 
@@ -264,7 +265,7 @@ export default function ElectionUploadPage() {
         form.ward_id !== profile?.ward_id ||
         form.polling_unit_id !== profile?.polling_unit_id
       ) {
-        setError(
+        notify.error(
           "You can only submit results for your registered ward and polling unit.",
         );
         return;
@@ -286,7 +287,7 @@ export default function ElectionUploadPage() {
         lgas,
       )
     ) {
-      setError(
+      notify.error(
         "This polling unit is not within the scope of the active contest.",
       );
       return;
@@ -298,7 +299,7 @@ export default function ElectionUploadPage() {
       .filter((r) => r.votes > 0);
 
     if (formattedResults.length === 0) {
-      setError("Please enter at least one valid non-zero party vote count.");
+      notify.error("Please enter at least one valid non-zero party vote count.");
       return;
     }
 
@@ -350,7 +351,7 @@ export default function ElectionUploadPage() {
     } catch (err: unknown) {
       const errorObj = err as Error;
       console.error("Submission failed:", err);
-      setError(errorObj.message || "Submission failed. Please try again.");
+      notify.error(errorObj.message || "Submission failed. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -642,13 +643,7 @@ export default function ElectionUploadPage() {
           )}
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-medium">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
+        
         {message && (
           <div className="flex items-center gap-2 p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 text-xs font-medium">
             <CheckCircle2 className="h-4 w-4 shrink-0" />

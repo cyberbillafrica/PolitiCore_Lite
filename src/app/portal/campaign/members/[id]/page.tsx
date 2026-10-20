@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft,
@@ -184,12 +185,11 @@ export default function MemberDetailPage() {
 
     try {
       setLoading(true);
-      setError(null);
 
       const data = await getCampaignMemberById(memberId);
 
       if (!data) {
-        setError("Member not found");
+        notify.error("Member not found");
         return;
       }
 
@@ -197,7 +197,7 @@ export default function MemberDetailPage() {
       setEditForm({ ...data });
     } catch (err) {
       console.error("Failed to load member:", err);
-      setError("Unable to load member details");
+      notify.error("Unable to load member details");
     } finally {
       setLoading(false);
     }
@@ -731,7 +731,7 @@ export default function MemberDetailPage() {
       loadMember();
     } catch (err) {
       console.error("Failed to save profile:", err);
-      alert("Failed to save profile changes");
+      notify.error("Failed to save profile changes");
     }
   }
 }
@@ -1021,7 +1021,9 @@ function AssignmentManager({
 
   const handleSubmit = async () => {
     if (!isValidCombination()) {
-      alert("Invalid position/scope combination");
+      notify.warning("Invalid position/scope combination", {
+        title: "Check the assignment",
+      });
       return;
     }
 

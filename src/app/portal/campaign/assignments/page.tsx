@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import Link from "next/link";
 
 import {
@@ -153,14 +155,14 @@ export default function CampaignAssignmentsPage() {
     setFormDueDate(assignment.due_date ?? "");
     setFormLocation(assignment.location ?? "");
     setShowCreateForm(true);
-    setError(null);
+
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!profile) {
-      setError("Your profile is still loading. Please try again.");
+      notify.error("Your profile is still loading. Please try again.");
       return;
     }
 
@@ -169,7 +171,7 @@ export default function CampaignAssignmentsPage() {
     const scopeId = formScopeId.trim();
 
     if (!title || !assignedTo || !scopeId) {
-      setError("Title, assignee and scope ID are required.");
+      notify.error("Title, assignee and scope ID are required.");
       return;
     }
 
@@ -187,7 +189,6 @@ export default function CampaignAssignmentsPage() {
 
     try {
       setCreating(true);
-      setError(null);
 
       if (editingAssignmentId) {
         await updateCampaignAssignment(editingAssignmentId, {
@@ -203,7 +204,7 @@ export default function CampaignAssignmentsPage() {
       await loadAssignments();
     } catch (err) {
       console.error("Failed to save assignment:", err);
-      setError(
+      notify.error(
         editingAssignmentId
           ? "Unable to update assignment."
           : "Unable to create assignment.",
@@ -215,12 +216,12 @@ export default function CampaignAssignmentsPage() {
 
   async function handleDeleteAssignment(assignmentId: string) {
     try {
-      setError(null);
+
       await deleteCampaignAssignment(assignmentId);
       await loadAssignments();
     } catch (err) {
       console.error("Failed to delete assignment:", err);
-      setError("Unable to delete assignment.");
+      notify.error("Unable to delete assignment.");
     }
   }
 
@@ -281,7 +282,6 @@ export default function CampaignAssignmentsPage() {
 
     try {
       setLoading(true);
-      setError(null);
 
       const mine = await getMyCampaignAssignments(
         user.uid,
@@ -331,7 +331,7 @@ export default function CampaignAssignmentsPage() {
       }
     } catch (err) {
       console.error("Failed to load campaign assignments:", err);
-      setError("Unable to load campaign assignments.");
+      notify.error("Unable to load campaign assignments.");
     } finally {
       setLoading(false);
     }
@@ -492,12 +492,7 @@ export default function CampaignAssignmentsPage() {
 
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
+              
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -710,12 +705,7 @@ export default function CampaignAssignmentsPage() {
         />
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
+      
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

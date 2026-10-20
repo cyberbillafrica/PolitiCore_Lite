@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -58,7 +60,6 @@ export default function RegisterInecOfficerPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
 
     if (
       !formData.firstName.trim() ||
@@ -77,7 +78,7 @@ export default function RegisterInecOfficerPage() {
       !formData.accountName.trim() ||
       !formData.maritalStatus
     ) {
-      setError("Please fill out all compulsory fields marked with an asterisk (*).");
+      notify.error("Please fill out all compulsory fields marked with an asterisk (*).");
       return;
     }
 
@@ -116,7 +117,7 @@ export default function RegisterInecOfficerPage() {
       });
     } catch (err: any) {
       console.error("Failed to submit INEC officer registration:", err);
-      setError("Failed to submit registration. Please try again.");
+      notify.error("Failed to submit registration. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -212,13 +213,7 @@ export default function RegisterInecOfficerPage() {
         ) : (
           /* Form Container */
           <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden p-6 sm:p-10">
-            {error && (
-              <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-800 text-sm">
-                <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
-
+            
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* SECTION 1: PERSONAL DETAILS */}
               <div>

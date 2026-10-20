@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getManifesto, updateManifesto } from "@/lib/firebase/manifesto";
 import { uploadPDFToCloudinary } from "@/lib/cloudinary";
 import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm";
 import { getErrorMessage } from "@/lib/errors";
 import type { ManifestoData, ManifestoSection } from "@/types";
 
@@ -61,6 +62,7 @@ const DEFAULT_MANIFESTO: Omit<
 export default function AdminManifestoPage() {
   const { profile, loading: authLoading } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -160,8 +162,12 @@ export default function AdminManifestoPage() {
     });
   };
 
-  const removeSection = (id: string) => {
-    if (!confirm("Remove this section?")) return;
+  const removeSection = async (id: string) => {
+    const confirmed = await confirmDialog({
+      title: "Remove this manifesto section?",
+      confirmLabel: "Remove",
+    });
+    if (!confirmed) return;
     setManifesto((prev) => {
       if (!prev) return prev;
       return {
@@ -267,8 +273,12 @@ export default function AdminManifestoPage() {
     }
   };
 
-  const removePDF = () => {
-    if (!confirm("Remove the uploaded PDF?")) return;
+  const removePDF = async () => {
+    const confirmed = await confirmDialog({
+      title: "Remove the uploaded PDF?",
+      confirmLabel: "Remove",
+    });
+    if (!confirmed) return;
     setManifesto((prev) => {
       if (!prev) return prev;
       return { ...prev, pdf_url: null };

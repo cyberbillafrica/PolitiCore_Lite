@@ -1,4 +1,6 @@
 "use client";
+
+import { notify } from "@/lib/notify";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createMemberByAdmin } from "@/lib/firebase/auth";
@@ -127,8 +129,6 @@ export default function AddMemberPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-
     /*
      * The registration must land inside the active contest's scope.
      * The whole LGA to ward to polling unit chain is checked, so a ward
@@ -144,7 +144,7 @@ export default function AddMemberPage() {
         allLgas,
       )
     ) {
-      setError(
+      notify.error(
         `This ward and polling unit are outside the active contest scope (${describeContestScope(
           contest,
           allLgas,
@@ -183,7 +183,7 @@ export default function AddMemberPage() {
     );
 
     if (createError) {
-      setError(createError);
+      notify.error(createError);
       setLoading(false);
       return;
     }
@@ -209,10 +209,7 @@ export default function AddMemberPage() {
         onSubmit={handleSubmit}
         className="space-y-6 bg-white rounded-xl shadow p-8"
       >
-        {error && (
-          <div className="p-4 bg-red-50 text-red-700 rounded-lg">{error}</div>
-        )}
-
+        
         {/*
          * The active contest defines the geographic boundary for this
          * registration. Showing it makes the limited options obvious.

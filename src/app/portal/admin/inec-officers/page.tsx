@@ -24,6 +24,8 @@ import {
   Briefcase,
   FileText,
 } from "lucide-react";
+import { notify } from "@/lib/notify";
+import { useConfirm } from "@/components/ui/confirm";
 
 export default function AdminInecOfficersPage() {
   const [officers, setOfficers] = useState<InecOfficer[]>([]);
@@ -33,6 +35,7 @@ export default function AdminInecOfficersPage() {
   const [selectedPosition, setSelectedPosition] = useState("");
   const [selectedOfficerModal, setSelectedOfficerModal] = useState<InecOfficer | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const confirmDialog = useConfirm();
 
   const fetchOfficers = async () => {
     setLoading(true);
@@ -51,9 +54,12 @@ export default function AdminInecOfficersPage() {
   }, []);
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete the registration for ${name}?`)) {
-      return;
-    }
+    const confirmed = await confirmDialog({
+      title: "Delete registration?",
+      description: `This permanently removes the registration for ${name}.`,
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
     setDeletingId(id);
     try {
       await deleteInecOfficer(id);
@@ -61,8 +67,10 @@ export default function AdminInecOfficersPage() {
       if (selectedOfficerModal?.id === id) {
         setSelectedOfficerModal(null);
       }
+      notify.success("Registration deleted.");
     } catch (err) {
-      alert("Failed to delete registration. Please try again.");
+      console.error("Failed to delete INEC registration:", err);
+      notify.error("Failed to delete registration. Please try again.");
     } finally {
       setDeletingId(null);
     }
@@ -98,7 +106,7 @@ export default function AdminInecOfficersPage() {
   // Export CSV Handler with all new fields
   const handleExportCSV = () => {
     if (filteredOfficers.length === 0) {
-      alert("No data available to export.");
+      notify.info("No data available to export.");
       return;
     }
 

@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -308,7 +310,6 @@ export default function CampaignCoordinationPage() {
 
     try {
       setLoading(true);
-      setError(null);
 
       const usersQuery = query(
         collection(db, "users"),
@@ -363,7 +364,7 @@ export default function CampaignCoordinationPage() {
     } catch (err) {
       console.error("Failed to load campaign coordination data:", err);
 
-      setError("Unable to load campaign coordination data.");
+      notify.error("Unable to load campaign coordination data.");
     } finally {
       setLoading(false);
     }
@@ -437,14 +438,14 @@ export default function CampaignCoordinationPage() {
     setSelectedPosition(assignment.position);
     setSelectedScopeType(assignment.scope_type);
     setSelectedScopeId(assignment.scope_id);
-    setError(null);
+
   }
 
   async function createAssignment() {
     if (!profile?.id) return;
 
     if (!selectedUserId || !selectedScopeId.trim()) {
-      setError("Select a member and provide a scope ID.");
+      notify.error("Select a member and provide a scope ID.");
       return;
     }
 
@@ -455,8 +456,7 @@ export default function CampaignCoordinationPage() {
 
     try {
       setCreatingAssignment(true);
-      setError(null);
-      setSuccess(null);
+
 
       if (wasEditing && editingAssignmentId) {
         if (editingTarget && editingTarget.user_id !== selectedUserId) {
@@ -497,7 +497,7 @@ export default function CampaignCoordinationPage() {
       resetAssignmentForm();
       await loadData();
 
-      setSuccess(
+      notify.success(
         wasEditing
           ? "Organizational assignment updated."
           : "Organizational assignment created.",
@@ -505,7 +505,7 @@ export default function CampaignCoordinationPage() {
     } catch (err) {
       console.error("Failed to save assignment:", err);
 
-      setError(
+      notify.error(
         wasEditing
           ? "Unable to update organizational assignment."
           : "Unable to create organizational assignment.",
@@ -523,7 +523,6 @@ export default function CampaignCoordinationPage() {
 
   async function toggleAssignment(assignment: OrganizationalAssignment) {
     try {
-      setError(null);
 
       const nextStatus = assignment.status === "active" ? "inactive" : "active";
 
@@ -533,7 +532,7 @@ export default function CampaignCoordinationPage() {
 
       await loadData();
 
-      setSuccess(
+      notify.success(
         nextStatus === "active"
           ? "Organizational assignment activated."
           : "Organizational assignment deactivated.",
@@ -541,7 +540,7 @@ export default function CampaignCoordinationPage() {
     } catch (err) {
       console.error("Failed to update assignment:", err);
 
-      setError("Unable to update assignment.");
+      notify.error("Unable to update assignment.");
     }
   }
 
@@ -553,7 +552,6 @@ export default function CampaignCoordinationPage() {
 
   async function removeAssignment(assignmentId: string) {
     try {
-      setError(null);
 
       await deleteOrganizationalAssignment(assignmentId);
 
@@ -563,11 +561,11 @@ export default function CampaignCoordinationPage() {
 
       await loadData();
 
-      setSuccess("Organizational assignment deleted.");
+      notify.success("Organizational assignment deleted.");
     } catch (err) {
       console.error("Failed to delete assignment:", err);
 
-      setError("Unable to delete assignment.");
+      notify.error("Unable to delete assignment.");
     }
   }
 
@@ -581,14 +579,13 @@ export default function CampaignCoordinationPage() {
     if (!profile?.id) return;
 
     if (!grantUserId) {
-      setError("Select a member for the permission grant.");
+      notify.error("Select a member for the permission grant.");
       return;
     }
 
     try {
       setCreatingGrant(true);
-      setError(null);
-      setSuccess(null);
+
 
       await createPermissionGrant({
         user_id: grantUserId,
@@ -606,11 +603,11 @@ export default function CampaignCoordinationPage() {
 
       await loadData();
 
-      setSuccess("Permission grant created.");
+      notify.success("Permission grant created.");
     } catch (err) {
       console.error("Failed to create permission grant:", err);
 
-      setError("Unable to create permission grant.");
+      notify.error("Unable to create permission grant.");
     } finally {
       setCreatingGrant(false);
     }
@@ -624,7 +621,6 @@ export default function CampaignCoordinationPage() {
 
   async function removeGrant(grantId: string) {
     try {
-      setError(null);
 
       await deletePermissionGrant(grantId);
 
@@ -634,11 +630,11 @@ export default function CampaignCoordinationPage() {
 
       await loadData();
 
-      setSuccess("Permission grant deleted.");
+      notify.success("Permission grant deleted.");
     } catch (err) {
       console.error("Failed to delete permission grant:", err);
 
-      setError("Unable to delete permission grant.");
+      notify.error("Unable to delete permission grant.");
     }
   }
 
@@ -654,8 +650,8 @@ export default function CampaignCoordinationPage() {
     setEditingGrantValue(grant.granted);
     setEditingGrantScopeType(grant.scope_type ?? "");
     setEditingGrantScopeId(grant.scope_id ?? "");
-    setError(null);
-    setSuccess(null);
+
+
   }
 
   function cancelEditGrant() {
@@ -667,7 +663,6 @@ export default function CampaignCoordinationPage() {
 
     try {
       setSavingGrant(true);
-      setError(null);
 
       await updatePermissionGrant(editingGrantId, {
         permission: editingGrantPermission,
@@ -682,11 +677,11 @@ export default function CampaignCoordinationPage() {
       setEditingGrantId(null);
       await loadData();
 
-      setSuccess("Permission grant updated.");
+      notify.success("Permission grant updated.");
     } catch (err) {
       console.error("Failed to update permission grant:", err);
 
-      setError("Unable to update permission grant.");
+      notify.error("Unable to update permission grant.");
     } finally {
       setSavingGrant(false);
     }
@@ -728,7 +723,6 @@ export default function CampaignCoordinationPage() {
 
     try {
       setSavingMemberId(memberId);
-      setError(null);
 
       const role = roleDraftFor(member);
       const memberships = membershipDraftFor(member);
@@ -768,11 +762,11 @@ export default function CampaignCoordinationPage() {
         return next;
       });
 
-      setSuccess(`Access updated for ${member.full_name}.`);
+      notify.success(`Access updated for ${member.full_name}.`);
     } catch (err) {
       console.error("Failed to update member access:", err);
 
-      setError("Unable to update member access.");
+      notify.error("Unable to update member access.");
     } finally {
       setSavingMemberId(null);
     }
@@ -861,38 +855,8 @@ export default function CampaignCoordinationPage() {
           ERROR
           ====================================================== */}
 
-      {error && (
-        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-
-          <p className="text-sm text-red-700">{error}</p>
-
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="ml-auto"
-          >
-            <XCircle className="h-5 w-5 text-red-400" />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
-
-          <p className="text-sm text-green-700">{success}</p>
-
-          <button
-            type="button"
-            onClick={() => setSuccess(null)}
-            className="ml-auto"
-          >
-            <XCircle className="h-5 w-5 text-green-400" />
-          </button>
-        </div>
-      )}
-
+      
+      
       {/* ======================================================
           SUMMARY
           ====================================================== */}

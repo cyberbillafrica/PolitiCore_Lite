@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatNumber } from "@/lib/utils";
@@ -26,14 +28,13 @@ export default function LeaderboardPage() {
 
     const load = async () => {
       setLoading(true);
-      setError("");
       try {
         const data = await getLeaderboard(50);
         if (!cancelled) setLeaders(data as LeaderboardUser[]);
       } catch (err) {
         console.error("Failed to load leaderboard:", err);
         if (!cancelled) {
-          setError("Unable to load the leaderboard right now.");
+          notify.error("Unable to load the leaderboard right now.");
         }
       } finally {
         if (!cancelled) setLoading(false);

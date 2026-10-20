@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -165,8 +167,6 @@ export default function CampaignActivitiesPage() {
     }
 
     setLoading(true);
-    setError("");
-
     try {
       if (!canViewCampaignActivities) {
         setActivities([]);
@@ -183,7 +183,7 @@ export default function CampaignActivitiesPage() {
       console.error("Failed to load campaign activities:", loadError);
 
       setActivities([]);
-      setError(
+      notify.error(
         "Unable to load campaign activities right now. Please try again.",
       );
     } finally {
@@ -286,12 +286,7 @@ export default function CampaignActivitiesPage() {
           ERROR
           ====================================================== */}
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
+      
       {/* ======================================================
           NO ASSIGNMENT
           ====================================================== */}
@@ -468,7 +463,6 @@ export default function CampaignActivitiesPage() {
                     if (!activity.id) return;
 
                     try {
-                      setError("");
                       setSuccessMessage("");
                       await updateCampaignActivity(activity.id, updated);
                       await loadActivities();
@@ -480,7 +474,7 @@ export default function CampaignActivitiesPage() {
                         "Failed to update campaign activity:",
                         updateError,
                       );
-                      setError(
+                      notify.error(
                         updateError instanceof Error
                           ? updateError.message
                           : "Unable to update campaign activity.",
@@ -489,7 +483,6 @@ export default function CampaignActivitiesPage() {
                   }}
                   onDelete={async () => {
                     try {
-                      setError("");
                       setSuccessMessage("");
                       await deleteCampaignActivity(activity.id);
                       await loadActivities();
@@ -501,7 +494,7 @@ export default function CampaignActivitiesPage() {
                         "Failed to delete campaign activity:",
                         deleteError,
                       );
-                      setError(
+                      notify.error(
                         deleteError instanceof Error
                           ? deleteError.message
                           : "Unable to delete campaign activity.",
@@ -659,12 +652,7 @@ function CreateActivityForm({
 
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
+          
           <div className="grid gap-5 md:grid-cols-2">
             {/* Title */}
             <div className="md:col-span-2">

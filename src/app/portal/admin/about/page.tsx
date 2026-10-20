@@ -2,6 +2,8 @@
 
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -69,7 +71,7 @@ export default function AdminAboutPage() {
   const loadAboutContent = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
+
       const data = await getBiography();
 
       if (data) {
@@ -79,7 +81,7 @@ export default function AdminAboutPage() {
       }
     } catch (err) {
       console.error("Failed to load About Us content:", err);
-      setError("Unable to load About Us content. Please refresh and try again.");
+      notify.error("Unable to load About Us content. Please refresh and try again.");
     } finally {
       setLoading(false);
     }
@@ -97,13 +99,12 @@ export default function AdminAboutPage() {
     if (!aboutData) return;
 
     if (!aboutData.about.trim()) {
-      setError("About Us content description is required.");
+      notify.error("About Us content description is required.");
       return;
     }
 
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+
 
     try {
       await updateBiography({
@@ -112,13 +113,13 @@ export default function AdminAboutPage() {
         title: aboutData.title || "Political Operations & Campaign Intelligence Platform",
         status,
       });
-      setSuccess(
+      notify.success(
         `About Us content ${status === "published" ? "published" : "saved as draft"} successfully!`,
       );
       await loadAboutContent();
     } catch (err) {
       console.error("Failed to save About Us content:", err);
-      setError("Failed to save About Us content. Please try again.");
+      notify.error("Failed to save About Us content. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -131,7 +132,6 @@ export default function AdminAboutPage() {
     if (!file) return;
 
     setUploadingImage(true);
-    setError(null);
 
     try {
       const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
@@ -139,10 +139,10 @@ export default function AdminAboutPage() {
         if (!prev) return prev;
         return { ...prev, image_url: url };
       });
-      setSuccess("Image uploaded successfully!");
+      notify.success("Image uploaded successfully!");
     } catch (err) {
       console.error("Failed to upload image:", err);
-      setError(err instanceof Error ? err.message : "Failed to upload image.");
+      notify.error(err instanceof Error ? err.message : "Failed to upload image.");
     } finally {
       setUploadingImage(false);
       e.target.value = "";
@@ -265,36 +265,8 @@ export default function AdminAboutPage() {
       </div>
 
       {/* ─── NOTIFICATIONS ─── */}
-      {error && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button
-            onClick={() => setError(null)}
-            className="text-red-500 hover:text-red-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 shrink-0" />
-            <span>{success}</span>
-          </div>
-          <button
-            onClick={() => setSuccess(null)}
-            className="text-green-500 hover:text-green-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
+      
+      
       {/* ─── FORM ─── */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
         {/* Title / Heading */}

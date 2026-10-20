@@ -2,6 +2,8 @@
 
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -22,6 +24,7 @@ import {
   Shield,
   UserCog,
 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm";
 
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -89,6 +92,7 @@ export default function AdminAnnouncementsPage() {
   // Form state
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const confirmDialog = useConfirm();
   const [formType, setFormType] = useState<"announcement" | "event">("announcement");
   const [announcementForm, setAnnouncementForm] = useState(DEFAULT_ANNOUNCEMENT);
   const [eventForm, setEventForm] = useState(DEFAULT_EVENT);
@@ -107,12 +111,12 @@ export default function AdminAnnouncementsPage() {
   const loadContent = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
+
       const data = await getPortalContent();
       setItems(data);
     } catch (err) {
       console.error("Failed to load content:", err);
-      setError("Unable to load content. Please refresh and try again.");
+      notify.error("Unable to load content. Please refresh and try again.");
     } finally {
       setLoading(false);
     }
@@ -167,33 +171,32 @@ export default function AdminAnnouncementsPage() {
   const handleSubmitAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!announcementForm.title.trim()) {
-      setError("Announcement title is required.");
+      notify.error("Announcement title is required.");
       return;
     }
     if (!announcementForm.content.trim()) {
-      setError("Announcement content is required.");
+      notify.error("Announcement content is required.");
       return;
     }
 
     setSaving(true);
-    setError(null);
 
     try {
       if (isEditing && editingId) {
         await updateAnnouncement(editingId, announcementForm);
-        setSuccess("Announcement updated successfully!");
+        notify.success("Announcement updated successfully!");
       } else {
         await addAnnouncement({
           type: "announcement",
           ...announcementForm,
         });
-        setSuccess("Announcement added successfully!");
+        notify.success("Announcement added successfully!");
       }
       resetForms();
       await loadContent();
     } catch (err) {
       console.error("Failed to save announcement:", err);
-      setError("Failed to save announcement.");
+      notify.error("Failed to save announcement.");
     } finally {
       setSaving(false);
     }
@@ -202,41 +205,45 @@ export default function AdminAnnouncementsPage() {
   const handleSubmitEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!eventForm.title.trim()) {
-      setError("Event title is required.");
+      notify.error("Event title is required.");
       return;
     }
     if (!eventForm.venue.trim()) {
-      setError("Venue is required.");
+      notify.error("Venue is required.");
       return;
     }
     if (!eventForm.ward) {
-      setError("Ward is required.");
+      notify.error("Ward is required.");
       return;
     }
 
     setSaving(true);
-    setError(null);
 
     try {
       if (isEditing && editingId) {
         await updateEvent(editingId, eventForm);
-        setSuccess("Event updated successfully!");
+        notify.success("Event updated successfully!");
       } else {
         await addEvent(eventForm);
-        setSuccess("Event added successfully!");
+        notify.success("Event added successfully!");
       }
       resetForms();
       await loadContent();
     } catch (err) {
       console.error("Failed to save event:", err);
-      setError("Failed to save event.");
+      notify.error("Failed to save event.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this item?")) return;
+    const confirmed = await confirmDialog({
+      title: "Delete this item?",
+      description: "This permanently removes it from the portal content.",
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
     try {
       // Check if it's an announcement or event
       const item = items.find((i) => i.id === id);
@@ -248,10 +255,10 @@ export default function AdminAnnouncementsPage() {
         await deleteEvent(id);
       }
       await loadContent();
-      setSuccess("Deleted successfully.");
+      notify.success("Deleted successfully.");
     } catch (err) {
       console.error("Failed to delete:", err);
-      setError("Failed to delete.");
+      notify.error("Failed to delete.");
     }
   };
 
@@ -319,30 +326,8 @@ export default function AdminAnnouncementsPage() {
       </div>
 
       {/* ─── NOTIFICATIONS ─── */}
-      {error && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 shrink-0" />
-            <span>{success}</span>
-          </div>
-          <button onClick={() => setSuccess(null)} className="text-green-500 hover:text-green-700">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
+      
+      
       {/* ─── FORMS ─── */}
       {showAnnouncementForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">

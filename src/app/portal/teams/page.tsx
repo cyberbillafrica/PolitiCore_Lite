@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState } from "react";
 import { Users, Plus, UserPlus, Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,15 +44,12 @@ export default function TeamsPage() {
     e.preventDefault();
     if (!profile?.id || !teamName.trim()) return;
     setSubmitting(true);
-    setError("");
-    setSuccess("");
-
     try {
       await createTeam(teamName, profile.id);
-      setSuccess("Sub-team created successfully!");
+      notify.success("Sub-team created successfully!");
       setTeamName("");
     } catch (err: unknown) {
-      setError(
+      notify.error(
         err instanceof Error ? err.message : "Failed to create team.",
       );
     } finally {
@@ -62,15 +61,12 @@ export default function TeamsPage() {
     e.preventDefault();
     if (!profile?.id || !joinCode.trim()) return;
     setSubmitting(true);
-    setError("");
-    setSuccess("");
-
     try {
       await joinTeamByCode(joinCode, profile.id);
-      setSuccess("Successfully joined sub-team!");
+      notify.success("Successfully joined sub-team!");
       setJoinCode("");
     } catch (err: unknown) {
-      setError(
+      notify.error(
         err instanceof Error ? err.message : "Failed to join team.",
       );
     } finally {
@@ -89,8 +85,6 @@ export default function TeamsPage() {
         </p>
       </div>
 
-      {error && <div className="p-4 rounded-xl bg-red-50 text-red-700 text-xs">{error}</div>}
-      {success && <div className="p-4 rounded-xl bg-emerald-50 text-emerald-800 text-xs">{success}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>

@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -33,13 +35,12 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    setError("");
     setLoading(true);
 
     const { error: signInError } = await signIn(email, password);
 
     if (signInError) {
-      setError(getLoginErrorMessage(signInError));
+      notify.error(getLoginErrorMessage(signInError));
       setLoading(false);
       return;
     }
@@ -78,15 +79,7 @@ export default function LoginPage() {
             )}
 
             {/* Error */}
-            {error && (
-              <div
-                className="mb-6 rounded-lg border border-red-200
-                           bg-red-50 px-4 py-3 text-sm text-red-700"
-              >
-                {error}
-              </div>
-            )}
-
+            
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email */}

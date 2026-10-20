@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import Link from "next/link";
 
 import {
@@ -136,7 +138,6 @@ export default function CampaignReportsPage() {
 
     try {
       setLoading(true);
-      setError(null);
 
       /*
        * Every reporting user can see reports they personally
@@ -171,7 +172,7 @@ export default function CampaignReportsPage() {
     } catch (err) {
       console.error("Failed to load campaign reports:", err);
 
-      setError("Unable to load campaign field reports.");
+      notify.error("Unable to load campaign field reports.");
     } finally {
       setLoading(false);
     }
@@ -230,7 +231,7 @@ export default function CampaignReportsPage() {
     }
 
     if (!primaryAssignment) {
-      setFormError(
+      notify.error(
         "You need an active campaign organizational assignment before submitting a scoped field report.",
       );
 
@@ -238,20 +239,18 @@ export default function CampaignReportsPage() {
     }
 
     if (!form.title.trim()) {
-      setFormError("Please enter a report title.");
+      notify.error("Please enter a report title.");
       return;
     }
 
     if (!form.description.trim()) {
-      setFormError("Please describe what happened in the field.");
+      notify.error("Please describe what happened in the field.");
 
       return;
     }
 
     try {
       setSubmitting(true);
-      setFormError("");
-
       await createCampaignFieldReport({
         submitted_by: user.uid,
 
@@ -299,7 +298,7 @@ export default function CampaignReportsPage() {
     } catch (err) {
       console.error("Failed to submit campaign report:", err);
 
-      setFormError("Unable to submit the report. Please try again.");
+      notify.error("Unable to submit the report. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -428,12 +427,7 @@ export default function CampaignReportsPage() {
         <ReportStat label="Returned" value={counts.returned} />
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
+      
       {/* ======================================================
           FORM
           ====================================================== */}
@@ -631,12 +625,7 @@ export default function CampaignReportsPage() {
                   </span>
                 </label>
 
-                {formError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {formError}
-                  </div>
-                )}
-
+                
                 <button
                   type="submit"
                   disabled={submitting}

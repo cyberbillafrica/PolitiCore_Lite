@@ -2,6 +2,8 @@
 
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -23,6 +25,7 @@ import {
   ShieldCheck,
   Eye,
 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm";
 
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -41,6 +44,7 @@ export default function AdminStructurePage() {
   const [members, setMembers] = useState<StructureMember[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const confirmDialog = useConfirm();
 
   // Modal / Form state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -72,12 +76,12 @@ export default function AdminStructurePage() {
   const loadMembers = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
+
       const list = await getStructureMembers();
       setMembers(list);
     } catch (err) {
       console.error("Failed to load structure members:", err);
-      setError("Failed to load structure members.");
+      notify.error("Failed to load structure members.");
     } finally {
       setLoading(false);
     }
@@ -121,7 +125,7 @@ export default function AdminStructurePage() {
       setFormMember((prev) => ({ ...prev, image_url: url }));
     } catch (err) {
       console.error("Image upload failed:", err);
-      setError("Failed to upload image.");
+      notify.error("Failed to upload image.");
     } finally {
       setUploadingImage(false);
       e.target.value = "";
@@ -131,13 +135,12 @@ export default function AdminStructurePage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formMember.name?.trim() || !formMember.position?.trim()) {
-      setError("Full name and position are required.");
+      notify.error("Full name and position are required.");
       return;
     }
 
     setSaving(true);
-    setError(null);
-    setSuccess(null);
+
 
     try {
       await saveStructureMember({
@@ -154,27 +157,32 @@ export default function AdminStructurePage() {
         display_order: Number(formMember.display_order) || 1,
       });
 
-      setSuccess("Structure member saved successfully!");
+      notify.success("Structure member saved successfully!");
       setIsModalOpen(false);
       await loadMembers();
     } catch (err) {
       console.error("Error saving structure member:", err);
-      setError("Failed to save structure member.");
+      notify.error("Failed to save structure member.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+    const confirmed = await confirmDialog({
+      title: "Delete this structure member?",
+      description: `This permanently removes ${name} from the structure.`,
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
 
     try {
       await deleteStructureMember(id);
-      setSuccess(`Deleted ${name}.`);
+      notify.success(`Deleted ${name}.`);
       await loadMembers();
     } catch (err) {
       console.error("Failed to delete structure member:", err);
-      setError("Failed to delete structure member.");
+      notify.error("Failed to delete structure member.");
     }
   };
 
@@ -224,30 +232,8 @@ export default function AdminStructurePage() {
       </div>
 
       {/* Notifications */}
-      {error && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button onClick={() => setError(null)}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 shrink-0" />
-            <span>{success}</span>
-          </div>
-          <button onClick={() => setSuccess(null)}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
+      
+      
       {/* List by Levels */}
       {["STATE", "ZONAL", "LGA"].map((levelKey) => {
         const levelMembers = members.filter((m) => m.level === levelKey);

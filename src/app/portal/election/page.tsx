@@ -43,6 +43,7 @@ import {
 } from "@/lib/election-scope";
 import { lgaIdForResult } from "@/lib/election-read-scope";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
+import { notify } from "@/lib/notify";
 import {
   subscribeToElectionResults,
   correctElectionResult,
@@ -798,7 +799,7 @@ export default function ElectionDashboard() {
       setEditReason("");
     } catch (err) {
       console.error("Failed to correct election result:", err);
-      alert("Failed to save correction. Please try again.");
+      notify.error("Failed to save correction. Please try again.");
     } finally {
       setSavingEdit(false);
     }

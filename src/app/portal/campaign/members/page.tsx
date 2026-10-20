@@ -290,13 +290,8 @@ export default function CampaignMembersPage() {
             />
           </div>
 
-          {/* ERROR */}
-
-          {error && scopeSupported && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-medium text-red-800">{error}</p>
-            </div>
-          )}
+          {/* ERROR — surfaced as a Sonner toast by
+              useScopedCampaignMembers; no inline banner. */}
 
           {/* LOADING */}
 

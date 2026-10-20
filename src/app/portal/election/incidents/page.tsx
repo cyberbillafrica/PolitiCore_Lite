@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -236,28 +238,27 @@ export default function IncidentsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError("");
     setSuccessMessage("");
 
     if (!electionMode) {
-      setFormError(
+      notify.error(
         "Election mode is currently OFF. Incident reporting is disabled.",
       );
       return;
     }
 
     if (!activeContest) {
-      setFormError(NO_ACTIVE_CONTEST_MESSAGE);
+      notify.error(NO_ACTIVE_CONTEST_MESSAGE);
       return;
     }
 
     if (!form.ward_id) {
-      setFormError("Ward is required.");
+      notify.error("Ward is required.");
       return;
     }
 
     if (!form.description.trim()) {
-      setFormError("Incident description is required.");
+      notify.error("Incident description is required.");
       return;
     }
 
@@ -265,14 +266,14 @@ export default function IncidentsPage() {
     // anywhere — everyone else is locked to their registered location.
     if (!canReportAnywhere) {
       if (form.ward_id !== profile?.ward_id) {
-        setFormError(
+        notify.error(
           "You can only report incidents within your registered Ward.",
         );
         return;
       }
 
       if (form.polling_unit_id && form.polling_unit_id !== profile?.polling_unit_id) {
-        setFormError(
+        notify.error(
           "You can only attach your registered Polling Unit to a ward incident.",
         );
         return;
@@ -286,7 +287,7 @@ export default function IncidentsPage() {
      * LGA itself), so direct API posts are refused as well.
      */
     if (!contestCoversWard(activeContest, form.lga_id, form.ward_id, lgas)) {
-      setFormError(
+      notify.error(
         "The selected ward is not within the scope of the active contest.",
       );
       return;
@@ -331,7 +332,7 @@ export default function IncidentsPage() {
       setEvidencePreview(null);
     } catch (err: any) {
       console.error("Failed to report election incident:", err);
-      setFormError(
+      notify.error(
         err.message || "Failed to report incident. Please try again.",
       );
     } finally {
@@ -366,7 +367,6 @@ export default function IncidentsPage() {
         <button
           onClick={() => {
             setShowForm((prev) => !prev);
-            setFormError("");
             setSuccessMessage("");
           }}
           disabled={electionModeLoading || contestLoading || !electionMode || !activeContest}
@@ -426,13 +426,7 @@ export default function IncidentsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {formError && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-sm">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
+              
               {/* Location Selectors */}
               {locationLocked && (
                 <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">

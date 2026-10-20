@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { Toaster } from "sonner";
 
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { MaintenanceGuard } from "@/components/providers/MaintenanceGuard";
-import { ToastProvider } from "@/components/ui/toast";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import ContextualHelp from "@/components/help/ContextualHelp";
 
 const inter = Inter({
@@ -30,12 +31,32 @@ export default function RootLayout({
       >
         <AuthProvider>
           <ThemeProvider>
-            <ToastProvider>
+            <ConfirmProvider>
               <MaintenanceGuard>{children}</MaintenanceGuard>
 
               {/* Floating help — every page, public and portal alike. */}
               <ContextualHelp />
-            </ToastProvider>
+
+              {/*
+                App-wide Sonner toaster. Bottom-right on desktop, most
+                of the viewport width on mobile. Durations/colors are
+                applied per-call by src/lib/notify.ts.
+              */}
+              <Toaster
+                position="bottom-right"
+                closeButton
+                visibleToasts={3}
+                toastOptions={{
+                  classNames: {
+                    toast: "group rounded-xl border shadow-lg text-sm font-medium",
+                    success: "border-green-200 bg-green-50 text-green-900",
+                    error: "border-red-200 bg-red-50 text-red-900",
+                    warning: "border-amber-200 bg-amber-50 text-amber-900",
+                    info: "border-sky-200 bg-sky-50 text-sky-900",
+                  },
+                }}
+              />
+            </ConfirmProvider>
           </ThemeProvider>
         </AuthProvider>
       </body>

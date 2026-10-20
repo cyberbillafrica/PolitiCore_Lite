@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
@@ -281,7 +283,6 @@ export default function AdminMembersPage() {
 
   const openEdit = (member: MemberRecord) => {
     setEditing(member);
-    setFormError("");
     setActionError("");
 
     setForm({
@@ -300,7 +301,6 @@ export default function AdminMembersPage() {
   const closeEdit = () => {
     setEditing(null);
     setForm(null);
-    setFormError("");
   };
 
   const selectedLga = form
@@ -331,8 +331,6 @@ export default function AdminMembersPage() {
     if (!editing || !form) return;
 
     setSaving(true);
-    setFormError("");
-
     const fullName = form.full_name.trim();
 
     try {
@@ -386,7 +384,7 @@ export default function AdminMembersPage() {
       closeEdit();
     } catch (err) {
       console.error("Failed to update member:", err);
-      setFormError(
+      notify.error(
         err instanceof Error
           ? err.message
           : "Unable to save this member right now.",

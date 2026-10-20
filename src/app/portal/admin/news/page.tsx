@@ -1,5 +1,7 @@
 "use client";
 
+
+import { notify } from "@/lib/notify";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -85,12 +87,12 @@ export default function AdminNewsCMSPage() {
   async function loadArticles() {
     try {
       setLoading(true);
-      setError(null);
+
       const data = await getAllNewsArticles();
       setArticles(data);
     } catch (err: any) {
       console.error("Failed to load news articles:", err);
-      setError("Failed to load news articles. Please refresh the page.");
+      notify.error("Failed to load news articles. Please refresh the page.");
     } finally {
       setLoading(false);
     }
@@ -141,13 +143,13 @@ export default function AdminNewsCMSPage() {
 
     try {
       setUploadingImage(true);
-      setError(null);
+
       const downloadUrl = await uploadToCloudinary(file, "ifeanyi-2027/news");
       setFormFeaturedImage(downloadUrl);
-      setSuccess("Image uploaded successfully to Cloudinary.");
+      notify.success("Image uploaded successfully to Cloudinary.");
     } catch (err: any) {
       console.error("Failed to upload image to Cloudinary:", err);
-      setError(
+      notify.error(
         err.message ||
           "Image upload failed. You can also paste an external image URL directly.",
       );
@@ -160,12 +162,12 @@ export default function AdminNewsCMSPage() {
     e.preventDefault();
 
     if (!formTitle.trim()) {
-      setError("Title is required.");
+      notify.error("Title is required.");
       return;
     }
 
     if (!formContent.trim()) {
-      setError("Article content is required.");
+      notify.error("Article content is required.");
       return;
     }
 
@@ -182,7 +184,6 @@ export default function AdminNewsCMSPage() {
 
     try {
       setSaving(true);
-      setError(null);
 
       if (editingArticle) {
         await updateNewsArticle(editingArticle.id, {
@@ -197,7 +198,7 @@ export default function AdminNewsCMSPage() {
           featured_image: formFeaturedImage.trim() || null,
           updated_by: profile?.id || "admin",
         });
-        setSuccess(`Article "${formTitle}" updated successfully.`);
+        notify.success(`Article "${formTitle}" updated successfully.`);
       } else {
         await createNewsArticle({
           title: formTitle.trim(),
@@ -211,14 +212,14 @@ export default function AdminNewsCMSPage() {
           featured_image: formFeaturedImage.trim() || null,
           created_by: profile?.id || "admin",
         });
-        setSuccess(`Article "${formTitle}" created successfully.`);
+        notify.success(`Article "${formTitle}" created successfully.`);
       }
 
       setIsEditorOpen(false);
       await loadArticles();
     } catch (err: any) {
       console.error("Error saving article:", err);
-      setError("Failed to save article. " + (err.message || ""));
+      notify.error("Failed to save article. " + (err.message || ""));
     } finally {
       setSaving(false);
     }
@@ -229,16 +230,16 @@ export default function AdminNewsCMSPage() {
     newStatus: NewsStatus,
   ) {
     try {
-      setError(null);
+
       await updateNewsArticle(article.id, {
         status: newStatus,
         updated_by: profile?.id || "admin",
       });
-      setSuccess(`Article status updated to ${newStatus}.`);
+      notify.success(`Article status updated to ${newStatus}.`);
       await loadArticles();
     } catch (err: any) {
       console.error("Failed to update status:", err);
-      setError("Failed to update article status.");
+      notify.error("Failed to update article status.");
     }
   }
 
@@ -247,14 +248,14 @@ export default function AdminNewsCMSPage() {
 
     try {
       setSaving(true);
-      setError(null);
+
       await deleteNewsArticle(deletingArticle.id);
-      setSuccess(`Article "${deletingArticle.title}" deleted successfully.`);
+      notify.success(`Article "${deletingArticle.title}" deleted successfully.`);
       setDeletingArticle(null);
       await loadArticles();
     } catch (err: any) {
       console.error("Failed to delete article:", err);
-      setError("Failed to delete article.");
+      notify.error("Failed to delete article.");
     } finally {
       setSaving(false);
     }
@@ -345,38 +346,8 @@ export default function AdminNewsCMSPage() {
       </div>
 
       {/* Notifications */}
-      {error && (
-        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
-            <span>{error}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 rounded"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-center justify-between rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
-            <span>{success}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSuccess(null)}
-            className="p-1 hover:bg-green-100 rounded"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
+      
+      
       {/* Tabs & Search */}
       <Card>
         <CardContent className="p-4 sm:p-6 space-y-4">
