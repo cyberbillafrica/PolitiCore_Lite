@@ -912,6 +912,14 @@ service cloud.firestore {
           || hasScopedAccess("view_election_results", "polling_unit", resource.data.polling_unit_id)
         );
 
+      /*
+       * Round-5 read ownership: a member always sees the PU reports
+       * of the polling unit they are registered at — same grant the
+       * election_results rule carries via registeredAt().
+       */
+      allow read: if isActiveUser()
+        && registeredAt(resource.data.ward_id, resource.data.polling_unit_id);
+
       allow create: if isActiveUser()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
@@ -954,6 +962,16 @@ service cloud.firestore {
           )
         );
 
+      /*
+       * Round-5 read ownership: a member sees PU-level incidents at
+       * the polling unit they are registered at. (Ward-level
+       * incidents — polling_unit_id unset — remain visible only to
+       * ward-scoped projections, admins and officers.)
+       */
+      allow read: if isActiveUser()
+        && resource.data.polling_unit_id != null
+        && registeredAt(resource.data.ward_id, resource.data.polling_unit_id);
+
       allow create: if isActiveUser()
         && request.resource.data.reported_by == request.auth.uid
         && request.resource.data.status == "reported"
@@ -967,6 +985,18 @@ service cloud.firestore {
           || (
             isCampaignMember()
             && callerProfile().ward_id == request.resource.data.ward_id
+            // Round-5: a PU-level incident must come from the
+            // member's OWN registered polling unit. A ward-level
+            // incident (no PU attached) stays ward-registered.
+            && (
+              request.resource.data.polling_unit_id == null
+              || (
+                request.resource.data.polling_unit_id is string
+                && request.resource.data.polling_unit_id.size() > 0
+                && callerProfile().polling_unit_id
+                  == request.resource.data.polling_unit_id
+              )
+            )
           )
         );
 

@@ -1049,6 +1049,60 @@ async function assertWardWithinContestScope(
   return lgaId;
 }
 
+/*
+ * Round-5 submission ownership — the same principle as results:
+ *
+ *   members (everyone except admins and election officers) may
+ *   only report from the ward and polling unit their own profile
+ *   is registered at; admins and officers may report from
+ *   anywhere within the active contest (checked above).
+ *
+ * Registered location is read from `users/{submitted_by}` — never
+ * trusted from the payload. A ward-level incident (no polling unit)
+ * still requires the reporter to be registered in that ward.
+ */
+async function assertSubmitterRegisteredLocation(
+  submittedBy: string,
+  wardId: string,
+  pollingUnitId: string | null | undefined,
+): Promise<void> {
+  const profileSnap = await getDoc(doc(db, "users", submittedBy));
+  if (!profileSnap.exists()) {
+    throw new Error(
+      "Your account profile could not be verified. Please sign in and try again.",
+    );
+  }
+
+  const profile = profileSnap.data() as {
+    access_role?: string;
+    ward_id?: string;
+    polling_unit_id?: string;
+  };
+
+  if (
+    profile.access_role === "admin" ||
+    profile.access_role === "election_officer"
+  ) {
+    return;
+  }
+
+  if ((profile.ward_id ?? "").trim() !== wardId.trim()) {
+    throw new Error(
+      "You can only report within your registered ward.",
+    );
+  }
+
+  const requestedPu = (pollingUnitId ?? "").trim();
+  if (
+    requestedPu &&
+    (profile.polling_unit_id ?? "").trim() !== requestedPu
+  ) {
+    throw new Error(
+      "You can only report from your registered polling unit.",
+    );
+  }
+}
+
 export async function createPUReport(data: {
   ward_id: string;
   polling_unit_id: string;
@@ -1075,6 +1129,16 @@ export async function createPUReport(data: {
       "The selected ward does not belong to the selected LGA.",
     );
   }
+
+  /*
+   * Round-5: a member submits only from their registered polling
+   * unit; admins and officers from anywhere within the contest.
+   */
+  await assertSubmitterRegisteredLocation(
+    data.submitted_by,
+    data.ward_id,
+    data.polling_unit_id,
+  );
 
   const ref = await addDoc(collection(db, "pu_reports"), {...data,
     status: "submitted",
@@ -1155,6 +1219,17 @@ export function subscribeToPUReports(
       "The selected ward does not belong to the selected LGA.",
     );
   }
+
+  /*
+   * Round-5: a member reports only from their registered ward —
+   * and, when a polling unit is attached, only from their own PU.
+   * Admins and officers report anywhere within the contest.
+   */
+  await assertSubmitterRegisteredLocation(
+    data.reported_by,
+    data.ward_id,
+    data.polling_unit_id,
+  );
 
   const ref = await addDoc(collection(db, "election_incidents"), {...data,
     status: "reported",

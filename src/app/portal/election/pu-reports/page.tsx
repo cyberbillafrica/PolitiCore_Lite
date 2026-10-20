@@ -12,7 +12,7 @@ import {
   getAllEnuguLGAs,
 } from "@/lib/firebase/electoral";
 import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversPollingUnit, describeContestScope } from "@/lib/election-scope";
-import { buildElectionReadScope } from "@/lib/election-read-scope";
+import { buildElectionReadScope, registeredPollingUnitConstraint } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
@@ -38,6 +38,25 @@ import {
 export default function PUReportsPage() {
   const { profile, assignments, accessLoading } = useAuth();
   const isAdmin = profile?.access_role === "admin";
+  const isElectionOfficer = profile?.access_role === "election_officer";
+
+  /*
+   * Round-5 submission ownership: admins and election officers report
+   * from ANYWHERE within the active contest's scope; every other role
+   * is locked to the ward and polling unit their profile is
+   * registered at — the rule also enforces it server-side.
+   */
+  const canReportAnywhere = isAdmin || isElectionOfficer;
+
+  /*
+   * A locked member without a complete registration (ward + polling
+   * unit) has no valid submission location until an admin sets one on
+   * their profile.
+   */
+  const hasRegisteredPollingUnit = Boolean(
+    profile?.ward_id && profile?.polling_unit_id,
+  );
+  const locationLocked = !canReportAnywhere;
   const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   /*
@@ -137,7 +156,16 @@ export default function PUReportsPage() {
     if (!scope.unrestricted) {
       constraints.push(...scope.geoConstraints);
 
-      // A member always reads their own submissions.
+      /*
+       * A member always sees the reports of the polling unit they
+       * are registered at (registeredAt() read grant), plus their
+       * own submissions.
+       */
+      const registered = registeredPollingUnitConstraint(profile);
+      if (registered) {
+        constraints.push(registered);
+      }
+
       if (profile.id) {
         constraints.push({ submitted_by: profile.id });
       }
@@ -240,8 +268,9 @@ export default function PUReportsPage() {
       return;
     }
 
-    // Scoping check for non-admin
-    if (!isAdmin) {
+    // Round-5 scoping check: only admins and officers report from
+    // anywhere — everyone else is locked to their registered location.
+    if (!canReportAnywhere) {
       if (
         form.ward_id !== profile?.ward_id ||
         form.polling_unit_id !== profile?.polling_unit_id
@@ -413,6 +442,24 @@ export default function PUReportsPage() {
               )}
 
               {/* Location Selectors */}
+              {locationLocked && !hasRegisteredPollingUnit && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Your profile has no registered ward and polling unit. Ask
+                    an administrator to set your location before submitting.
+                  </span>
+                </div>
+              )}
+              {locationLocked && hasRegisteredPollingUnit && (
+                <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Locked to your registered polling unit — reports can only
+                    be submitted from where you are registered.
+                  </span>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -428,7 +475,8 @@ export default function PUReportsPage() {
                         polling_unit_id: "",
                       })
                     }
-                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    disabled={locationLocked}
+                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100"
                     required
                   >
                     <option value="">Select LGA</option>
@@ -453,7 +501,7 @@ export default function PUReportsPage() {
                         polling_unit_id: "",
                       })
                     }
-                    disabled={!form.lga_id}
+                    disabled={locationLocked || !form.lga_id}
                     className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100"
                     required
                   >
@@ -477,7 +525,7 @@ export default function PUReportsPage() {
                     onChange={(e) =>
                       setForm({ ...form, polling_unit_id: e.target.value })
                     }
-                    disabled={!form.ward_id}
+                    disabled={locationLocked || !form.ward_id}
                     className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100"
                     required
                   >
@@ -587,7 +635,8 @@ export default function PUReportsPage() {
                     electionModeLoading ||
                     contestLoading ||
                     !electionMode ||
-                    !activeContest
+                    !activeContest ||
+                    (locationLocked && !hasRegisteredPollingUnit)
                   }
                   className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-2 text-sm font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
                 >

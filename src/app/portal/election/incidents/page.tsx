@@ -10,7 +10,7 @@ import {
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversWard, describeContestScope } from "@/lib/election-scope";
-import { buildElectionReadScope } from "@/lib/election-read-scope";
+import { buildElectionReadScope, registeredPollingUnitConstraint } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import { NO_ACTIVE_CONTEST_MESSAGE, type ElectionIncidentScopeConstraint } from "@/lib/firebase/election";
@@ -33,6 +33,20 @@ export default function IncidentsPage() {
   const { profile, assignments, accessLoading } = useAuth();
   const { electionMode, loading: electionModeLoading } = useElectionMode();
   const isAdmin = profile?.access_role === "admin";
+  const isElectionOfficer = profile?.access_role === "election_officer";
+
+  /*
+   * Round-5 submission ownership: admins and election officers report
+   * from ANYWHERE within the active contest's scope; every other role
+   * is locked to its registered ward — and, when a PU is attached, to
+   * its own registered polling unit. The rule enforces this too.
+   */
+  const canReportAnywhere = isAdmin || isElectionOfficer;
+  const hasRegisteredWard = Boolean(profile?.ward_id);
+  const locationLocked = !canReportAnywhere;
+  const lockMessage = hasRegisteredWard
+    ? "Locked to your registered ward — polling-unit incidents take your registered PU."
+    : "Your profile has no registered ward. Ask an administrator to set your ward before reporting.";
 
   /*
    * Round-4: the active contest scopes EVERY submission — admins and
@@ -133,6 +147,16 @@ export default function IncidentsPage() {
 
     if (!scope.unrestricted) {
       constraints.push(...scope.geoConstraints);
+
+      /*
+       * A member always sees PU-level incidents at the polling unit
+       * they are registered at (registeredAt() read grant), plus
+       * their own reports.
+       */
+      const registered = registeredPollingUnitConstraint(profile);
+      if (registered) {
+        constraints.push(registered);
+      }
 
       // A member always reads their own reports.
       if (profile.id) {
@@ -237,11 +261,19 @@ export default function IncidentsPage() {
       return;
     }
 
-    // Scoping check for non-admin
-    if (!isAdmin) {
+    // Round-5 scoping check: only admins and officers report from
+    // anywhere — everyone else is locked to their registered location.
+    if (!canReportAnywhere) {
       if (form.ward_id !== profile?.ward_id) {
         setFormError(
           "You can only report incidents within your registered Ward.",
+        );
+        return;
+      }
+
+      if (form.polling_unit_id && form.polling_unit_id !== profile?.polling_unit_id) {
+        setFormError(
+          "You can only attach your registered Polling Unit to a ward incident.",
         );
         return;
       }
@@ -402,6 +434,12 @@ export default function IncidentsPage() {
               )}
 
               {/* Location Selectors */}
+              {locationLocked && (
+                <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{lockMessage}</span>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -417,7 +455,8 @@ export default function IncidentsPage() {
                         polling_unit_id: "",
                       })
                     }
-                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                    disabled={locationLocked}
+                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white disabled:bg-gray-100"
                     required
                   >
                     <option value="">Select LGA</option>
@@ -442,7 +481,7 @@ export default function IncidentsPage() {
                         polling_unit_id: "",
                       })
                     }
-                    disabled={!form.lga_id}
+                    disabled={locationLocked || !form.lga_id}
                     className="w-full px-3 py-2 border rounded-lg text-sm bg-white disabled:bg-gray-100"
                     required
                   >
@@ -466,7 +505,7 @@ export default function IncidentsPage() {
                     onChange={(e) =>
                       setForm({ ...form, polling_unit_id: e.target.value })
                     }
-                    disabled={!form.ward_id}
+                    disabled={locationLocked || !form.ward_id}
                     className="w-full px-3 py-2 border rounded-lg text-sm bg-white disabled:bg-gray-100"
                   >
                     <option value="">Entire Ward / Select Polling Unit</option>
@@ -587,7 +626,8 @@ export default function IncidentsPage() {
                     electionModeLoading ||
                     contestLoading ||
                     !electionMode ||
-                    !activeContest
+                    !activeContest ||
+                    (locationLocked && !hasRegisteredWard)
                   }
                   className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
