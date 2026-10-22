@@ -59,11 +59,16 @@ import { hasPermission } from "@/lib/permissions";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 import {
   getCampaignMemberById,
+  isMemberInScope,
   updateCampaignMemberProfile,
   updateMemberMembershipTypes,
   updateMemberAccessRole,
   type ScopedCampaignMember,
 } from "@/lib/firebase/campaignMembers";
+import {
+  resolveCampaignAuthority,
+  resolveCampaignScope,
+} from "@/lib/campaign-scope";
 import {
   getUserOrganizationalAssignments,
   createOrganizationalAssignment,
@@ -109,6 +114,17 @@ export default function MemberDetailPage() {
   const [member, setMember] = useState<ScopedCampaignMember | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * Scope guard.
+   *
+   * `/users` is readable by any signed-in account, so the directory's
+   * scope boundary has to be enforced here too. A viewer may open
+   * their own record, anyone inside their scope, or anyone at all
+   * when they are admin.
+   */
+  const [scopeChecked, setScopeChecked] = useState(false);
+  const [outsideScope, setOutsideScope] = useState(false);
 
   const [assignments, setAssignments] = useState<OrganizationalAssignment[]>(
     [],
@@ -249,6 +265,43 @@ export default function MemberDetailPage() {
     loadPermissionGrants();
   }, [loadMember, loadAssignments, loadPermissionGrants]);
 
+  useEffect(() => {
+    if (!member || !profile) return;
+
+    if (profile.access_role === "admin" || member.id === profile.id) {
+      setOutsideScope(false);
+      setScopeChecked(true);
+      return;
+    }
+
+    const authority = resolveCampaignAuthority(profile, currentAssignments);
+
+    if (!authority.level || !authority.scopeId) {
+      setOutsideScope(true);
+      setScopeChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    resolveCampaignScope(authority.level, authority.scopeId, lookup.lgas)
+      .then((scope) => {
+        if (cancelled) return;
+        setOutsideScope(!isMemberInScope(member, scope));
+        setScopeChecked(true);
+      })
+      .catch((scopeError: unknown) => {
+        console.error("Failed to resolve member scope:", scopeError);
+        if (cancelled) return;
+        setOutsideScope(true);
+        setScopeChecked(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [member, profile, currentAssignments, lookup.lgas]);
+
   /*
    * ----------------------------------------------------------
    * LOADING
@@ -286,6 +339,54 @@ export default function MemberDetailPage() {
                   Unable to load this member's details.
                 </p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * SCOPE GUARD
+   * ----------------------------------------------------------
+   */
+
+  if (!scopeChecked) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center gap-3">
+        <Loader2 className="h-5 w-5 animate-spin text-apc-primary" />
+        <p className="text-sm text-gray-500">Checking your area…</p>
+      </div>
+    );
+  }
+
+  if (outsideScope) {
+    return (
+      <div className="space-y-6 pb-8">
+        <BackLink />
+
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="flex gap-4 p-6">
+            <Shield className="h-6 w-6 shrink-0 text-yellow-700" />
+
+            <div>
+              <h2 className="font-semibold text-yellow-900">
+                Outside your campaign area
+              </h2>
+
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-yellow-800">
+                This member is not inside the area your campaign position
+                covers. Ask an administrator if you need access to their
+                record.
+              </p>
+
+              <Link
+                href="/portal/campaign/members"
+                className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-yellow-900 hover:underline"
+              >
+                Back to members in my area
+              </Link>
             </div>
           </CardContent>
         </Card>

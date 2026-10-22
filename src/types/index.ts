@@ -23,12 +23,28 @@ export type MembershipType = "campaign_member" | "social_member";
 
 export type OrganizationalPosition =
   | "campaign_member"
+  | "pu_coordinator"
   | "ward_coordinator"
   | "lga_coordinator"
   | "zone_coordinator"
   | "state_coordinator"
   | "campaign_manager"
   | "council_chairman";
+
+// ============================================================
+// CAMPAIGN POSITIONS
+// ============================================================
+//
+// The coordinator ranks of the campaign hierarchy, from the polling
+// unit upward. A plain member holds none of these — their scope is
+// their registered polling unit.
+
+export type CampaignPosition =
+  | "pu_coordinator"
+  | "ward_coordinator"
+  | "lga_coordinator"
+  | "zone_coordinator"
+  | "state_coordinator";
 
 // ============================================================
 // ORGANIZATIONAL SCOPE
@@ -719,4 +735,171 @@ export interface ElectionAuditEntry {
   snapshot?: Record<string, unknown> | null;
   /** Extra context, e.g. the previous status. */
   metadata?: Record<string, unknown> | null;
+}
+
+/*
+ * ============================================================
+ * CAMPAIGN SCOPING (ROUND 5)
+ * ============================================================
+ *
+ * Campaign work is organised on the same geographic hierarchy the
+ * election engine uses (see src/lib/election-scope.ts):
+ *
+ *   state -> senatorial_zone -> lga -> ward -> polling_unit
+ *
+ * `ScopeType` is reused verbatim so `assignmentCoversScope()` and
+ * `isScopeDescendant()` work without translation. Nothing in this
+ * section invents a new scope vocabulary.
+ */
+
+/**
+ * The geographic target of a scope-targeted campaign assignment.
+ */
+export interface AssignmentScope {
+  level: ScopeType;
+  scope_id: string;
+  /**
+   * Optional position filter, e.g. "pu_coordinator" to target only
+   * polling-unit coordinators inside the scope.
+   */
+  role_filter?: OrganizationalPosition | null;
+}
+
+/**
+ * A campaign assignment is either individual, scope-targeted, or both.
+ *
+ * `completion_mode` is derived on write:
+ *   - "individual"  when only `assigned_to_user` is present
+ *   - "per_person"  when `assigned_to_scope` is present
+ */
+export type CampaignAssignmentStatus = "open" | "closed";
+
+export type AssignmentCompletionMode = "individual" | "per_person";
+
+export interface CampaignAssignment {
+  id: string;
+
+  title: string;
+  description?: string;
+
+  created_by: string;
+  created_at?: unknown;
+  updated_at?: unknown;
+
+  due_at?: string | null;
+
+  /** Direct assignee, when the assignment targets one person. */
+  assigned_to_user?: string | null;
+
+  /** Geographic target, when the assignment targets a scope. */
+  assigned_to_scope?: AssignmentScope | null;
+
+  /** Legacy single-assignee field, still written for old readers. */
+  assigned_to?: string;
+
+  status: CampaignAssignmentStatus;
+  completion_mode: AssignmentCompletionMode;
+
+  priority?: "low" | "medium" | "high" | "urgent";
+
+  /**
+   * Snapshot of the creator's own scope when the assignment was
+   * created. Lets the UI explain why a coordinator could target it.
+   */
+  created_scope?: { level: ScopeType; scope_id: string } | null;
+}
+
+export type AssignmentCompletionStatus =
+  | "pending"
+  | "submitted"
+  | "approved"
+  | "rejected";
+
+/**
+ * One row per targeted member, stored at
+ * campaign_assignments/{id}/completions/{uid}.
+ */
+export interface AssignmentCompletion {
+  id: string;
+  assignment_id: string;
+  user_id: string;
+  status: AssignmentCompletionStatus;
+  submitted_at?: unknown;
+  reviewed_at?: unknown;
+  reviewed_by?: string | null;
+  review_notes?: string | null;
+  report_id?: string | null;
+  updated_at?: unknown;
+}
+
+/**
+ * A report is a submission against an assignment.
+ *
+ * Visibility is deliberately narrow: submitter, the assignment's
+ * creator, and Admin. It does NOT cascade up the hierarchy.
+ */
+export type CampaignReportStatus = "submitted" | "approved" | "rejected";
+
+export interface CampaignReport {
+  id: string;
+
+  assignment_id: string;
+  assignment_creator_id: string;
+
+  submitted_by: string;
+  submitted_at?: unknown;
+
+  title: string;
+  content: string;
+
+  status: CampaignReportStatus;
+
+  reviewed_by?: string | null;
+  reviewed_at?: unknown;
+  review_notes?: string | null;
+
+  /** Reporter's scope at submission time (admin filtering). */
+  scope_level: ScopeType;
+  scope_id: string;
+
+  /** Ward / PU the reporter was registered in, for drill-down. */
+  scope_snapshot?: {
+    level: ScopeType;
+    scope_id: string;
+    lga_id?: string | null;
+    ward_id?: string | null;
+    polling_unit_id?: string | null;
+  } | null;
+}
+
+/**
+ * An issue cascades UP: the raiser sees it, every coordinator whose
+ * scope covers it sees it, and Admin sees everything.
+ */
+export type CampaignIssueStatus = "open" | "acknowledged" | "resolved";
+
+export interface CampaignIssue {
+  id: string;
+
+  raised_by: string;
+  raised_at?: unknown;
+
+  title: string;
+  description: string;
+
+  scope_level: ScopeType;
+  scope_id: string;
+
+  status: CampaignIssueStatus;
+
+  acknowledged_by?: string | null;
+  acknowledged_at?: unknown;
+
+  resolved_by?: string | null;
+  resolved_at?: unknown;
+  resolution_notes?: string | null;
+
+  issue_type?: string | null;
+  priority?: "low" | "medium" | "high" | "urgent";
+  location?: string | null;
 }

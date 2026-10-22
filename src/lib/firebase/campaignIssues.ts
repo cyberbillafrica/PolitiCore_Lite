@@ -1,108 +1,258 @@
 "use client";
 
+/*
+ * ============================================================
+ * CAMPAIGN ISSUES
+ * ============================================================
+ *
+ * Issues cascade UP. A PU member's issue is visible to that member,
+ * to every coordinator whose scope covers it (ward -> LGA -> zone ->
+ * state), and to admin. A coordinator sees issues at their own scope
+ * and everything below it.
+ *
+ * The document lives in `issues` (the collection the rules already
+ * cover) and carries both the Round 5 names and the legacy ones so
+ * existing rows keep working:
+ *
+ *   raised_by   <- reported_by
+ *   raised_at   <- created_at
+ *   scope_level <- scope_type
+ *
+ * `scope_ward_id` is stamped on write so a coordinator can pull every
+ * issue inside their wards with one `in` query instead of one query
+ * per polling unit.
+ */
+
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
 import { db } from "./config";
 
-import type { OrganizationalAssignment, ScopeType } from "@/types";
+import type { CampaignScope } from "@/lib/campaign-scope";
 
-/*
- * ============================================================
- * CAMPAIGN ISSUE
- * ============================================================
+import type { CampaignIssue, CampaignIssueStatus, ScopeType } from "@/types";
+
+export type { CampaignIssue } from "@/types";
+
+const COLLECTION = "issues";
+const IN_FILTER_LIMIT = 30;
+
+/* ============================================================
+ * MAPPING
+ * ============================================================ */
+
+/**
+ * Fold the legacy six-state vocabulary into the three states the
+ * campaign UI exposes. `assigned` / `in_progress` are still "open" work.
  */
-
-export type CampaignIssueType =
-  | "logistics"
-  | "campaign_activity"
-  | "community_concern"
-  | "volunteer"
-  | "communication"
-  | "security"
-  | "infrastructure"
-  | "other";
-
-export type CampaignIssuePriority = "low" | "medium" | "high" | "urgent";
-
-export type CampaignIssueStatus =
-  | "reported"
-  | "acknowledged"
-  | "assigned"
-  | "in_progress"
-  | "resolved"
-  | "closed";
-
-export interface CampaignIssue {
-  id: string;
-
-  title: string;
-  description: string;
-
-  issue_type: CampaignIssueType;
-  priority: CampaignIssuePriority;
-  status: CampaignIssueStatus;
-
-  scope_type: ScopeType;
-  scope_id: string;
-
-  reported_by: string;
-
-  assigned_to?: string | null;
-
-  location?: string | null;
-
-  evidence_url?: string | null;
-
-  resolution_notes?: string | null;
-
-  created_at?: unknown;
-  updated_at?: unknown;
+function asStatus(value: unknown): CampaignIssueStatus {
+  switch (String(value ?? "")) {
+    case "acknowledged":
+      return "acknowledged";
+    case "resolved":
+    case "closed":
+      return "resolved";
+    default:
+      return "open";
+  }
 }
 
-/*
- * ============================================================
- * CREATE ISSUE
- * ============================================================
- */
+function mapIssue(id: string, data: Record<string, unknown>): CampaignIssue {
+  const level = String(data.scope_level ?? data.scope_type ?? "lga");
 
-export async function createCampaignIssue(data: {
+  return {
+    id,
+    raised_by: String(data.raised_by ?? data.reported_by ?? ""),
+    raised_at: data.raised_at ?? data.created_at,
+    title: String(data.title ?? ""),
+    description: String(data.description ?? ""),
+    scope_level: level as ScopeType,
+    scope_id: String(data.scope_id ?? ""),
+    status: asStatus(data.status),
+    acknowledged_by:
+      typeof data.acknowledged_by === "string" ? data.acknowledged_by : null,
+    acknowledged_at: data.acknowledged_at ?? null,
+    resolved_by: typeof data.resolved_by === "string" ? data.resolved_by : null,
+    resolved_at: data.resolved_at ?? null,
+    resolution_notes:
+      typeof data.resolution_notes === "string" ? data.resolution_notes : null,
+    issue_type: typeof data.issue_type === "string" ? data.issue_type : null,
+    priority:
+      (data.priority as CampaignIssue["priority"]) ?? "medium",
+    location: typeof data.location === "string" ? data.location : null,
+  };
+}
+
+function sortIssues(items: CampaignIssue[]): CampaignIssue[] {
+  return [...items].sort((a, b) => {
+    const left = a.raised_at ? String(a.raised_at) : "";
+    const right = b.raised_at ? String(b.raised_at) : "";
+    return right.localeCompare(left);
+  });
+}
+
+function mergeInto(
+  target: Map<string, CampaignIssue>,
+  items: CampaignIssue[],
+): void {
+  for (const item of items) target.set(item.id, item);
+}
+
+/* ============================================================
+ * READS
+ * ============================================================ */
+
+/** Issues the user raised. */
+export async function getMyCampaignIssues(
+  userId: string,
+): Promise<CampaignIssue[]> {
+  if (!userId) return [];
+
+  const byId = new Map<string, CampaignIssue>();
+
+  const raised = await getDocs(
+    query(collection(db, COLLECTION), where("raised_by", "==", userId)),
+  );
+  mergeInto(
+    byId,
+    raised.docs.map((item) => mapIssue(item.id, item.data())),
+  );
+
+  const legacy = await getDocs(
+    query(collection(db, COLLECTION), where("reported_by", "==", userId)),
+  );
+  mergeInto(
+    byId,
+    legacy.docs.map((item) => mapIssue(item.id, item.data())),
+  );
+
+  return sortIssues(Array.from(byId.values()));
+}
+
+/**
+ * Issues at or below a scope — the coordinator's cascade-up view.
+ *
+ * Three queries cover the whole hierarchy:
+ *   1. issues whose own scope is exactly the viewer's scope
+ *   2. issues in the wards the viewer covers (ward-scoped rows)
+ *   3. issues stamped with one of those wards (PU-scoped rows)
+ */
+export async function getIssuesInScope(
+  scope: CampaignScope | null,
+): Promise<CampaignIssue[]> {
+  if (!scope) return [];
+
+  const byId = new Map<string, CampaignIssue>();
+
+  if (scope.level === "state" || scope.level === "campaign") {
+    const all = await getDocs(query(collection(db, COLLECTION)));
+    mergeInto(
+      byId,
+      all.docs.map((item) => mapIssue(item.id, item.data())),
+    );
+    return sortIssues(Array.from(byId.values()));
+  }
+
+  /* 1. Exact-level rows (covers legacy documents with no ward stamp). */
+  const exact = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("scope_type", "==", scope.level),
+      where("scope_id", "==", scope.scope_id),
+    ),
+  );
+  mergeInto(
+    byId,
+    exact.docs.map((item) => mapIssue(item.id, item.data())),
+  );
+
+  const unique = Array.from(new Set(scope.wardIds.filter(Boolean)));
+
+  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
+    const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
+
+    /* 2. Ward-scoped rows inside the scope. */
+    const wards = await getDocs(
+      query(
+        collection(db, COLLECTION),
+        where("scope_type", "==", "ward"),
+        where("scope_id", "in", chunk),
+      ),
+    );
+    mergeInto(
+      byId,
+      wards.docs.map((item) => mapIssue(item.id, item.data())),
+    );
+
+    /* 3. Anything stamped to one of those wards (PU-scoped rows). */
+    const stamped = await getDocs(
+      query(collection(db, COLLECTION), where("scope_ward_id", "in", chunk)),
+    );
+    mergeInto(
+      byId,
+      stamped.docs.map((item) => mapIssue(item.id, item.data())),
+    );
+  }
+
+  return sortIssues(Array.from(byId.values()));
+}
+
+/* ============================================================
+ * WRITES
+ * ============================================================ */
+
+export interface RaiseIssueInput {
+  raised_by: string;
   title: string;
   description: string;
-  issue_type: CampaignIssueType;
-  priority: CampaignIssuePriority;
 
-  scope_type: ScopeType;
+  scope_level: ScopeType;
   scope_id: string;
 
-  reported_by: string;
+  /** Ward the issue belongs to, for scoped reads. */
+  scope_ward_id?: string | null;
 
-  location?: string;
-  evidence_url?: string;
-}) {
-  const ref = await addDoc(collection(db, "issues"), {
-    title: data.title.trim(),
-    description: data.description.trim(),
+  issue_type?: string | null;
+  priority?: CampaignIssue["priority"];
+  location?: string | null;
+}
 
-    issue_type: data.issue_type,
-    priority: data.priority,
+export async function raiseCampaignIssue(
+  input: RaiseIssueInput,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COLLECTION), {
+    title: input.title.trim(),
+    description: input.description.trim(),
+
+    issue_type: input.issue_type ?? "other",
+    priority: input.priority ?? "medium",
 
     status: "reported",
 
-    scope_type: data.scope_type,
-    scope_id: data.scope_id,
+    raised_by: input.raised_by,
+    raised_at: serverTimestamp(),
 
-    reported_by: data.reported_by,
+    scope_level: input.scope_level,
+    scope_id: input.scope_id,
+    scope_ward_id: input.scope_ward_id ?? null,
 
-    location: data.location?.trim() || null,
-    evidence_url: data.evidence_url?.trim() || null,
+    /* Legacy names the rules read. */
+    reported_by: input.raised_by,
+    scope_type: input.scope_level,
+
+    location: input.location?.trim() || null,
+
+    assigned_to: null,
+    evidence_url: null,
+    resolution_notes: null,
 
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -111,58 +261,35 @@ export async function createCampaignIssue(data: {
   return ref.id;
 }
 
-/*
- * ============================================================
- * GET ISSUES FOR AN ORGANIZATIONAL SCOPE
- * ============================================================
- *
- * The page passes the user's active organizational assignment.
- *
- * For the current application we query the exact assigned scope.
- *
- * Hierarchical expansion remains deliberately outside this
- * function until the electoral hierarchy resolver is wired in.
- * ============================================================
+/**
+ * Acknowledge an issue. Any coordinator covering the issue may do this,
+ * as may admin (the rules allow both).
  */
-
-export async function getScopedCampaignIssues(
-  assignment: OrganizationalAssignment,
-): Promise<CampaignIssue[]> {
-  const q = query(
-    collection(db, "issues"),
-    where("scope_type", "==", assignment.scope_type),
-    where("scope_id", "==", assignment.scope_id),
-    orderBy("created_at", "desc"),
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((document) => ({
-    id: document.id,
-    ...document.data(),
-  })) as CampaignIssue[];
-}
-
-/*
- * ============================================================
- * GET MY REPORTED ISSUES
- * ============================================================
- */
-
-export async function getMyCampaignIssues(
+export async function acknowledgeCampaignIssue(
+  issueId: string,
   userId: string,
-): Promise<CampaignIssue[]> {
-  const q = query(
-    collection(db, "issues"),
-    where("reported_by", "==", userId),
-    orderBy("created_at", "desc"),
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((document) => ({
-    id: document.id,
-    ...document.data(),
-  })) as CampaignIssue[];
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, issueId), {
+    status: "acknowledged",
+    acknowledged_by: userId,
+    acknowledged_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
 }
 
+/**
+ * Resolve an issue with optional notes.
+ */
+export async function resolveCampaignIssue(input: {
+  issueId: string;
+  userId: string;
+  notes?: string | null;
+}): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, input.issueId), {
+    status: "resolved",
+    resolved_by: input.userId,
+    resolved_at: serverTimestamp(),
+    resolution_notes: input.notes?.trim() || null,
+    updated_at: serverTimestamp(),
+  });
+}

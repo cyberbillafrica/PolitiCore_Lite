@@ -1,220 +1,259 @@
 "use client";
 
+/*
+ * ============================================================
+ * CAMPAIGN REPORTS
+ * ============================================================
+ *
+ * A report is a submission against an assignment.
+ *
+ * Visibility is deliberately NARROW and does not cascade up:
+ *
+ *   submitter .............. always
+ *   assignment creator ..... always
+ *   admin .................. always
+ *
+ * An LGA coordinator does NOT see a ward coordinator's report to PU
+ * members. This is the one collection where "higher up" means nothing.
+ *
+ * The document lives in `campaign_field_reports` (the collection the
+ * rules and both report pages already use). Round 5 adds:
+ *
+ *   assignment_id, assignment_creator_id, scope_snapshot,
+ *   reviewed_at, review_notes
+ *
+ * and folds the legacy `accepted` / `returned` statuses into
+ * `approved` / `rejected`.
+ */
+
 import {
   addDoc,
   collection,
+  doc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
 import { db } from "./config";
 
-export type CampaignReportStatus =
-  | "submitted"
-  | "under_review"
-  | "accepted"
-  | "returned";
+import type { CampaignReport, ScopeType } from "@/types";
 
-export type CampaignReportType =
-  | "activity"
-  | "community"
-  | "mobilization"
-  | "meeting"
-  | "field"
-  | "other";
-
-export interface CampaignFieldReport {
-  id: string;
-
-  submitted_by: string;
-
-  report_type: CampaignReportType;
-
-  title: string;
-  description: string;
-
-  scope_type: string;
-  scope_id: string;
-
-  location?: string | null;
-
-  participants?: number | null;
-
-  issues?: string | null;
-
-  community_feedback?: string | null;
-
-  requests?: string | null;
-
-  follow_up_required?: boolean;
-
-  evidence_url?: string | null;
-
-  status: CampaignReportStatus;
-
-  reviewed_by?: string | null;
-  review_comment?: string | null;
-
-  created_at?: unknown;
-  updated_at?: unknown;
-}
-
-/*
- * ============================================================
- * COLLECTION
- * ============================================================
- */
+export type { CampaignReport } from "@/types";
 
 const COLLECTION = "campaign_field_reports";
+const IN_FILTER_LIMIT = 30;
 
-/*
- * ============================================================
- * MAP DOCUMENT
- * ============================================================
- */
+/* ============================================================
+ * MAPPING
+ * ============================================================ */
+
+function asStatus(value: unknown): CampaignReport["status"] {
+  switch (String(value ?? "")) {
+    case "approved":
+    case "accepted":
+      return "approved";
+    case "rejected":
+    case "returned":
+      return "rejected";
+    default:
+      return "submitted";
+  }
+}
 
 function mapReport(
   id: string,
   data: Record<string, unknown>,
-): CampaignFieldReport {
+): CampaignReport {
+  const scopeLevel = String(data.scope_level ?? data.scope_type ?? "lga");
+  const scopeId = String(data.scope_id ?? "");
+
+  const snapshot =
+    data.scope_snapshot && typeof data.scope_snapshot === "object"
+      ? (data.scope_snapshot as CampaignReport["scope_snapshot"])
+      : null;
+
   return {
     id,
-
+    assignment_id: String(data.assignment_id ?? ""),
+    assignment_creator_id: String(data.assignment_creator_id ?? ""),
     submitted_by: String(data.submitted_by ?? ""),
-
-    report_type: (data.report_type as CampaignReportType) ?? "field",
-
+    submitted_at: data.submitted_at ?? data.created_at,
     title: String(data.title ?? ""),
-
-    description: String(data.description ?? ""),
-
-    scope_type: String(data.scope_type ?? ""),
-    scope_id: String(data.scope_id ?? ""),
-
-    location: typeof data.location === "string" ? data.location : null,
-
-    participants:
-      typeof data.participants === "number" ? data.participants : null,
-
-    issues: typeof data.issues === "string" ? data.issues : null,
-
-    community_feedback:
-      typeof data.community_feedback === "string"
-        ? data.community_feedback
-        : null,
-
-    requests: typeof data.requests === "string" ? data.requests : null,
-
-    follow_up_required: data.follow_up_required === true,
-
-    evidence_url:
-      typeof data.evidence_url === "string" ? data.evidence_url : null,
-
-    status: (data.status as CampaignReportStatus) ?? "submitted",
-
-    reviewed_by: typeof data.reviewed_by === "string" ? data.reviewed_by : null,
-
-    review_comment:
-      typeof data.review_comment === "string" ? data.review_comment : null,
-
-    created_at: data.created_at,
-    updated_at: data.updated_at,
+    content: String(data.content ?? data.description ?? ""),
+    status: asStatus(data.status),
+    reviewed_by:
+      typeof data.reviewed_by === "string" ? data.reviewed_by : null,
+    reviewed_at: data.reviewed_at ?? null,
+    review_notes:
+      typeof data.review_notes === "string"
+        ? data.review_notes
+        : typeof data.review_comment === "string"
+          ? data.review_comment
+          : null,
+    scope_level: scopeLevel as ScopeType,
+    scope_id: scopeId,
+    scope_snapshot: snapshot,
   };
 }
 
-/*
- * ============================================================
- * MY REPORTS
- * ============================================================
- */
+function sortReports(items: CampaignReport[]): CampaignReport[] {
+  return [...items].sort((a, b) => {
+    const left = a.submitted_at ? String(a.submitted_at) : "";
+    const right = b.submitted_at ? String(b.submitted_at) : "";
+    return right.localeCompare(left);
+  });
+}
 
+/* ============================================================
+ * READS
+ * ============================================================ */
+
+/** Reports the user submitted. */
 export async function getMyCampaignReports(
   userId: string,
-): Promise<CampaignFieldReport[]> {
-  if (!userId) {
-    return [];
-  }
+): Promise<CampaignReport[]> {
+  if (!userId) return [];
 
-  const q = query(
-    collection(db, COLLECTION),
-    where("submitted_by", "==", userId),
-    orderBy("created_at", "desc"),
+  const snapshot = await getDocs(
+    query(collection(db, COLLECTION), where("submitted_by", "==", userId)),
   );
 
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((item) => mapReport(item.id, item.data()));
+  return sortReports(
+    snapshot.docs.map((item) => mapReport(item.id, item.data())),
+  );
 }
 
-/*
- * ============================================================
- * SCOPED REPORTS
- * ============================================================
+/**
+ * Reports against assignments the user created.
  *
- * Coordinators can request reports belonging to their
- * organizational scope.
+ * This is the "Reports Received" list — the only way a coordinator
+ * legitimately sees someone else's report.
  */
+export async function getReportsReceived(
+  creatorId: string,
+): Promise<CampaignReport[]> {
+  if (!creatorId) return [];
 
-export async function getScopedCampaignReports(
-  scopeType: string,
-  scopeId: string,
-): Promise<CampaignFieldReport[]> {
-  if (!scopeType || !scopeId) {
-    return [];
-  }
-
-  const q = query(
-    collection(db, COLLECTION),
-    where("scope_type", "==", scopeType),
-    where("scope_id", "==", scopeId),
-    orderBy("created_at", "desc"),
+  const snapshot = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("assignment_creator_id", "==", creatorId),
+    ),
   );
 
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((item) => mapReport(item.id, item.data()));
+  return sortReports(
+    snapshot.docs.map((item) => mapReport(item.id, item.data())),
+  );
 }
 
-/*
- * ============================================================
- * CREATE REPORT
- * ============================================================
+/**
+ * Reports against one assignment. Used by the assignment detail view.
  */
+export async function getReportsForAssignment(
+  assignmentId: string,
+): Promise<CampaignReport[]> {
+  if (!assignmentId) return [];
 
-export async function createCampaignFieldReport(data: {
+  const snapshot = await getDocs(
+    query(collection(db, COLLECTION), where("assignment_id", "==", assignmentId)),
+  );
+
+  return sortReports(
+    snapshot.docs.map((item) => mapReport(item.id, item.data())),
+  );
+}
+
+/**
+ * Admin view: every report, optionally narrowed to a scope and below.
+ *
+ * Filtering happens in memory because the stored scope is a snapshot
+ * (a ward-scoped report from a PU member must still be visible when
+ * the admin filters to the ward).
+ */
+export async function getAllCampaignReports(filter?: {
+  level?: ScopeType | null;
+  wardIds?: string[];
+  pollingUnitIds?: string[];
+}): Promise<CampaignReport[]> {
+  const snapshot = await getDocs(query(collection(db, COLLECTION)));
+
+  const all = sortReports(
+    snapshot.docs.map((item) => mapReport(item.id, item.data())),
+  );
+
+  if (!filter?.level) return all;
+
+  if (filter.level === "state" || filter.level === "campaign") return all;
+
+  const wardIds = new Set(filter.wardIds ?? []);
+  const puIds = new Set(filter.pollingUnitIds ?? []);
+
+  return all.filter((report) => {
+    const snapshotWard = report.scope_snapshot?.ward_id ?? "";
+    const snapshotPu = report.scope_snapshot?.polling_unit_id ?? "";
+
+    if (snapshotPu && puIds.has(snapshotPu)) return true;
+    if (snapshotWard && wardIds.has(snapshotWard)) return true;
+
+    return false;
+  });
+}
+
+/* ============================================================
+ * WRITES
+ * ============================================================ */
+
+export interface SubmitReportInput {
+  assignment_id: string;
+  assignment_creator_id: string;
+
   submitted_by: string;
 
-  report_type: CampaignReportType;
-
   title: string;
-  description: string;
+  content: string;
 
-  scope_type: string;
+  scope_level: ScopeType;
   scope_id: string;
 
-  location?: string | null;
+  scope_snapshot?: CampaignReport["scope_snapshot"];
+}
 
-  participants?: number | null;
-
-  issues?: string | null;
-
-  community_feedback?: string | null;
-
-  requests?: string | null;
-
-  follow_up_required?: boolean;
-
-  evidence_url?: string | null;
-}) {
+/**
+ * Submit a report against an assignment.
+ *
+ * The reporter's scope is snapshotted at submission time so an admin
+ * can filter by geography later without re-resolving the member.
+ */
+export async function submitCampaignReport(
+  input: SubmitReportInput,
+): Promise<string> {
   const ref = await addDoc(collection(db, COLLECTION), {
-    ...data,
+    assignment_id: input.assignment_id,
+    assignment_creator_id: input.assignment_creator_id,
+
+    submitted_by: input.submitted_by,
+    submitted_at: serverTimestamp(),
+
+    title: input.title.trim(),
+    content: input.content.trim(),
+    description: input.content.trim(),
 
     status: "submitted",
 
+    scope_level: input.scope_level,
+    scope_id: input.scope_id,
+
+    /* Legacy field names the rules and old readers still use. */
+    scope_type: input.scope_level,
+
+    scope_snapshot: input.scope_snapshot ?? null,
+
     reviewed_by: null,
+    reviewed_at: null,
+    review_notes: null,
     review_comment: null,
 
     created_at: serverTimestamp(),
@@ -224,3 +263,21 @@ export async function createCampaignFieldReport(data: {
   return ref.id;
 }
 
+/**
+ * Creator (or admin) decision on a report.
+ */
+export async function reviewCampaignReport(input: {
+  reportId: string;
+  status: "approved" | "rejected";
+  reviewedBy: string;
+  notes?: string | null;
+}): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, input.reportId), {
+    status: input.status,
+    reviewed_by: input.reviewedBy,
+    reviewed_at: serverTimestamp(),
+    review_notes: input.notes?.trim() || null,
+    review_comment: input.notes?.trim() || null,
+    updated_at: serverTimestamp(),
+  });
+}

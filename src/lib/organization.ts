@@ -28,6 +28,9 @@ export function formatOrganizationalPosition(
     case "campaign_member":
       return "Campaign Council Member";
 
+    case "pu_coordinator":
+      return "Polling Unit Coordinator";
+
     case "ward_coordinator":
       return "Ward Coordinator";
 
@@ -106,6 +109,7 @@ export function getPrimaryOrganizationalAssignment(
     "zone_coordinator",
     "lga_coordinator",
     "ward_coordinator",
+    "pu_coordinator",
     "campaign_member",
   ];
 

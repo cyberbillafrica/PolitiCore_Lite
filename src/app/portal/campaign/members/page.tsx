@@ -1,10 +1,30 @@
 "use client";
 
+/*
+ * ============================================================
+ * MEMBER DIRECTORY
+ * ============================================================
+ *
+ * Who the viewer may see, and nothing more:
+ *
+ *   Plain member  their own polling unit, read-only
+ *   Coordinator   their scope and everything below it, read-only,
+ *                 plus the coordinators operating inside it
+ *   Admin         every campaign member, with filters
+ *
+ * Positions are NOT read off the profile. They are resolved from
+ * `organizational_assignments` in one batch per page load, because the
+ * assignment record is the authoritative source.
+ */
+
 import Link from "next/link";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   ArrowLeft,
   ArrowRight,
+  Loader2,
   Mail,
   MapPin,
   Phone,
@@ -12,130 +32,259 @@ import {
   Search,
   ShieldCheck,
   Users,
-  AlertTriangle,
-  Loader2,
 } from "lucide-react";
-
-import { useMemo, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { useAuth } from "@/contexts/AuthContext";
-
+import { useCampaignAuthority } from "@/hooks/useCampaignAuthority";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
-import { useOrganizationalAssignments } from "@/hooks/useOrganizationalAssignments";
-
-import { useScopedCampaignMembers } from "@/hooks/useScopedCampaignMembers";
+import {
+  getAllCampaignMembers,
+  getCampaignMembersInScope,
+  getMemberPositions,
+  type ScopedCampaignMember,
+} from "@/lib/firebase/campaignMembers";
 
 import {
+  formatOrganizationalPosition,
   formatScopeType,
-  getPrimaryOrganizationalScope,
 } from "@/lib/organization";
 
-import type { OrganizationalPosition } from "@/types";
+import { notify } from "@/lib/notify";
 
-/*
- * ============================================================
+import type { OrganizationalPosition, ScopeType } from "@/types";
+
+/* ============================================================
+ * CONSTANTS
+ * ============================================================ */
+
+const COORDINATOR_RANKS: OrganizationalPosition[] = [
+  "state_coordinator",
+  "zone_coordinator",
+  "lga_coordinator",
+  "ward_coordinator",
+  "pu_coordinator",
+];
+
+const ROLE_OPTIONS = ["admin", "member", "election_officer"] as const;
+
+const POSITION_OPTIONS: OrganizationalPosition[] = [
+  "state_coordinator",
+  "zone_coordinator",
+  "lga_coordinator",
+  "ward_coordinator",
+  "pu_coordinator",
+  "campaign_member",
+];
+
+type PositionInfo = {
+  position: OrganizationalPosition;
+  level: string;
+  scope_id: string;
+};
+
+/* ============================================================
  * PAGE
- * ============================================================
- */
+ * ============================================================ */
 
 export default function CampaignMembersPage() {
-  const { profile } = useAuth();
-
-  const { assignments, loading: assignmentsLoading } =
-    useOrganizationalAssignments();
-
-  /*
-   * ----------------------------------------------------------
-   * PRIMARY ASSIGNMENT
-   * ----------------------------------------------------------
-   */
-
-  const primaryScope = getPrimaryOrganizationalScope(assignments);
-
-  const assignment = primaryScope.assignment;
-
-  /*
-   * ----------------------------------------------------------
-   * MEMBERS
-   * ----------------------------------------------------------
-   */
-
   const {
-    members,
-    loading: membersLoading,
-    error,
-    scopeSupported,
-    refresh,
-  } = useScopedCampaignMembers(assignment);
+    profile,
+    loading,
+    isAdmin,
+    isCoordinator,
+    scope,
+    scopeLabel,
+  } = useCampaignAuthority();
 
-  /*
-   * ----------------------------------------------------------
-   * SEARCH
-   * ----------------------------------------------------------
-   */
+  const lookup = useElectoralLookup();
+
+  const [members, setMembers] = useState<ScopedCampaignMember[]>([]);
+  const [positions, setPositions] = useState<Map<string, PositionInfo>>(
+    new Map(),
+  );
+
+  const [dataLoading, setDataLoading] = useState(true);
 
   const [search, setSearch] = useState("");
+  const [wardFilter, setWardFilter] = useState("");
+  const [puFilter, setPuFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [positionFilter, setPositionFilter] = useState("");
 
-  /*
-   * ----------------------------------------------------------
+  /* ------------------------------------------------------------
+   * LOAD
+   * ------------------------------------------------------------ */
+
+  const load = useCallback(async () => {
+    if (!profile) {
+      setDataLoading(false);
+      return;
+    }
+
+    if (!isAdmin && !scope) {
+      setMembers([]);
+      setPositions(new Map());
+      setDataLoading(false);
+      return;
+    }
+
+    setDataLoading(true);
+
+    try {
+      const list = isAdmin
+        ? await getAllCampaignMembers()
+        : scope
+          ? await getCampaignMembersInScope(scope)
+          : [];
+
+      setMembers(list);
+
+      if (list.length > 0) {
+        setPositions(await getMemberPositions(list.map((member) => member.id)));
+      } else {
+        setPositions(new Map());
+      }
+    } catch (error) {
+      console.error("Failed to load the member directory:", error);
+      notify.error("Unable to load the member directory right now.");
+      setMembers([]);
+      setPositions(new Map());
+    } finally {
+      setDataLoading(false);
+    }
+  }, [isAdmin, profile, scope]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    void load();
+  }, [load, loading]);
+
+  /* ------------------------------------------------------------
+   * FILTER OPTIONS
+   * ------------------------------------------------------------ */
+
+  const wardOptions = useMemo(() => {
+    const ids = Array.from(
+      new Set(members.map((member) => member.ward_id).filter(Boolean)),
+    );
+
+    return ids
+      .map((id) => ({ id, label: lookup.wardLabel(id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [members, lookup]);
+
+  const pollingUnitOptions = useMemo(() => {
+    const ids = Array.from(
+      new Set(
+        members
+          .filter((member) => !wardFilter || member.ward_id === wardFilter)
+          .map((member) => member.polling_unit_id)
+          .filter(Boolean),
+      ),
+    );
+
+    return ids.map((id) => {
+      const member = members.find((item) => item.polling_unit_id === id);
+
+      return {
+        id,
+        label: lookup.pollingUnitLabel(member?.ward_id, id),
+      };
+    });
+  }, [members, lookup, wardFilter]);
+
+  /* ------------------------------------------------------------
    * FILTERED MEMBERS
-   * ----------------------------------------------------------
-   */
+   * ------------------------------------------------------------ */
 
   const filteredMembers = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    if (!term) {
-      return members;
-    }
-
     return members.filter((member) => {
-      return (
-        member.full_name?.toLowerCase().includes(term) ||
-        member.email?.toLowerCase().includes(term) ||
-        member.phone?.toLowerCase().includes(term)
-      );
+      if (term) {
+        const haystack = [
+          member.full_name ?? "",
+          member.email ?? "",
+          member.phone ?? "",
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        if (!haystack.includes(term)) return false;
+      }
+
+      if (isAdmin) {
+        if (wardFilter && member.ward_id !== wardFilter) return false;
+        if (puFilter && member.polling_unit_id !== puFilter) return false;
+        if (roleFilter && member.access_role !== roleFilter) return false;
+
+        if (positionFilter) {
+          const position =
+            positions.get(member.id)?.position ?? "campaign_member";
+
+          if (position !== positionFilter) return false;
+        }
+      }
+
+      return true;
     });
-  }, [members, search]);
+  }, [
+    isAdmin,
+    members,
+    positionFilter,
+    positions,
+    puFilter,
+    roleFilter,
+    search,
+    wardFilter,
+  ]);
 
-  /*
-   * ----------------------------------------------------------
-   * AUTH
-   * ----------------------------------------------------------
-   */
+  const coordinators = useMemo(
+    () =>
+      members.filter((member) => {
+        const position = positions.get(member.id)?.position;
+        return position ? COORDINATOR_RANKS.includes(position) : false;
+      }),
+    [members, positions],
+  );
 
-  if (!profile) {
-    return null;
+  const hasActiveFilter =
+    Boolean(search.trim()) ||
+    Boolean(wardFilter) ||
+    Boolean(puFilter) ||
+    Boolean(roleFilter) ||
+    Boolean(positionFilter);
+
+  function resetFilters() {
+    setSearch("");
+    setWardFilter("");
+    setPuFilter("");
+    setRoleFilter("");
+    setPositionFilter("");
   }
 
-  /*
-   * ----------------------------------------------------------
-   * LOADING
-   * ----------------------------------------------------------
-   */
+  /* ------------------------------------------------------------
+   * GUARDS
+   * ------------------------------------------------------------ */
 
-  if (assignmentsLoading) {
+  if (!profile) return null;
+
+  if (loading || dataLoading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-apc-primary" />
 
         <p className="text-sm text-gray-500">
-          Loading your organizational scope...
+          Loading your member directory…
         </p>
       </div>
     );
   }
 
-  /*
-   * ----------------------------------------------------------
-   * NO ASSIGNMENT
-   * ----------------------------------------------------------
-   */
-
-  if (!assignment) {
+  if (!isAdmin && !scope) {
     return (
       <div className="space-y-6 pb-8">
         <BackLink />
@@ -145,17 +294,26 @@ export default function CampaignMembersPage() {
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="p-6">
             <div className="flex gap-4">
-              <AlertTriangle className="h-6 w-6 shrink-0 text-yellow-600" />
+              <ShieldCheck className="h-6 w-6 shrink-0 text-yellow-600" />
 
               <div>
                 <h2 className="font-semibold text-yellow-900">
-                  No organizational assignment
+                  No campaign area yet
                 </h2>
 
-                <p className="mt-1 text-sm text-yellow-800">
-                  You must have an active campaign organizational assignment
-                  before you can view a scoped member directory.
+                <p className="mt-1 max-w-2xl text-sm leading-8 text-yellow-800">
+                  Your directory is drawn from your organizational position, or
+                  from the polling unit you registered with. Neither is available
+                  on your account yet, so there is no member list to show.
                 </p>
+
+                <Link
+                  href="/portal/profile"
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-yellow-900 underline"
+                >
+                  Update my registered area
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           </CardContent>
@@ -164,11 +322,15 @@ export default function CampaignMembersPage() {
     );
   }
 
-  /*
-   * ----------------------------------------------------------
+  /* ------------------------------------------------------------
    * PAGE
-   * ----------------------------------------------------------
-   */
+   * ------------------------------------------------------------ */
+
+  const directoryTitle = isAdmin
+    ? "All campaign members"
+    : scope?.level === "polling_unit"
+      ? "Members in your polling unit"
+      : "Members in your area";
 
   return (
     <div className="space-y-6 pb-8">
@@ -190,28 +352,38 @@ export default function CampaignMembersPage() {
 
               <div>
                 <p className="text-sm text-gray-500">
-                  Your authorized organizational scope
+                  {isAdmin
+                    ? "Administrator view"
+                    : isCoordinator
+                      ? "Your authorized organizational scope"
+                      : "Your registered polling unit"}
                 </p>
 
                 <h2 className="mt-1 text-xl font-bold text-gray-900">
-                  {formatPosition(assignment.position)}
+                  {isAdmin
+                    ? "State-wide directory"
+                    : `${formatScopeType(scope?.level ?? null)} · ${scopeLabel}`}
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-600">
-                  {formatScopeType(assignment.scope_type)}
-                  {" · "}
-                  {assignment.scope_id}
+                  {isAdmin
+                    ? "Every campaign member, with filters by ward, polling unit, role and position."
+                    : `Reading members inside ${scopeLabel}${
+                        scope?.scope_id ? ` (${scope.scope_id})` : ""
+                      }.`}
                 </p>
               </div>
             </div>
 
             <div className="rounded-xl bg-gray-50 px-5 py-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Members in scope
+                {isCoordinator || isAdmin
+                  ? "Members in scope"
+                  : "Members in your PU"}
               </p>
 
               <p className="mt-1 text-2xl font-bold text-gray-900">
-                {membersLoading ? "..." : members.length}
+                {members.length === 0 ? "None yet" : members.length}
               </p>
             </div>
           </div>
@@ -219,27 +391,44 @@ export default function CampaignMembersPage() {
       </Card>
 
       {/* ======================================================
-          UNSUPPORTED HIGHER SCOPE
+          COORDINATORS IN AREA
           ====================================================== */}
 
-      {!scopeSupported && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardContent className="p-5">
-            <div className="flex gap-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-600" />
+      {!isAdmin && isCoordinator && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Coordinators in my area</CardTitle>
 
-              <div>
-                <p className="font-semibold text-yellow-900">
-                  Geographic scope expansion required
+            <p className="text-sm text-gray-500">
+              Positions operating inside your scope, with the area each one
+              covers.
+            </p>
+          </CardHeader>
+
+          <CardContent>
+            {coordinators.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-8 text-center">
+                <ShieldCheck className="mx-auto h-8 w-8 text-gray-300" />
+
+                <p className="mt-3 font-semibold text-gray-900">
+                  No coordinators yet
                 </p>
 
-                <p className="mt-1 text-sm leading-6 text-yellow-800">
-                  Your assignment is above ward level. The member directory
-                  needs the electoral hierarchy resolver to translate that scope
-                  into its wards and polling units.
+                <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+                  No coordinator position has been assigned inside your area.
                 </p>
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {coordinators.map((member) => (
+                  <CoordinatorCard
+                    key={member.id}
+                    member={member}
+                    position={positions.get(member.id)}
+                  />
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -252,24 +441,21 @@ export default function CampaignMembersPage() {
         <CardHeader>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <CardTitle className="text-lg">
-                Campaign Member Directory
-              </CardTitle>
+              <CardTitle className="text-lg">{directoryTitle}</CardTitle>
 
               <p className="mt-1 text-sm text-gray-500">
-                Members within your authorized campaign area.
+                {isAdmin
+                  ? "Every registered campaign member."
+                  : "Read-only view of the members you are authorized to see."}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={refresh}
-              disabled={membersLoading}
-              className="inline-flex w-fit items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void load()}
+              className="inline-flex w-fit items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
-              <RefreshCw
-                className={`h-4 w-4 ${membersLoading ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className="h-4 w-4" />
               Refresh
             </button>
           </div>
@@ -285,50 +471,111 @@ export default function CampaignMembersPage() {
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search members by name, email or phone..."
+              placeholder={
+                isAdmin
+                  ? "Search by name, email or phone…"
+                  : "Search members in your area…"
+              }
               className="w-full rounded-xl border bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-apc-primary focus:ring-2 focus:ring-apc-primary/10"
             />
           </div>
 
-          {/* ERROR — surfaced as a Sonner toast by
-              useScopedCampaignMembers; no inline banner. */}
+          {/* ADMIN FILTERS */}
 
-          {/* LOADING */}
+          {isAdmin && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <FilterSelect
+                id="filter-ward"
+                label="Ward"
+                value={wardFilter}
+                onChange={(value) => {
+                  setWardFilter(value);
+                  setPuFilter("");
+                }}
+                options={wardOptions}
+                allLabel="All wards"
+              />
 
-          {membersLoading ? (
-            <DirectoryLoading />
-          ) : !scopeSupported ? (
-            <div className="py-12 text-center">
-              <Users className="mx-auto h-12 w-12 text-gray-300" />
+              <FilterSelect
+                id="filter-pu"
+                label="Polling unit"
+                value={puFilter}
+                onChange={setPuFilter}
+                options={pollingUnitOptions}
+                allLabel="All polling units"
+              />
 
-              <p className="mt-4 font-semibold text-gray-900">
-                Member directory not available for this scope yet
-              </p>
+              <FilterSelect
+                id="filter-role"
+                label="Access role"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={ROLE_OPTIONS.map((role) => ({
+                  id: role,
+                  label: formatRole(role),
+                }))}
+                allLabel="All roles"
+              />
 
-              <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
-                Your organizational assignment is valid, but the electoral
-                hierarchy needed to resolve this geographic scope has not yet
-                been connected.
+              <FilterSelect
+                id="filter-position"
+                label="Position"
+                value={positionFilter}
+                onChange={setPositionFilter}
+                options={POSITION_OPTIONS.map((position) => ({
+                  id: position,
+                  label: formatOrganizationalPosition(position),
+                }))}
+                allLabel="All positions"
+              />
+
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="w-fit rounded-lg border px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* LIST */}
+
+          {members.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed p-10 text-center">
+              <Users className="mx-auto h-10 w-10 text-gray-300" />
+
+              <p className="mt-3 font-semibold text-gray-900">No members yet</p>
+
+              <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+                {isAdmin
+                  ? "No account has registered as a campaign member yet."
+                  : "Nobody has registered inside your area yet. Members appear here as soon as they register."}
               </p>
             </div>
           ) : filteredMembers.length === 0 ? (
-            <div className="py-12 text-center">
-              <Users className="mx-auto h-12 w-12 text-gray-300" />
+            <div className="mt-5 rounded-xl border border-dashed p-10 text-center">
+              <Search className="mx-auto h-10 w-10 text-gray-300" />
 
-              <p className="mt-4 font-semibold text-gray-900">
-                {search ? "No matching members" : "No campaign members found"}
+              <p className="mt-3 font-semibold text-gray-900">
+                No members match your filters
               </p>
 
-              <p className="mt-2 text-sm text-gray-500">
-                {search
-                  ? "Try a different search term."
-                  : "There are currently no campaign members in this scope."}
+              <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+                Try a different search term, or clear the filters.
               </p>
             </div>
           ) : (
             <div className="mt-5 space-y-3">
               {filteredMembers.map((member) => (
-                <MemberRow key={member.id} member={member} />
+                <MemberRow
+                  key={member.id}
+                  member={member}
+                  position={positions.get(member.id)}
+                  showRole={isAdmin}
+                />
               ))}
             </div>
           )}
@@ -338,11 +585,9 @@ export default function CampaignMembersPage() {
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * HEADER
- * ============================================================
- */
+ * ============================================================ */
 
 function PageHeader() {
   return (
@@ -360,11 +605,9 @@ function PageHeader() {
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * BACK LINK
- * ============================================================
- */
+ * ============================================================ */
 
 function BackLink() {
   return (
@@ -378,26 +621,18 @@ function BackLink() {
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * MEMBER ROW
- * ============================================================
- */
+ * ============================================================ */
 
 function MemberRow({
   member,
+  position,
+  showRole,
 }: {
-  member: {
-    id: string;
-    full_name: string;
-    email: string;
-    phone: string;
-    lga_id?: string;
-    ward_id: string;
-    polling_unit_id: string;
-    membership_types: string[];
-    access_role: string;
-  };
+  member: ScopedCampaignMember;
+  position?: PositionInfo;
+  showRole: boolean;
 }) {
   const lookup = useElectoralLookup();
 
@@ -406,6 +641,13 @@ function MemberRow({
     member.ward_id,
     member.polling_unit_id,
   );
+
+  const socials = [
+    member.facebook_profile_url,
+    member.x_profile_url,
+    member.instagram_profile_url,
+    member.tiktok_profile_url,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <div className="rounded-xl border p-4 transition-colors hover:bg-gray-50">
@@ -423,16 +665,24 @@ function MemberRow({
             </p>
 
             <div className="mt-1 flex flex-wrap gap-2">
-              {member.membership_types?.map((type) => (
-                <span
-                  key={type}
-                  className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600"
-                >
-                  {formatMembership(type)}
-                </span>
-              ))}
+              <span
+                className={
+                  position
+                    ? "rounded-full bg-apc-primary/10 px-2.5 py-1 text-xs font-semibold text-apc-primary"
+                    : "rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600"
+                }
+              >
+                {formatOrganizationalPosition(position?.position ?? null)}
+              </span>
 
-              {member.access_role && (
+              {position && (
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                  {formatScopeType(position.level as ScopeType)} ·{" "}
+                  {position.scope_id}
+                </span>
+              )}
+
+              {showRole && member.access_role && (
                 <span
                   className={
                     member.access_role === "admin"
@@ -483,9 +733,23 @@ function MemberRow({
               <span className="truncate">{member.email}</span>
             </div>
           )}
-        </div>
 
-        {/* FUTURE PROFILE */}
+          {socials.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {socials.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
+                >
+                  Social
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
 
         <Link
           href={`/portal/campaign/members/${member.id}`}
@@ -499,63 +763,104 @@ function MemberRow({
   );
 }
 
-/*
- * ============================================================
- * LOADING
- * ============================================================
- */
+/* ============================================================
+ * COORDINATOR CARD
+ * ============================================================ */
 
-function DirectoryLoading() {
+function CoordinatorCard({
+  member,
+  position,
+}: {
+  member: ScopedCampaignMember;
+  position?: PositionInfo;
+}) {
+  const lookup = useElectoralLookup();
+
   return (
-    <div className="mt-5 space-y-3">
-      {[1, 2, 3, 4].map((item) => (
-        <div key={item} className="h-24 animate-pulse rounded-xl bg-gray-100" />
-      ))}
+    <Link
+      href={`/portal/campaign/members/${member.id}`}
+      className="rounded-xl border p-4 transition hover:border-apc-primary/30 hover:bg-gray-50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-gray-900">
+            {member.full_name || "Member"}
+          </p>
+
+          <p className="mt-1 text-sm font-medium text-apc-primary">
+            {formatOrganizationalPosition(position?.position ?? null)}
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
+            {position
+              ? `${formatScopeType(position.level as ScopeType)} · ${position.scope_id}`
+              : "No scope recorded"}
+          </p>
+        </div>
+
+        <ShieldCheck className="h-5 w-5 shrink-0 text-apc-primary" />
+      </div>
+
+      <p className="mt-3 text-xs text-gray-500">
+        {lookup.wardLabel(member.ward_id)} ·{" "}
+        {lookup.pollingUnitLabel(member.ward_id, member.polling_unit_id)}
+      </p>
+    </Link>
+  );
+}
+
+/* ============================================================
+ * FILTER SELECT
+ * ============================================================ */
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  allLabel,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: Array<{ id: string; label: string }>;
+  allLabel: string;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400"
+      >
+        {label}
+      </label>
+
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-apc-primary"
+      >
+        <option value="">{allLabel}</option>
+
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
-/*
- * ============================================================
- * POSITION
- * ============================================================
- */
-
-function formatPosition(position: OrganizationalPosition) {
-  const labels: Record<OrganizationalPosition, string> = {
-    campaign_member: "Campaign Member",
-    ward_coordinator: "Ward Coordinator",
-    lga_coordinator: "LGA Coordinator",
-    zone_coordinator: "Zone Coordinator",
-    state_coordinator: "State Coordinator",
-    campaign_manager: "Campaign Manager",
-    council_chairman: "Council Chairman",
-  };
-
-  return labels[position];
-}
-
-/*
- * ============================================================
- * MEMBERSHIP
- * ============================================================
- */
-
-function formatMembership(membership: string) {
-  return membership
-    .replace("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-/*
- * ============================================================
+/* ============================================================
  * ACCESS ROLE
- * ============================================================
- */
+ * ============================================================ */
 
 function formatRole(role: string) {
   return role
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-

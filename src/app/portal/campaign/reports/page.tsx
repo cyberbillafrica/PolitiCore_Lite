@@ -1,7 +1,26 @@
 "use client";
 
+/*
+ * ============================================================
+ * CAMPAIGN REPORTS
+ * ============================================================
+ *
+ * A report is a submission against an assignment.
+ *
+ * Visibility is deliberately NARROW and does not cascade up:
+ *
+ *   submitter .............. their own submissions
+ *   assignment creator ..... every report against their work
+ *   admin .................. everything, with a scope filter
+ *
+ * A coordinator who did not create the assignment sees nothing here.
+ * That is the requirement, not a bug — reports are a private
+ * conversation between the person who assigned the work and the
+ * person who did it.
+ */
 
-import { notify } from "@/lib/notify";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import Link from "next/link";
 
 import {
@@ -9,129 +28,142 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
-  MapPin,
-  Plus,
   RefreshCw,
   Send,
   ShieldCheck,
-  TriangleAlert,
 } from "lucide-react";
 
-import { useEffect, useMemo, useState } from "react";
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ScopePicker from "@/components/campaign/ScopePicker";
 
-import { useAuth } from "@/contexts/AuthContext";
+import { useCampaignAuthority } from "@/hooks/useCampaignAuthority";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
+
+import { notify } from "@/lib/notify";
+import { resolveUserNames } from "@/lib/userNames";
+import {
+  describeScope,
+  resolveCampaignScope,
+  scopeCovers,
+} from "@/lib/campaign-scope";
 
 import {
-  createCampaignFieldReport,
+  closeAssignmentIfComplete,
+  getAssignmentsForUser,
+  getAssignmentsInScope,
+  markCompletionSubmitted,
+  type CampaignAssignment,
+} from "@/lib/firebase/campaignAssignments";
+
+import {
+  getAllCampaignReports,
   getMyCampaignReports,
-  getScopedCampaignReports,
-  type CampaignFieldReport,
-  type CampaignReportType,
+  getReportsReceived,
+  reviewCampaignReport,
+  submitCampaignReport,
+  type CampaignReport,
 } from "@/lib/firebase/campaignReports";
 
-import {
-  formatScopeType,
-  getPrimaryOrganizationalScope,
-  formatOrganizationalPosition,
-} from "@/lib/organization";
+import type { ScopeType } from "@/types";
 
-const REPORT_TYPES: {
-  value: CampaignReportType;
-  label: string;
-}[] = [
-  {
-    value: "activity",
-    label: "Campaign Activity",
-  },
-  {
-    value: "community",
-    label: "Community Engagement",
-  },
-  {
-    value: "mobilization",
-    label: "Mobilization",
-  },
-  {
-    value: "meeting",
-    label: "Meeting",
-  },
-  {
-    value: "field",
-    label: "General Field Report",
-  },
-  {
-    value: "community",
-    label: "Community Feedback",
-  },
-  {
-    value: "other",
-    label: "Other",
-  },
-];
+/* ============================================================
+ * HELPERS
+ * ============================================================ */
+
+function formatStatus(status: CampaignReport["status"]): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    default:
+      return "Submitted";
+  }
+}
+
+function statusClasses(status: CampaignReport["status"]): string {
+  switch (status) {
+    case "approved":
+      return "bg-green-100 text-green-700";
+    case "rejected":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-blue-100 text-blue-700";
+  }
+}
+
+function formatDate(value: unknown): string {
+  if (!value) return "—";
+
+  try {
+    const date =
+      typeof value === "object" && value !== null && "toDate" in value
+        ? (value as { toDate: () => Date }).toDate()
+        : new Date(String(value));
+
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+/* ============================================================
+ * PAGE
+ * ============================================================ */
 
 export default function CampaignReportsPage() {
-  const { user, profile, assignments, accessLoading, hasPermission } =
-    useAuth();
+  const {
+    profile,
+    loading: authorityLoading,
+    isAdmin,
+    authority,
+    scope,
+  } = useCampaignAuthority();
 
-  const [myReports, setMyReports] = useState<CampaignFieldReport[]>([]);
+  const { lgas } = useElectoralLookup();
 
-  const [scopedReports, setScopedReports] = useState<CampaignFieldReport[]>([]);
+  const uid = profile?.id ?? "";
+
+  const [myReports, setMyReports] = useState<CampaignReport[]>([]);
+  const [receivedReports, setReceivedReports] = useState<CampaignReport[]>([]);
+  const [adminReports, setAdminReports] = useState<CampaignReport[]>([]);
+
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+
+  const [assignments, setAssignments] = useState<CampaignAssignment[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [scopeLoading, setScopeLoading] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyReportId, setBusyReportId] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [formError, setFormError] = useState("");
+  const [formAssignmentId, setFormAssignmentId] = useState("");
+  const [formTitle, setFormTitle] = useState("");
+  const [formContent, setFormContent] = useState("");
 
-  const [form, setForm] = useState({
-    report_type: "field" as CampaignReportType,
-    title: "",
-    description: "",
-    location: "",
-    participants: "",
-    issues: "",
-    community_feedback: "",
-    requests: "",
-    follow_up_required: false,
-    evidence_url: "",
-  });
+  const [adminFilter, setAdminFilter] = useState<{
+    level: ScopeType;
+    scope_id: string;
+  } | null>(null);
 
-  /*
-   * ============================================================
-   * ORGANIZATIONAL SCOPE
-   * ============================================================
-   */
-
-  const primaryScope = getPrimaryOrganizationalScope(assignments);
-
-  const primaryAssignment = primaryScope.assignment;
-
-  /*
-   * ============================================================
-   * PERMISSIONS
-   * ============================================================
-   */
-
-  const canSubmit = hasPermission("submit_field_report");
-
-  const canReview = hasPermission("review_field_report");
-
-  /*
-   * ============================================================
+  /* ------------------------------------------------------------
    * LOAD
-   * ============================================================
-   */
+   * ------------------------------------------------------------ */
 
-  async function loadReports() {
-    if (!user?.uid || !profile) {
+  const load = useCallback(async () => {
+    if (!uid) {
       setMyReports([]);
-      setScopedReports([]);
+      setReceivedReports([]);
+      setAdminReports([]);
+      setAssignments([]);
       setLoading(false);
       return;
     }
@@ -139,197 +171,249 @@ export default function CampaignReportsPage() {
     try {
       setLoading(true);
 
-      /*
-       * Every reporting user can see reports they personally
-       * submitted.
-       */
-
-      const mine = await getMyCampaignReports(user.uid);
+      const [mine, received] = await Promise.all([
+        getMyCampaignReports(uid),
+        getReportsReceived(uid),
+      ]);
 
       setMyReports(mine);
+      setReceivedReports(received);
 
-      /*
-       * Coordinators with a recognized organizational scope
-       * can additionally load reports for that scope.
-       */
+      /* Admin: universal read, optionally narrowed to one scope. */
+      if (isAdmin) {
+        let filter:
+          | { level: ScopeType; wardIds: string[]; pollingUnitIds: string[] }
+          | undefined;
 
-      if (canReview && primaryAssignment) {
-        setScopeLoading(true);
-
-        try {
-          const scoped = await getScopedCampaignReports(
-            primaryAssignment.scope_type,
-            primaryAssignment.scope_id,
+        if (adminFilter) {
+          const resolved = await resolveCampaignScope(
+            adminFilter.level,
+            adminFilter.scope_id,
+            lgas,
           );
 
-          setScopedReports(scoped);
-        } finally {
-          setScopeLoading(false);
+          if (resolved) {
+            filter = {
+              level: adminFilter.level,
+              wardIds:
+                adminFilter.level === "polling_unit" ? [] : resolved.wardIds,
+              pollingUnitIds: resolved.pollingUnitIds,
+            };
+          }
         }
-      } else {
-        setScopedReports([]);
-      }
-    } catch (err) {
-      console.error("Failed to load campaign reports:", err);
 
-      notify.error("Unable to load campaign field reports.");
+        setAdminReports(await getAllCampaignReports(filter));
+      } else {
+        setAdminReports([]);
+      }
+
+      /*
+       * Assignments that target the caller — the only assignments a
+       * report may be submitted against.
+       */
+      const [direct, inScope] = await Promise.all([
+        getAssignmentsForUser(uid),
+        scope
+          ? getAssignmentsInScope(
+              { level: scope.level, scopeId: scope.scope_id },
+              scope.wardIds,
+              lgas,
+            )
+          : Promise.resolve<CampaignAssignment[]>([]),
+      ]);
+
+      const byId = new Map<string, CampaignAssignment>();
+      for (const item of [...direct, ...inScope]) byId.set(item.id, item);
+
+      const targeted = Array.from(byId.values()).filter((item) => {
+        if (item.status !== "open") return false;
+        if (item.assigned_to_user === uid) return true;
+
+        if (!item.assigned_to_scope || !scope) return false;
+
+        return scopeCovers(
+          {
+            level: item.assigned_to_scope.level,
+            scopeId: item.assigned_to_scope.scope_id,
+          },
+          { level: scope.level, scopeId: scope.scope_id },
+          lgas,
+        );
+      });
+
+      setAssignments(targeted);
+
+      /* Display names are resolved live, never denormalised. */
+      const resolvedNames = await resolveUserNames([
+        ...mine.map((report) => report.submitted_by),
+        ...received.map((report) => report.submitted_by),
+        ...received.map((report) => report.reviewed_by ?? null),
+      ]);
+
+      setNames(resolvedNames);
+    } catch (error) {
+      console.error("Failed to load campaign reports:", error);
+      notify.error("Unable to load campaign reports.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  }, [uid, isAdmin, adminFilter, scope, lgas]);
 
   useEffect(() => {
-    if (accessLoading) {
-      return;
-    }
+    if (authorityLoading) return;
+    void load();
+  }, [authorityLoading, load]);
 
-    loadReports();
-  }, [
-    accessLoading,
-    user?.uid,
-    profile,
-    primaryAssignment?.id,
-    canReview,
-  ]);
-
-  /*
-   * ============================================================
+  /* ------------------------------------------------------------
    * COUNTS
-   * ============================================================
-   */
+   * ------------------------------------------------------------ */
 
   const counts = useMemo(
     () => ({
-      total: myReports.length,
-
-      submitted: myReports.filter((report) => report.status === "submitted")
-        .length,
-
-      review: myReports.filter((report) => report.status === "under_review")
-        .length,
-
-      accepted: myReports.filter((report) => report.status === "accepted")
-        .length,
-
-      returned: myReports.filter((report) => report.status === "returned")
-        .length,
+      mine: myReports.length,
+      submitted: myReports.filter((item) => item.status === "submitted").length,
+      approved: myReports.filter((item) => item.status === "approved").length,
+      rejected: myReports.filter((item) => item.status === "rejected").length,
+      received: receivedReports.length,
     }),
-    [myReports],
+    [myReports, receivedReports],
   );
 
-  /*
-   * ============================================================
-   * SUBMIT REPORT
-   * ============================================================
-   */
+  /* ------------------------------------------------------------
+   * SUBMIT
+   * ------------------------------------------------------------ */
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!user?.uid || !profile) {
-      return;
-    }
+    if (!uid) return;
 
-    if (!primaryAssignment) {
+    const level = authority.level;
+    const scopedId = authority.scopeId;
+
+    if (!level || !scopedId) {
       notify.error(
-        "You need an active campaign organizational assignment before submitting a scoped field report.",
+        "Your campaign location is not set, so a report cannot be scoped.",
       );
-
       return;
     }
 
-    if (!form.title.trim()) {
-      notify.error("Please enter a report title.");
+    const assignment = assignments.find(
+      (item) => item.id === formAssignmentId,
+    );
+
+    if (!assignment) {
+      notify.error("Select the assignment this report is completing.");
       return;
     }
 
-    if (!form.description.trim()) {
-      notify.error("Please describe what happened in the field.");
-
+    if (!formTitle.trim() || !formContent.trim()) {
+      notify.error("A report needs a title and its content.");
       return;
     }
 
     try {
       setSubmitting(true);
-      await createCampaignFieldReport({
-        submitted_by: user.uid,
 
-        report_type: form.report_type,
-
-        title: form.title.trim(),
-
-        description: form.description.trim(),
-
-        scope_type: primaryAssignment.scope_type,
-
-        scope_id: primaryAssignment.scope_id,
-
-        location: form.location.trim() || null,
-
-        participants: form.participants ? Number(form.participants) : null,
-
-        issues: form.issues.trim() || null,
-
-        community_feedback: form.community_feedback.trim() || null,
-
-        requests: form.requests.trim() || null,
-
-        follow_up_required: form.follow_up_required,
-
-        evidence_url: form.evidence_url.trim() || null,
+      const reportId = await submitCampaignReport({
+        assignment_id: assignment.id,
+        assignment_creator_id: assignment.created_by,
+        submitted_by: uid,
+        title: formTitle.trim(),
+        content: formContent.trim(),
+        scope_level: level,
+        scope_id: scopedId,
+        scope_snapshot: {
+          level,
+          scope_id: scopedId,
+          lga_id: profile?.lga_id ?? null,
+          ward_id: profile?.ward_id ?? null,
+          polling_unit_id: profile?.polling_unit_id ?? null,
+        },
       });
 
-      setForm({
-        report_type: "field",
-        title: "",
-        description: "",
-        location: "",
-        participants: "",
-        issues: "",
-        community_feedback: "",
-        requests: "",
-        follow_up_required: false,
-        evidence_url: "",
-      });
+      if (assignment.completion_mode === "per_person") {
+        await markCompletionSubmitted(assignment.id, uid, reportId);
+      }
 
+      notify.success("Report submitted for review.");
+
+      setFormAssignmentId("");
+      setFormTitle("");
+      setFormContent("");
       setShowForm(false);
 
-      await loadReports();
-    } catch (err) {
-      console.error("Failed to submit campaign report:", err);
-
+      await load();
+    } catch (error) {
+      console.error("Failed to submit campaign report:", error);
       notify.error("Unable to submit the report. Please try again.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  /*
-   * ============================================================
+  /* ------------------------------------------------------------
+   * REVIEW
+   * ------------------------------------------------------------ */
+
+  async function handleReview(
+    report: CampaignReport,
+    status: "approved" | "rejected",
+    notes: string,
+  ): Promise<void> {
+    if (!uid) return;
+
+    try {
+      setBusyReportId(report.id);
+
+      await reviewCampaignReport({
+        reportId: report.id,
+        status,
+        reviewedBy: uid,
+        notes,
+      });
+
+      if (status === "approved" && report.assignment_id) {
+        await closeAssignmentIfComplete(report.assignment_id);
+      }
+
+      notify.success(
+        status === "approved" ? "Report approved." : "Report rejected.",
+      );
+
+      await load();
+    } catch (error) {
+      console.error("Failed to review campaign report:", error);
+      notify.error("Unable to review this report.");
+    } finally {
+      setBusyReportId(null);
+    }
+  }
+
+  /* ------------------------------------------------------------
    * GUARDS
-   * ============================================================
-   */
+   * ------------------------------------------------------------ */
 
-  if (!profile) {
-    return null;
+  if (!profile) return null;
+
+  if (authorityLoading || loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center gap-3">
+        <Loader2 className="h-5 w-5 animate-spin text-apc-primary" />
+        <p className="text-sm text-gray-500">Loading campaign reports…</p>
+      </div>
+    );
   }
 
-  if (accessLoading || loading) {
-    return <ReportsLoading />;
-  }
+  const canSubmit = assignments.length > 0;
 
-  /*
-   * ============================================================
-   * PAGE
-   * ============================================================
-   */
+  /* ------------------------------------------------------------
+   * RENDER
+   * ------------------------------------------------------------ */
 
   return (
     <div className="space-y-6 pb-10">
-      {/* ======================================================
-          HEADER
-          ====================================================== */}
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Link
@@ -341,26 +425,32 @@ export default function CampaignReportsPage() {
           </Link>
 
           <p className="text-sm font-semibold text-apc-primary">
-            Campaign Council
+            Campaign Operations
           </p>
 
           <h1 className="mt-1 text-2xl font-bold text-gray-900 sm:text-3xl">
-            Field Reports
+            Reports
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            Report what is happening on the ground and keep your campaign
-            organization informed.
+            Reports are completed against an assignment. Only you and the person
+            who created that assignment can read what you submit.
           </p>
         </div>
 
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={loadReports}
-            className="inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+            onClick={() => {
+              setRefreshing(true);
+              void load();
+            }}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw
+              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
 
@@ -370,19 +460,17 @@ export default function CampaignReportsPage() {
               onClick={() => setShowForm((value) => !value)}
               className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-apc-dark"
             >
-              <Plus className="h-4 w-4" />
+              <Send className="h-4 w-4" />
               Submit Report
             </button>
           )}
         </div>
       </div>
 
-      {/* ======================================================
-          SCOPE
-          ====================================================== */}
+      {/* SCOPE */}
 
       <Card className="border-apc-primary/10">
-        <CardContent className="p-5">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-apc-primary/10 text-apc-primary">
               <ShieldCheck className="h-5 w-5" />
@@ -390,324 +478,294 @@ export default function CampaignReportsPage() {
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Report Scope
+                Reporting as
               </p>
 
               <p className="mt-1 font-semibold text-gray-900">
-                {primaryAssignment
-                  ? formatOrganizationalPosition(primaryAssignment.position)
-                  : "Campaign Member"}
+                {profile.full_name || "Member"}
               </p>
 
               <p className="mt-1 text-sm text-gray-500">
-                {primaryAssignment
-                  ? `${formatScopeType(
-                      primaryAssignment.scope_type,
-                    )} · ${primaryAssignment.scope_id}`
-                  : "No organizational scope assigned"}
+                {authority.level
+                  ? describeScope(authority.level, authority.scopeId, lgas)
+                  : "No campaign location set"}
               </p>
             </div>
+          </div>
+
+          <div className="rounded-xl bg-gray-50 px-5 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Assignments awaiting your report
+            </p>
+
+            <p className="mt-1 text-2xl font-bold text-gray-900">
+              {assignments.length}
+            </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* ======================================================
-          SUMMARY
-          ====================================================== */}
+      {/* SUMMARY */}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <ReportStat label="My Reports" value={counts.total} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="My reports" value={counts.mine} />
 
-        <ReportStat label="Submitted" value={counts.submitted} />
+        <StatCard label="Submitted" value={counts.submitted} />
 
-        <ReportStat label="Under Review" value={counts.review} />
+        <StatCard label="Approved" value={counts.approved} positive />
 
-        <ReportStat label="Accepted" value={counts.accepted} />
-
-        <ReportStat label="Returned" value={counts.returned} />
+        <StatCard label="Reports received" value={counts.received} />
       </div>
 
-      
-      {/* ======================================================
-          FORM
-          ====================================================== */}
+      {/* ADMIN FILTER */}
 
-      {showForm && canSubmit && (
+      {isAdmin && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Submit Field Report</CardTitle>
+            <CardTitle className="text-lg">Filter by scope</CardTitle>
 
             <p className="text-sm text-gray-500">
-              This report will be associated with your current organizational
-              scope.
+              Narrow the statewide list to a zone, LGA, ward or polling unit.
+            </p>
+          </CardHeader>
+
+          <CardContent className="max-w-md">
+            <ScopePicker
+              idPrefix="reports-filter"
+              label="Scope"
+              value={adminFilter}
+              onChange={setAdminFilter}
+              allowAll
+              allLabel="All reports"
+              hint="Reports are filtered by the reporter's location at submission time."
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* FORM */}
+
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Submit a report</CardTitle>
+
+            <p className="text-sm text-gray-500">
+              Choose the assignment this report completes. The assignment creator
+              is the only other person who will see it.
             </p>
           </CardHeader>
 
           <CardContent>
-            {!primaryAssignment ? (
-              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-                <div className="flex gap-3">
-                  <TriangleAlert className="h-5 w-5 shrink-0 text-yellow-600" />
-
-                  <div>
-                    <p className="font-semibold text-yellow-900">
-                      No organizational assignment
-                    </p>
-
-                    <p className="mt-1 text-sm text-yellow-800">
-                      An administrator must assign you to a campaign
-                      organizational area before you can submit a scoped report.
-                    </p>
-                  </div>
-                </div>
-              </div>
+            {assignments.length === 0 ? (
+              <EmptyBlock
+                title="No assignments to report against yet"
+                description="A report is submitted against an assignment. When someone assigns work to you or your area, it will appear here."
+              />
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid gap-5 md:grid-cols-2">
-                  <FormField label="Report Type">
-                    <select
-                      value={form.report_type}
-                      onChange={(event) =>
-                        setForm((previous) => ({
-                          ...previous,
-                          report_type: event.target.value as CampaignReportType,
-                        }))
-                      }
-                      className="w-full rounded-lg border px-4 py-3"
-                    >
-                      {REPORT_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
+                <div>
+                  <label
+                    htmlFor="report-assignment"
+                    className="mb-2 block text-sm font-medium text-gray-700"
+                  >
+                    Assignment
+                  </label>
 
-                  <FormField label="Report Title">
-                    <input
-                      required
-                      value={form.title}
-                      onChange={(event) =>
-                        setForm((previous) => ({
-                          ...previous,
-                          title: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-lg border px-4 py-3"
-                      placeholder="e.g. Ward meeting report"
-                    />
-                  </FormField>
+                  <select
+                    id="report-assignment"
+                    required
+                    value={formAssignmentId}
+                    onChange={(event) =>
+                      setFormAssignmentId(event.target.value)
+                    }
+                    className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-apc-primary"
+                  >
+                    <option value="">Select an assignment…</option>
+
+                    {assignments.map((assignment) => (
+                      <option key={assignment.id} value={assignment.id}>
+                        {assignment.title}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <FormField label="What happened?">
+                <div>
+                  <label
+                    htmlFor="report-title"
+                    className="mb-2 block text-sm font-medium text-gray-700"
+                  >
+                    Title
+                  </label>
+
+                  <input
+                    id="report-title"
+                    required
+                    value={formTitle}
+                    onChange={(event) => setFormTitle(event.target.value)}
+                    placeholder="e.g. Ward meeting report"
+                    className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-apc-primary"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="report-content"
+                    className="mb-2 block text-sm font-medium text-gray-700"
+                  >
+                    What was done?
+                  </label>
+
                   <textarea
+                    id="report-content"
                     required
                     rows={5}
-                    value={form.description}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        description: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-4 py-3"
-                    placeholder="Describe the activity, engagement or field situation."
+                    value={formContent}
+                    onChange={(event) => setFormContent(event.target.value)}
+                    placeholder="Describe the work completed against this assignment."
+                    className="w-full rounded-lg border px-4 py-3 text-sm outline-none focus:border-apc-primary"
                   />
-                </FormField>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <FormField label="Location">
-                    <input
-                      value={form.location}
-                      onChange={(event) =>
-                        setForm((previous) => ({
-                          ...previous,
-                          location: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-lg border px-4 py-3"
-                      placeholder="Venue / community"
-                    />
-                  </FormField>
-
-                  <FormField label="Participants">
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.participants}
-                      onChange={(event) =>
-                        setForm((previous) => ({
-                          ...previous,
-                          participants: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-lg border px-4 py-3"
-                      placeholder="0"
-                    />
-                  </FormField>
                 </div>
 
-                <FormField label="Community Feedback">
-                  <textarea
-                    rows={3}
-                    value={form.community_feedback}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        community_feedback: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-4 py-3"
-                    placeholder="What did members of the community say?"
-                  />
-                </FormField>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(false)}
+                    disabled={submitting}
+                    className="rounded-lg border px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
 
-                <FormField label="Issues Encountered">
-                  <textarea
-                    rows={3}
-                    value={form.issues}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        issues: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-4 py-3"
-                    placeholder="Problems, obstacles or concerns."
-                  />
-                </FormField>
-
-                <FormField label="Requests / Follow-up">
-                  <textarea
-                    rows={3}
-                    value={form.requests}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        requests: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-4 py-3"
-                    placeholder="What action or support is required?"
-                  />
-                </FormField>
-
-                <FormField label="Supporting Evidence URL">
-                  <input
-                    type="url"
-                    value={form.evidence_url}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        evidence_url: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border px-4 py-3"
-                    placeholder="https://..."
-                  />
-                </FormField>
-
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.follow_up_required}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        follow_up_required: event.target.checked,
-                      }))
-                    }
-                    className="h-4 w-4"
-                  />
-
-                  <span className="text-sm font-medium text-gray-700">
-                    Follow-up is required
-                  </span>
-                </label>
-
-                
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-3 font-semibold text-white hover:bg-apc-dark disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-
-                  {submitting ? "Submitting..." : "Submit Field Report"}
-                </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    Submit report
+                  </button>
+                </div>
               </form>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* ======================================================
-          MY REPORTS
-          ====================================================== */}
+      {/* MY SUBMISSIONS */}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">My Reports</CardTitle>
+          <CardTitle className="text-lg">My submissions</CardTitle>
 
           <p className="text-sm text-gray-500">
-            Reports you have submitted from your campaign organizational area.
+            Reports you have submitted, and the creator&apos;s decision.
           </p>
         </CardHeader>
 
         <CardContent>
           {myReports.length === 0 ? (
-            <EmptyReports
-              title="No reports submitted"
-              description="Your submitted field reports will appear here."
+            <EmptyBlock
+              title="No reports yet"
+              description="Once you submit a report against an assignment it will appear here with its review status."
             />
           ) : (
             <div className="space-y-3">
               {myReports.map((report) => (
-                <ReportRow key={report.id} report={report} />
+                <ReportRow
+                  key={report.id}
+                  report={report}
+                  submitter={names.get(report.submitted_by) ?? "You"}
+                  scopeText={describeScope(
+                    report.scope_level,
+                    report.scope_id,
+                    lgas,
+                  )}
+                  canReview={false}
+                  busy={false}
+                  onReview={handleReview}
+                />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ======================================================
-          SCOPED REPORTS
-          ====================================================== */}
+      {/* REPORTS RECEIVED */}
 
-      {canReview && primaryAssignment && (
+      {receivedReports.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">
-                  Reports Within My Area
-                </CardTitle>
+            <CardTitle className="text-lg">Reports received</CardTitle>
 
-                <p className="text-sm text-gray-500">
-                  Field reports submitted within your organizational authority.
-                </p>
-              </div>
-
-              {scopeLoading && (
-                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
-              )}
-            </div>
+            <p className="text-sm text-gray-500">
+              Submissions against assignments you created.
+            </p>
           </CardHeader>
 
           <CardContent>
-            {scopedReports.length === 0 ? (
-              <EmptyReports
-                title="No area reports"
-                description="There are currently no field reports recorded within this scope."
+            <div className="space-y-3">
+              {receivedReports.map((report) => (
+                <ReportRow
+                  key={report.id}
+                  report={report}
+                  submitter={names.get(report.submitted_by) ?? "Unknown member"}
+                  scopeText={describeScope(
+                    report.scope_level,
+                    report.scope_id,
+                    lgas,
+                  )}
+                  canReview
+                  busy={busyReportId === report.id}
+                  onReview={handleReview}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ADMIN — ALL REPORTS */}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">All reports</CardTitle>
+
+            <p className="text-sm text-gray-500">
+              Universal read. {adminFilter ? "Filtered to the selected scope." : "Showing every report in the state."}
+            </p>
+          </CardHeader>
+
+          <CardContent>
+            {adminReports.length === 0 ? (
+              <EmptyBlock
+                title="No reports yet"
+                description="No campaign reports have been submitted for this view."
               />
             ) : (
               <div className="space-y-3">
-                {scopedReports.map((report) => (
-                  <ReportRow key={report.id} report={report} showSubmitter />
+                {adminReports.map((report) => (
+                  <ReportRow
+                    key={report.id}
+                    report={report}
+                    submitter={
+                      names.get(report.submitted_by) ?? "Unknown member"
+                    }
+                    scopeText={describeScope(
+                      report.scope_level,
+                      report.scope_id,
+                      lgas,
+                    )}
+                    canReview
+                    busy={busyReportId === report.id}
+                    onReview={handleReview}
+                  />
                 ))}
               </div>
             )}
@@ -718,156 +776,165 @@ export default function CampaignReportsPage() {
   );
 }
 
-/*
- * ============================================================
- * STAT
- * ============================================================
- */
+/* ============================================================
+ * REPORT ROW
+ * ============================================================ */
 
-function ReportStat({ label, value }: { label: string; value: number }) {
+function ReportRow({
+  report,
+  submitter,
+  scopeText,
+  canReview,
+  busy,
+  onReview,
+}: {
+  report: CampaignReport;
+  submitter: string;
+  scopeText: string;
+  canReview: boolean;
+  busy: boolean;
+  onReview: (
+    report: CampaignReport,
+    status: "approved" | "rejected",
+    notes: string,
+  ) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  const reviewable = canReview && report.status === "submitted";
+
+  return (
+    <div className="rounded-xl border p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-gray-900">{report.title}</p>
+
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(
+                report.status,
+              )}`}
+            >
+              {formatStatus(report.status)}
+            </span>
+          </div>
+
+          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-600">
+            {report.content}
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+            <span>{submitter}</span>
+            <span>{formatDate(report.submitted_at)}</span>
+            <span>{scopeText}</span>
+            {report.reviewed_at ? (
+              <span>Reviewed {formatDate(report.reviewed_at)}</span>
+            ) : null}
+          </div>
+
+          {report.review_notes && (
+            <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              <span className="font-semibold">Review notes: </span>
+              {report.review_notes}
+            </p>
+          )}
+        </div>
+
+        {reviewable && (
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            {open ? "Close" : "Review"}
+          </button>
+        )}
+      </div>
+
+      {reviewable && open && (
+        <div className="mt-4 space-y-3 rounded-xl border bg-gray-50 p-4">
+          <div>
+            <label
+              htmlFor={`notes-${report.id}`}
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500"
+            >
+              Review notes (optional)
+            </label>
+
+            <textarea
+              id={`notes-${report.id}`}
+              rows={2}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Explain the decision for the submitter."
+              className="w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-apc-primary"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onReview(report, "approved", notes)}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              Approve
+            </button>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onReview(report, "rejected", notes)}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+ * SMALL COMPONENTS
+ * ============================================================ */
+
+function StatCard({
+  label,
+  value,
+  positive = false,
+}: {
+  label: string;
+  value: number;
+  positive?: boolean;
+}) {
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardContent className="p-5">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
           {label}
         </p>
 
-        <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
+        <p
+          className={`mt-2 text-2xl font-bold ${
+            positive ? "text-green-700" : "text-gray-900"
+          }`}
+        >
+          {value}
+        </p>
       </CardContent>
     </Card>
   );
 }
 
-/*
- * ============================================================
- * REPORT ROW
- * ============================================================
- */
-
-function ReportRow({
-  report,
-  showSubmitter = false,
-}: {
-  report: CampaignFieldReport;
-  showSubmitter?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border bg-white p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <FileText className="h-4 w-4 text-apc-primary" />
-
-            <h3 className="font-semibold text-gray-900">{report.title}</h3>
-
-            <ReportStatus status={report.status} />
-          </div>
-
-          <p className="mt-2 line-clamp-2 text-sm text-gray-500">
-            {report.description}
-          </p>
-
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
-            <span className="rounded-lg bg-gray-100 px-2.5 py-1">
-              {formatScopeType(report.scope_type as never)}: {report.scope_id}
-            </span>
-
-            {report.location && (
-              <span className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1">
-                <MapPin className="h-3 w-3" />
-                {report.location}
-              </span>
-            )}
-
-            {showSubmitter && (
-              <span className="rounded-lg bg-gray-100 px-2.5 py-1">
-                Submitted by: {report.submitted_by}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <span className="shrink-0 text-xs font-medium text-gray-400">
-          {formatReportType(report.report_type)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/*
- * ============================================================
- * STATUS
- * ============================================================
- */
-
-function ReportStatus({ status }: { status: CampaignFieldReport["status"] }) {
-  const styles = {
-    submitted: "bg-blue-100 text-blue-700",
-    under_review: "bg-yellow-100 text-yellow-700",
-    accepted: "bg-green-100 text-green-700",
-    returned: "bg-red-100 text-red-700",
-  };
-
-  const labels = {
-    submitted: "Submitted",
-    under_review: "Under Review",
-    accepted: "Accepted",
-    returned: "Returned",
-  };
-
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles[status]}`}
-    >
-      {labels[status]}
-    </span>
-  );
-}
-
-/*
- * ============================================================
- * TYPE LABEL
- * ============================================================
- */
-
-function formatReportType(type: CampaignReportType) {
-  return type
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-/*
- * ============================================================
- * FORM FIELD
- * ============================================================
- */
-
-function FormField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-gray-700">
-        {label}
-      </label>
-
-      {children}
-    </div>
-  );
-}
-
-/*
- * ============================================================
- * EMPTY
- * ============================================================
- */
-
-function EmptyReports({
+function EmptyBlock({
   title,
   description,
 }: {
@@ -876,39 +943,13 @@ function EmptyReports({
 }) {
   return (
     <div className="rounded-xl border border-dashed p-8 text-center">
-      <CheckCircle2 className="mx-auto h-8 w-8 text-gray-300" />
+      <FileText className="mx-auto h-8 w-8 text-gray-300" />
 
       <p className="mt-3 font-semibold text-gray-900">{title}</p>
 
-      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+      <p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-gray-500">
         {description}
       </p>
     </div>
   );
 }
-
-/*
- * ============================================================
- * LOADING
- * ============================================================
- */
-
-function ReportsLoading() {
-  return (
-    <div className="space-y-6 pb-10">
-      <div className="h-24 animate-pulse rounded-2xl bg-gray-100" />
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-20 animate-pulse rounded-xl bg-gray-100"
-          />
-        ))}
-      </div>
-
-      <div className="h-72 animate-pulse rounded-xl bg-gray-100" />
-    </div>
-  );
-}
-

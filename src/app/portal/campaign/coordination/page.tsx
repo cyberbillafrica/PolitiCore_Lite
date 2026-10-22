@@ -25,6 +25,8 @@ import { collection, getDocs, orderBy, query } from "firebase/firestore";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import ScopePicker from "@/components/campaign/ScopePicker";
+
 import { useAuth } from "@/contexts/AuthContext";
 
 import { db } from "@/lib/firebase/config";
@@ -99,21 +101,13 @@ import type {
 
 const POSITIONS: OrganizationalPosition[] = [
   "campaign_member",
+  "pu_coordinator",
   "ward_coordinator",
   "lga_coordinator",
   "zone_coordinator",
   "state_coordinator",
   "campaign_manager",
   "council_chairman",
-];
-
-const SCOPE_TYPES: ScopeType[] = [
-  "polling_unit",
-  "ward",
-  "lga",
-  "senatorial_zone",
-  "state",
-  "campaign",
 ];
 
 /*
@@ -1058,22 +1052,37 @@ export default function CampaignCoordinationPage() {
               }))}
             />
 
-            <SelectField
-              label="Scope Type"
-              value={selectedScopeType}
-              onChange={(value) => setSelectedScopeType(value as ScopeType)}
-              options={SCOPE_TYPES.map((scope) => ({
-                value: scope,
-                label: scopeLabel(scope),
-              }))}
-            />
+            <div className="md:col-span-2">
+              <ScopePicker
+                idPrefix="assignment-scope"
+                label="Organizational Scope"
+                levels={[
+                  "state",
+                  "senatorial_zone",
+                  "lga",
+                  "ward",
+                  "polling_unit",
+                ]}
+                value={
+                  selectedScopeId
+                    ? {
+                        level: selectedScopeType,
+                        scope_id: selectedScopeId,
+                      }
+                    : null
+                }
+                onChange={(next) => {
+                  if (!next) {
+                    setSelectedScopeId("");
+                    return;
+                  }
 
-            <TextField
-              label="Scope ID"
-              value={selectedScopeId}
-              onChange={setSelectedScopeId}
-              placeholder="e.g. ward-01 or lga-name"
-            />
+                  setSelectedScopeType(next.level);
+                  setSelectedScopeId(next.scope_id);
+                }}
+                hint="Pick the level, narrow it, then choose the exact area. A coordinator covers everything below their scope."
+              />
+            </div>
           </div>
 
           <div className="mt-4 flex justify-end gap-3">
@@ -1282,28 +1291,33 @@ export default function CampaignCoordinationPage() {
               }))}
             />
 
-            <SelectField
-              label="Scope"
-              value={grantScopeType}
-              onChange={(value) => setGrantScopeType(value as ScopeType | "")}
-              options={[
-                {
-                  value: "",
-                  label: "Global",
-                },
-                ...SCOPE_TYPES.map((scope) => ({
-                  value: scope,
-                  label: scopeLabel(scope),
-                })),
-              ]}
-            />
-
-            <TextField
-              label="Scope ID"
-              value={grantScopeId}
-              onChange={setGrantScopeId}
-              placeholder="Optional scope ID"
-            />
+            <div className="md:col-span-2">
+              <ScopePicker
+                idPrefix="grant-scope"
+                label="Scope"
+                allowAll
+                allLabel="Global (no scope)"
+                levels={[
+                  "state",
+                  "senatorial_zone",
+                  "lga",
+                  "ward",
+                  "polling_unit",
+                ]}
+                value={
+                  grantScopeType && grantScopeId
+                    ? {
+                        level: grantScopeType as ScopeType,
+                        scope_id: grantScopeId,
+                      }
+                    : null
+                }
+                onChange={(next) => {
+                  setGrantScopeType(next ? next.level : "");
+                  setGrantScopeId(next ? next.scope_id : "");
+                }}
+              />
+            </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -1427,30 +1441,37 @@ export default function CampaignCoordinationPage() {
                           }))}
                         />
 
-                        <SelectField
-                          label="Scope"
-                          value={editingGrantScopeType}
-                          onChange={(value) =>
-                            setEditingGrantScopeType(value as ScopeType | "")
-                          }
-                          options={[
-                            {
-                              value: "",
-                              label: "Global",
-                            },
-                            ...SCOPE_TYPES.map((scope) => ({
-                              value: scope,
-                              label: scopeLabel(scope),
-                            })),
-                          ]}
-                        />
-
-                        <TextField
-                          label="Scope ID"
-                          value={editingGrantScopeId}
-                          onChange={setEditingGrantScopeId}
-                          placeholder="Optional scope ID"
-                        />
+                        <div className="md:col-span-2">
+                          <ScopePicker
+                            idPrefix={`edit-grant-scope-${grant.id}`}
+                            label="Scope"
+                            allowAll
+                            allLabel="Global (no scope)"
+                            levels={[
+                              "state",
+                              "senatorial_zone",
+                              "lga",
+                              "ward",
+                              "polling_unit",
+                            ]}
+                            value={
+                              editingGrantScopeType && editingGrantScopeId
+                                ? {
+                                    level: editingGrantScopeType as ScopeType,
+                                    scope_id: editingGrantScopeId,
+                                  }
+                                : null
+                            }
+                            onChange={(next) => {
+                              setEditingGrantScopeType(
+                                next ? next.level : "",
+                              );
+                              setEditingGrantScopeId(
+                                next ? next.scope_id : "",
+                              );
+                            }}
+                          />
+                        </div>
 
                         <div>
                           <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -1591,39 +1612,6 @@ function SelectField({
 
         <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       </div>
-    </div>
-  );
-}
-
-/*
- * ============================================================
- * TEXT FIELD
- * ============================================================
- */
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-gray-700">
-        {label}
-      </label>
-
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
-      />
     </div>
   );
 }

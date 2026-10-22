@@ -1,3 +1,5 @@
+import { lookupConstituencyLgaIds } from "@/data/constituencies";
+
 import type {
   LGA,
   OrganizationalAssignment,
@@ -64,6 +66,7 @@ export function getCampaignAssignments(
   return getActiveAssignments(assignments).filter(
     (assignment) =>
       assignment.position === "campaign_member" ||
+      assignment.position === "pu_coordinator" ||
       assignment.position === "ward_coordinator" ||
       assignment.position === "lga_coordinator" ||
       assignment.position === "zone_coordinator" ||
@@ -120,15 +123,68 @@ export function isScopeDescendant(
     return true;
   }
 
-  // 2. Senatorial zone covers its own zone and everything below it.
+  const lgasList = lgasData ?? [];
+
+  /*
+   * 2. Senatorial zone covers its own zone and the LGAs inside it.
+   *
+   * The zone -> LGA composition comes from the constituency
+   * reference (the same source the election engine uses when a
+   * contest carries no explicit `lga_ids`). Returning `true` for
+   * every target type made a zone coordinator cover the whole state;
+   * an unresolvable zone id still falls back to the old permissive
+   * behaviour rather than hiding everything.
+   */
   if (sourceType === "senatorial_zone") {
     if (targetType === "senatorial_zone") {
       return sourceId === targetId;
     }
-    return true;
-  }
 
-  const lgasList = lgasData ?? [];
+    if (!sourceId) return false;
+
+    const zoneLgaIds = lookupConstituencyLgaIds({
+      scope_type: "senatorial_zone",
+      scope_id: sourceId,
+    });
+
+    if (zoneLgaIds.length === 0) return true;
+
+    if (!targetId) return false;
+
+    const zoneIds = zoneLgaIds.map((id) => id.toLowerCase());
+
+    if (targetType === "lga") {
+      return zoneIds.includes(targetId.toLowerCase());
+    }
+
+    if (targetType === "ward") {
+      if (lgasList.length === 0) {
+        return zoneIds.some((id) => targetId.toLowerCase().startsWith(id));
+      }
+
+      return lgasList.some(
+        (lga) =>
+          zoneIds.includes(lga.id.toLowerCase()) &&
+          lga.wards.some((ward) => ward.id === targetId),
+      );
+    }
+
+    if (targetType === "polling_unit") {
+      if (lgasList.length === 0) {
+        return zoneIds.some((id) => targetId.toLowerCase().startsWith(id));
+      }
+
+      return lgasList.some(
+        (lga) =>
+          zoneIds.includes(lga.id.toLowerCase()) &&
+          lga.wards.some((ward) =>
+            ward.pollingUnits.some((unit) => unit.id === targetId),
+          ),
+      );
+    }
+
+    return false;
+  }
 
   // 3. LGA covers its own LGAs, wards and polling units.
   if (sourceType === "lga") {
@@ -284,19 +340,48 @@ function positionHasPermission(
 
     switch (assignment.position) {
       case "campaign_member":
+        /*
+         * A plain member participates — they do not create campaign
+         * work. `create_activity` and `assign_task` used to sit here,
+         * which let every member create activities and assignments
+         * regardless of position. Creating starts at polling-unit
+         * coordinator and above.
+         */
         return [
           "view_dashboard",
           "view_area",
+          "view_members",
           "view_assignments",
-          "assign_task",
-
           "view_activities",
-          "create_activity",
-
           "submit_field_report",
           "report_issue",
           "view_notices",
           "view_documents",
+          "upload_election_result",
+          "submit_election_pu_report",
+          "submit_election_incident",
+        ].includes(permission);
+
+      case "pu_coordinator":
+        return [
+          "view_dashboard",
+          "view_area",
+          "view_members",
+          "view_member_contacts",
+          "view_assignments",
+          "create_assignment",
+          "assign_task",
+          "review_assignment",
+          "view_activities",
+          "create_activity",
+          "manage_activity",
+          "submit_field_report",
+          "review_field_report",
+          "report_issue",
+          "manage_issue",
+          "view_notices",
+          "view_documents",
+          "view_analytics",
           "upload_election_result",
           "submit_election_pu_report",
           "submit_election_incident",

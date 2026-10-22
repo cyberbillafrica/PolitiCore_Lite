@@ -1,12 +1,27 @@
 "use client";
 
+/*
+ * ============================================================
+ * CAMPAIGN ISSUES
+ * ============================================================
+ *
+ * Any member may raise an issue. Issues cascade UP: the raiser sees
+ * their own, every coordinator whose scope covers the issue sees it,
+ * and admin sees everything.
+ *
+ * The viewer with the smallest covering scope is the natural
+ * responder, but any coordinator at or above the issue may
+ * acknowledge or resolve it (admin included).
+ */
 
-import { notify } from "@/lib/notify";
 import Link from "next/link";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
-  AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
   Loader2,
   MapPin,
   Plus,
@@ -15,182 +30,261 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
-import { useEffect, useMemo, useState } from "react";
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { useAuth } from "@/contexts/AuthContext";
+import ScopePicker, {
+  type ScopeValue,
+} from "@/components/campaign/ScopePicker";
+
+import { useCampaignAuthority } from "@/hooks/useCampaignAuthority";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 import {
-  createCampaignIssue,
-  getScopedCampaignIssues,
-  type CampaignIssue,
-  type CampaignIssuePriority,
-  type CampaignIssueType,
+  describeScope,
+  resolveCampaignScope,
+  type CampaignScope,
+} from "@/lib/campaign-scope";
+
+import {
+  acknowledgeCampaignIssue,
+  getIssuesInScope,
+  getMyCampaignIssues,
+  raiseCampaignIssue,
+  resolveCampaignIssue,
 } from "@/lib/firebase/campaignIssues";
 
-import {
-  formatScopeType,
-  getPrimaryOrganizationalScope,
-} from "@/lib/organization";
+import { notify } from "@/lib/notify";
+import { resolveUserNames } from "@/lib/userNames";
 
-import type { OrganizationalAssignment } from "@/types";
+import type { CampaignIssue, ScopeType } from "@/types";
+
+/* ============================================================
+ * HELPERS
+ * ============================================================ */
+
+function mergeIssues(
+  left: CampaignIssue[],
+  right: CampaignIssue[],
+): CampaignIssue[] {
+  const byId = new Map<string, CampaignIssue>();
+  for (const item of [...left, ...right]) byId.set(item.id, item);
+  return Array.from(byId.values()).sort((a, b) => {
+    const leftAt = a.raised_at ? String(a.raised_at) : "";
+    const rightAt = b.raised_at ? String(b.raised_at) : "";
+    return rightAt.localeCompare(leftAt);
+  });
+}
+
+const STATUS_LABELS: Record<CampaignIssue["status"], string> = {
+  open: "Open",
+  acknowledged: "Acknowledged",
+  resolved: "Resolved",
+};
+
+const STATUS_CLASSES: Record<CampaignIssue["status"], string> = {
+  open: "bg-amber-100 text-amber-800",
+  acknowledged: "bg-blue-100 text-blue-800",
+  resolved: "bg-green-100 text-green-800",
+};
+
+/* ============================================================
+ * PAGE
+ * ============================================================ */
 
 export default function CampaignIssuesPage() {
   const {
     profile,
-    assignments: authAssignments,
-    hasPermission,
-    accessLoading,
-  } = useAuth();
+    authority,
+    scope,
+    scopeLabel,
+    loading,
+    isAdmin,
+    isCoordinator,
+  } = useCampaignAuthority();
 
-  const assignments: OrganizationalAssignment[] = Array.isArray(authAssignments)
-    ? authAssignments
-    : [];
-
-  const activeAssignments = assignments.filter(
-    (assignment) => assignment.status === "active",
-  );
-
-  const primaryScope = getPrimaryOrganizationalScope(activeAssignments);
-
-  const assignment = primaryScope.assignment;
-
-  const canReport = hasPermission("report_issue");
-
-  const canManage = hasPermission("manage_issue");
+  const lookup = useElectoralLookup();
 
   const [issues, setIssues] = useState<CampaignIssue[]>([]);
-
-  const [loading, setLoading] = useState(true);
-
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [dataLoading, setDataLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [error, setError] = useState<string | null>(null);
-
   const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  /*
-   * ----------------------------------------------------------
+  const [adminFilter, setAdminFilter] = useState<ScopeValue | null>(null);
+  const [filterScope, setFilterScope] = useState<CampaignScope | null>(null);
+
+  const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
+
+  const userId = profile?.id ?? "";
+
+  /* ------------------------------------------------------------
+   * ADMIN FILTER → RESOLVED SCOPE
+   * ------------------------------------------------------------ */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!adminFilter) {
+      setFilterScope(null);
+      return;
+    }
+
+    resolveCampaignScope(
+      adminFilter.level,
+      adminFilter.scope_id,
+      lookup.lgas,
+    ).then((resolved) => {
+      if (!cancelled) setFilterScope(resolved);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminFilter, lookup.lgas]);
+
+  /* ------------------------------------------------------------
    * LOAD
-   * ----------------------------------------------------------
-   */
+   * ------------------------------------------------------------ */
 
-  const loadIssues = async () => {
-    if (!assignment) {
+  const load = useCallback(async () => {
+    if (!userId) {
       setIssues([]);
-      setLoading(false);
+      setDataLoading(false);
       return;
     }
 
     try {
+      const mine = await getMyCampaignIssues(userId);
 
-      const data = await getScopedCampaignIssues(assignment);
+      const scoped =
+        isAdmin || isCoordinator
+          ? await getIssuesInScope(
+              isAdmin ? filterScope : scope,
+            )
+          : [];
 
-      setIssues(data);
-    } catch (err) {
-      console.error("Failed to load campaign issues:", err);
+      const merged = mergeIssues(mine, scoped);
 
-      notify.error("Unable to load issues for your organizational scope.");
+      setIssues(merged);
+
+      const resolved = await resolveUserNames(
+        merged.flatMap((issue) => [
+          issue.raised_by,
+          issue.acknowledged_by ?? "",
+          issue.resolved_by ?? "",
+        ]),
+      );
+
+      setNames(resolved);
+    } catch (error) {
+      console.error("Failed to load campaign issues:", error);
+      notify.error("Unable to load issues for your area.");
+      setIssues([]);
     } finally {
-      setLoading(false);
+      setDataLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [filterScope, isAdmin, isCoordinator, scope, userId]);
 
   useEffect(() => {
-    if (accessLoading) return;
+    if (loading) return;
+    void load();
+  }, [load, loading]);
 
-    loadIssues();
-  }, [accessLoading, assignment?.id]);
-
-  /*
-   * ----------------------------------------------------------
+  /* ------------------------------------------------------------
    * COUNTS
-   * ----------------------------------------------------------
-   */
+   * ------------------------------------------------------------ */
 
-  const counts = useMemo(() => {
-    return {
-      total: issues.length,
-
-      reported: issues.filter((issue) => issue.status === "reported").length,
-
-      inProgress: issues.filter((issue) => issue.status === "in_progress")
-        .length,
-
-      resolved: issues.filter(
-        (issue) => issue.status === "resolved" || issue.status === "closed",
+  const counts = useMemo(
+    () => ({
+      open: issues.filter((issue) => issue.status === "open").length,
+      acknowledged: issues.filter(
+        (issue) => issue.status === "acknowledged",
       ).length,
+      resolved: issues.filter((issue) => issue.status === "resolved").length,
+    }),
+    [issues],
+  );
 
-      urgent: issues.filter(
-        (issue) =>
-          issue.priority === "urgent" &&
-          issue.status !== "resolved" &&
-          issue.status !== "closed",
-      ).length,
-    };
-  }, [issues]);
+  /* ------------------------------------------------------------
+   * ACTIONS
+   * ------------------------------------------------------------ */
 
-  if (!profile) {
-    return null;
+  async function handleAcknowledge(issue: CampaignIssue) {
+    if (!userId) return;
+
+    try {
+      setBusyIssueId(issue.id);
+      await acknowledgeCampaignIssue(issue.id, userId);
+      notify.success("Issue acknowledged.");
+      await load();
+    } catch (error) {
+      console.error("Failed to acknowledge issue:", error);
+      notify.error("Unable to acknowledge this issue.");
+    } finally {
+      setBusyIssueId(null);
+    }
   }
 
-  /*
-   * ----------------------------------------------------------
-   * AUTH LOADING
-   * ----------------------------------------------------------
-   */
+  async function handleResolve(issue: CampaignIssue) {
+    if (!userId) return;
 
-  if (accessLoading) {
+    try {
+      setBusyIssueId(issue.id);
+      await resolveCampaignIssue({
+        issueId: issue.id,
+        userId,
+        notes: resolutionNotes,
+      });
+      notify.success("Issue resolved.");
+      setResolvingId(null);
+      setResolutionNotes("");
+      await load();
+    } catch (error) {
+      console.error("Failed to resolve issue:", error);
+      notify.error("Unable to resolve this issue.");
+    } finally {
+      setBusyIssueId(null);
+    }
+  }
+
+  /* ------------------------------------------------------------
+   * GUARDS
+   * ------------------------------------------------------------ */
+
+  if (!profile) return null;
+
+  if (loading || (dataLoading && issues.length === 0)) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-apc-primary" />
-
-        <p className="text-sm text-gray-500">Loading your campaign access...</p>
+        <p className="text-sm text-gray-500">Loading issues…</p>
       </div>
     );
   }
 
   /*
-   * ----------------------------------------------------------
-   * NO ASSIGNMENT
-   * ----------------------------------------------------------
+   * Local constants so the narrowed level/id survive into the async
+   * submit closure (property access narrowing does not).
    */
+  const raiseLevel: ScopeType | null = authority.level;
+  const raiseScopeId: string | null = authority.scopeId;
 
-  if (!assignment) {
-    return (
-      <div className="space-y-6 pb-8">
-        <BackLink />
-
-        <Card>
-          <CardContent className="p-8 text-center">
-            <ShieldAlert className="mx-auto h-10 w-10 text-yellow-500" />
-
-            <h2 className="mt-4 text-lg font-semibold">
-              No organizational scope assigned
-            </h2>
-
-            <p className="mx-auto mt-2 max-w-lg text-sm text-gray-500">
-              Issues are loaded according to your campaign organizational
-              assignment. An administrator must assign you to a campaign area
-              before scoped issues can be shown.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * PAGE
-   * ----------------------------------------------------------
-   */
+  const canRaise = Boolean(raiseLevel && raiseScopeId);
 
   return (
     <div className="space-y-6 pb-10">
-      <BackLink />
+      <Link
+        href="/portal/dashboard"
+        className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-apc-primary"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Campaign Dashboard
+      </Link>
 
       {/* HEADER */}
 
@@ -201,56 +295,75 @@ export default function CampaignIssuesPage() {
               Campaign Operations
             </p>
 
-            <h1 className="mt-1 text-2xl font-bold text-gray-900">
-              Scoped Issues
-            </h1>
+            <h1 className="mt-1 text-2xl font-bold text-gray-900">Issues</h1>
 
-            <p className="mt-2 text-sm text-gray-500">
-              Report and monitor operational issues within your assigned
-              campaign area.
+            <p className="mt-2 max-w-2xl text-sm text-gray-500">
+              Raise an issue from your area. It is visible to you, to the
+              coordinators above you, and to the campaign admin.
             </p>
           </div>
 
           <div className="rounded-xl bg-apc-primary/5 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-              Your Scope
+              {isAdmin ? "Viewing" : "Your area"}
             </p>
 
             <p className="mt-1 font-semibold text-gray-900">
-              {formatScopeType(assignment.scope_type)}
+              {isAdmin
+                ? adminFilter
+                  ? describeScope(
+                      adminFilter.level,
+                      adminFilter.scope_id,
+                      lookup.lgas,
+                    )
+                  : "Enugu State"
+                : scopeLabel}
             </p>
-
-            <p className="text-sm text-gray-500">{assignment.scope_id}</p>
           </div>
         </div>
       </section>
 
+      {/* ADMIN FILTER */}
+
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-5">
+            <ScopePicker
+              idPrefix="issues-filter"
+              label="Filter issues by scope"
+              allowAll
+              allLabel="All scopes"
+              value={adminFilter}
+              onChange={setAdminFilter}
+              hint="Shows issues raised at the selected scope and everything below it."
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* SUMMARY */}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Total" value={counts.total} />
-
-        <StatCard label="Reported" value={counts.reported} />
-
-        <StatCard label="In Progress" value={counts.inProgress} />
-
-        <StatCard label="Resolved" value={counts.resolved} />
-
-        <StatCard label="Urgent" value={counts.urgent} danger />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Open" value={counts.open} tone="amber" />
+        <StatCard
+          label="Acknowledged"
+          value={counts.acknowledged}
+          tone="blue"
+        />
+        <StatCard label="Resolved" value={counts.resolved} tone="green" />
       </div>
 
       {/* ACTIONS */}
 
       <div className="flex flex-wrap gap-3">
-        {canReport && (
+        {canRaise && (
           <button
             type="button"
             onClick={() => setShowForm((value) => !value)}
             className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
-
-            {showForm ? "Close Form" : "Report Issue"}
+            {showForm ? "Close Form" : "Raise Issue"}
           </button>
         )}
 
@@ -258,182 +371,370 @@ export default function CampaignIssuesPage() {
           type="button"
           onClick={() => {
             setRefreshing(true);
-            loadIssues();
+            void load();
           }}
           disabled={refreshing}
           className="inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
         >
-          <RefreshCw
-            className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-          />
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
 
-      {/* REPORT FORM */}
+      {/* FORM */}
 
-      {showForm && canReport && (
-        <IssueForm
-          profileId={profile.id ?? ""}
-          assignment={assignment}
-          onCreated={async () => {
-            setShowForm(false);
-            await loadIssues();
+      {showForm && canRaise && raiseLevel && raiseScopeId && (
+        <RaiseIssueForm
+          raisedBy={userId}
+          scopeLevel={raiseLevel}
+          scopeId={raiseScopeId}
+          scopeWardId={
+            authority.level === "polling_unit" || authority.level === "ward"
+              ? (scope?.wardIds[0] ?? profile.ward_id ?? null)
+              : null
+          }
+          submitting={submitting}
+          onCancel={() => setShowForm(false)}
+          onSubmit={async (input) => {
+            try {
+              setSubmitting(true);
+              await raiseCampaignIssue({
+                raised_by: userId,
+                title: input.title,
+                description: input.description,
+                issue_type: input.issue_type,
+                priority: input.priority,
+                location: input.location,
+                scope_level: raiseLevel,
+                scope_id: raiseScopeId,
+                scope_ward_id: input.scopeWardId,
+              });
+
+              notify.success("Issue raised. Your coordinators can see it now.");
+              setShowForm(false);
+              await load();
+            } catch (error) {
+              console.error("Failed to raise issue:", error);
+              notify.error("Unable to raise the issue. Please try again.");
+            } finally {
+              setSubmitting(false);
+            }
           }}
         />
       )}
 
-      {/* ERROR */}
-
-      
-      {/* ISSUES */}
+      {/* LIST */}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Issues in My Area</CardTitle>
+          <CardTitle className="text-lg">
+            {isAdmin ? "Issues in view" : "Issues in my area"}
+          </CardTitle>
 
-          <p className="text-sm text-gray-500">
-            Issues reported against your current organizational scope.
+          <p className="mt-1 text-sm text-gray-500">
+            {isCoordinator || isAdmin
+              ? "Issues raised at your scope and everything below it."
+              : "Issues you raised. Coordinators above you can see them too."}
           </p>
         </CardHeader>
 
         <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-12 gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-apc-primary" />
-
-              <span className="text-sm text-gray-500">Loading issues...</span>
-            </div>
-          ) : issues.length === 0 ? (
+          {issues.length === 0 ? (
             <div className="rounded-xl border border-dashed p-10 text-center">
               <TriangleAlert className="mx-auto h-8 w-8 text-gray-300" />
 
               <p className="mt-3 font-semibold text-gray-900">
-                No issues reported
+                No issues reported yet
               </p>
 
-              <p className="mt-1 text-sm text-gray-500">
-                There are currently no campaign issues recorded for this
-                organizational area.
+              <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+                {canRaise
+                  ? "When something needs attention in your area, raise an issue and it will reach the coordinators above you."
+                  : "Once your profile has a registered polling unit you can raise issues from your area."}
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {issues.map((issue) => (
-                <IssueRow key={issue.id} issue={issue} canManage={canManage} />
-              ))}
-            </div>
+            <ul className="space-y-4">
+              {issues.map((issue) => {
+                const canAct = isAdmin || isCoordinator;
+
+                return (
+                  <li key={issue.id} className="rounded-xl border p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">
+                            {issue.title}
+                          </h3>
+
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASSES[issue.status]}`}
+                          >
+                            {STATUS_LABELS[issue.status]}
+                          </span>
+
+                          {issue.priority && (
+                            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">
+                              {issue.priority}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-2 text-sm leading-6 text-gray-600">
+                          {issue.description}
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3.5 w-3.5" />
+                            {describeScope(
+                              issue.scope_level,
+                              issue.scope_id,
+                              lookup.lgas,
+                            )}
+                          </span>
+
+                          <span>
+                            Raised by{" "}
+                            {names.get(issue.raised_by) ?? "Unknown member"}
+                          </span>
+
+                          {issue.acknowledged_by && (
+                            <span>
+                              Acknowledged by{" "}
+                              {names.get(issue.acknowledged_by) ??
+                                "Unknown member"}
+                            </span>
+                          )}
+
+                          {issue.resolution_notes && (
+                            <span className="text-green-700">
+                              {issue.resolution_notes}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {canAct && issue.status !== "resolved" && (
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          {issue.status === "open" && (
+                            <button
+                              type="button"
+                              disabled={busyIssueId === issue.id}
+                              onClick={() => void handleAcknowledge(issue)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5" />
+                              Acknowledge
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={busyIssueId === issue.id}
+                            onClick={() =>
+                              setResolvingId(
+                                resolvingId === issue.id ? null : issue.id,
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Resolve
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {resolvingId === issue.id && (
+                      <div className="mt-4 rounded-lg border bg-gray-50 p-4">
+                        <label
+                          htmlFor={`resolution-${issue.id}`}
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          Resolution notes (optional)
+                        </label>
+
+                        <textarea
+                          id={`resolution-${issue.id}`}
+                          value={resolutionNotes}
+                          onChange={(event) =>
+                            setResolutionNotes(event.target.value)
+                          }
+                          rows={2}
+                          className="mt-2 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-apc-primary"
+                          placeholder="What was done to resolve this?"
+                        />
+
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResolvingId(null);
+                              setResolutionNotes("");
+                            }}
+                            className="rounded-lg border px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-white"
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={busyIssueId === issue.id}
+                            onClick={() => void handleResolve(issue)}
+                            className="rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                          >
+                            Confirm resolved
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardContent>
       </Card>
+
+      {/* COORDINATORS NOTE */}
+
+      {!isCoordinator && !isAdmin && (
+        <Card className="border-blue-100 bg-blue-50/50">
+          <CardContent className="flex gap-3 p-5">
+            <ShieldAlert className="h-5 w-5 shrink-0 text-blue-700" />
+
+            <p className="text-sm leading-6 text-blue-900">
+              You can raise and follow your own issues. Your ward coordinator
+              handles them from here.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-/*
- * ============================================================
- * ISSUE FORM
- * ============================================================
- */
+/* ============================================================
+ * RAISE FORM
+ * ============================================================ */
 
-function IssueForm({
-  profileId,
-  assignment,
-  onCreated,
+interface RaiseFormInput {
+  title: string;
+  description: string;
+  issue_type: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  location: string;
+  scopeWardId: string | null;
+}
+
+function RaiseIssueForm({
+  raisedBy,
+  scopeLevel,
+  scopeId,
+  scopeWardId,
+  submitting,
+  onCancel,
+  onSubmit,
 }: {
-  profileId: string;
-  assignment: OrganizationalAssignment;
-  onCreated: () => Promise<void>;
+  raisedBy: string;
+  scopeLevel: ScopeType;
+  scopeId: string;
+  scopeWardId: string | null;
+  submitting: boolean;
+  onCancel: () => void;
+  onSubmit: (input: RaiseFormInput) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
-
   const [description, setDescription] = useState("");
-
-  const [issueType, setIssueType] =
-    useState<CampaignIssueType>("community_concern");
-
-  const [priority, setPriority] = useState<CampaignIssuePriority>("medium");
-
+  const [issueType, setIssueType] = useState("other");
+  const [priority, setPriority] =
+    useState<RaiseFormInput["priority"]>("medium");
   const [location, setLocation] = useState("");
 
-  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const lookup = useElectoralLookup();
 
-  const [saving, setSaving] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (event: React.FormEvent) => {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!title.trim() || !description.trim()) {
-      notify.error("Title and description are required.");
+      notify.error("Add a title and a description before raising the issue.");
       return;
     }
 
-    try {
-      setSaving(true);
+    await onSubmit({
+      title,
+      description,
+      issue_type: issueType,
+      priority,
+      location,
+      scopeWardId,
+    });
+  }
 
-      await createCampaignIssue({
-        title,
-        description,
-        issue_type: issueType,
-        priority,
-
-        scope_type: assignment.scope_type,
-        scope_id: assignment.scope_id,
-
-        reported_by: profileId,
-
-        location,
-        evidence_url: evidenceUrl,
-      });
-
-      setTitle("");
-      setDescription("");
-      setLocation("");
-      setEvidenceUrl("");
-
-      await onCreated();
-    } catch (err) {
-      console.error("Failed to create issue:", err);
-
-      notify.error("Unable to submit this issue.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  void raisedBy;
 
   return (
     <Card className="border-apc-primary/20">
       <CardHeader>
-        <CardTitle className="text-lg">Report Campaign Issue</CardTitle>
+        <CardTitle className="text-lg">Raise an issue</CardTitle>
 
-        <p className="text-sm text-gray-500">
-          The issue will be recorded against your current organizational scope.
+        <p className="mt-1 text-sm text-gray-500">
+          Filed against {describeScope(scopeLevel, scopeId, lookup.lgas)}.
         </p>
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={submit} className="space-y-5">
-          <div className="grid gap-5 md:grid-cols-2">
-            <Field
-              label="Issue title"
-              value={title}
-              onChange={setTitle}
-              placeholder="Briefly describe the issue"
-            />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label
+              htmlFor="issue-title"
+              className="mb-2 block text-sm font-medium text-gray-700"
+            >
+              Title
+            </label>
 
+            <input
+              id="issue-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
+              placeholder="Short summary of the issue"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="issue-description"
+              className="mb-2 block text-sm font-medium text-gray-700"
+            >
+              Description
+            </label>
+
+            <textarea
+              id="issue-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={4}
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
+              placeholder="What happened, where, and who is affected?"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-sm font-medium text-gray-700">
-                Issue type
+              <label
+                htmlFor="issue-type"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Type
               </label>
 
               <select
+                id="issue-type"
                 value={issueType}
-                onChange={(event) =>
-                  setIssueType(event.target.value as CampaignIssueType)
-                }
-                className="mt-1.5 w-full rounded-lg border px-3 py-2.5 text-sm"
+                onChange={(event) => setIssueType(event.target.value)}
+                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
               >
                 <option value="logistics">Logistics</option>
                 <option value="campaign_activity">Campaign Activity</option>
@@ -441,40 +742,26 @@ function IssueForm({
                 <option value="volunteer">Volunteer</option>
                 <option value="communication">Communication</option>
                 <option value="security">Security</option>
-                <option value="infrastructure">
-                  Infrastructure / Community
-                </option>
+                <option value="infrastructure">Infrastructure</option>
                 <option value="other">Other</option>
               </select>
             </div>
-          </div>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700">
-              Description
-            </label>
-
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={5}
-              placeholder="Describe what happened, where it happened and what assistance is required."
-              className="mt-1.5 w-full rounded-lg border px-3 py-2.5 text-sm"
-            />
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="text-sm font-medium text-gray-700">
+              <label
+                htmlFor="issue-priority"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
                 Priority
               </label>
 
               <select
+                id="issue-priority"
                 value={priority}
                 onChange={(event) =>
-                  setPriority(event.target.value as CampaignIssuePriority)
+                  setPriority(event.target.value as RaiseFormInput["priority"])
                 }
-                className="mt-1.5 w-full rounded-lg border px-3 py-2.5 text-sm"
+                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
@@ -482,31 +769,42 @@ function IssueForm({
                 <option value="urgent">Urgent</option>
               </select>
             </div>
+          </div>
 
-            <Field
-              label="Location"
+          <div>
+            <label
+              htmlFor="issue-location"
+              className="mb-2 block text-sm font-medium text-gray-700"
+            >
+              Location detail (optional)
+            </label>
+
+            <input
+              id="issue-location"
               value={location}
-              onChange={setLocation}
-              placeholder="Community, venue or other location"
+              onChange={(event) => setLocation(event.target.value)}
+              className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
+              placeholder="e.g. Ward hall, PU 003"
             />
           </div>
 
-          <Field
-            label="Evidence URL (optional)"
-            value={evidenceUrl}
-            onChange={setEvidenceUrl}
-            placeholder="https://..."
-          />
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={submitting}
+              className="rounded-lg border px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
 
-
-          <div className="flex justify-end">
             <button
               type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={submitting}
+              className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Submit Issue
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              Raise issue
             </button>
           </div>
         </form>
@@ -515,103 +813,25 @@ function IssueForm({
   );
 }
 
-/*
- * ============================================================
- * ISSUE ROW
- * ============================================================
- */
-
-function IssueRow({
-  issue,
-  canManage,
-}: {
-  issue: CampaignIssue;
-  canManage: boolean;
-}) {
-  return (
-    <div className="rounded-xl border p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-gray-900">{issue.title}</h3>
-
-            <StatusBadge status={issue.status} />
-
-            <PriorityBadge priority={issue.priority} />
-          </div>
-
-          <p className="mt-2 text-sm leading-6 text-gray-600">
-            {issue.description}
-          </p>
-
-          <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
-            <span className="rounded-full bg-gray-100 px-2.5 py-1">
-              {formatIssueType(issue.issue_type)}
-            </span>
-
-            {issue.location && (
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" />
-                {issue.location}
-              </span>
-            )}
-
-            <span>
-              {formatScopeType(issue.scope_type)}: {issue.scope_id}
-            </span>
-          </div>
-        </div>
-
-        {canManage && (
-          <span className="shrink-0 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-            Management View
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/*
- * ============================================================
- * SMALL COMPONENTS
- * ============================================================
- */
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="text-sm font-medium text-gray-700">{label}</label>
-
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="mt-1.5 w-full rounded-lg border px-3 py-2.5 text-sm"
-      />
-    </div>
-  );
-}
+/* ============================================================
+ * STAT CARD
+ * ============================================================ */
 
 function StatCard({
   label,
   value,
-  danger = false,
+  tone,
 }: {
   label: string;
   value: number;
-  danger?: boolean;
+  tone: "amber" | "blue" | "green";
 }) {
+  const tones: Record<typeof tone, string> = {
+    amber: "text-amber-700",
+    blue: "text-blue-700",
+    green: "text-green-700",
+  };
+
   return (
     <Card>
       <CardContent className="p-5">
@@ -619,73 +839,8 @@ function StatCard({
           {label}
         </p>
 
-        <p
-          className={`mt-2 text-2xl font-bold ${
-            danger ? "text-red-600" : "text-gray-900"
-          }`}
-        >
-          {value}
-        </p>
+        <p className={`mt-2 text-2xl font-bold ${tones[tone]}`}>{value}</p>
       </CardContent>
     </Card>
   );
 }
-
-function StatusBadge({ status }: { status: CampaignIssue["status"] }) {
-  const labels: Record<CampaignIssue["status"], string> = {
-    reported: "Reported",
-    acknowledged: "Acknowledged",
-    assigned: "Assigned",
-    in_progress: "In Progress",
-    resolved: "Resolved",
-    closed: "Closed",
-  };
-
-  return (
-    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
-      {labels[status]}
-    </span>
-  );
-}
-
-function PriorityBadge({ priority }: { priority: CampaignIssuePriority }) {
-  const labels: Record<CampaignIssuePriority, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    urgent: "Urgent",
-  };
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        priority === "urgent"
-          ? "bg-red-100 text-red-700"
-          : priority === "high"
-            ? "bg-orange-100 text-orange-700"
-            : "bg-gray-100 text-gray-600"
-      }`}
-    >
-      {labels[priority]}
-    </span>
-  );
-}
-
-function formatIssueType(type: CampaignIssueType) {
-  return type
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function BackLink() {
-  return (
-    <Link
-      href="/portal/dashboard"
-      className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-apc-primary"
-    >
-      <ArrowLeft className="h-4 w-4" />
-      Back to Dashboard
-    </Link>
-  );
-}
-

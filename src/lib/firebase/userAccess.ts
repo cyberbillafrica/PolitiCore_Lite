@@ -1,7 +1,14 @@
-import { deleteDoc, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  writeBatch,
+} from "firebase/firestore";
 
 import { db } from "./config";
 import { getAllEnuguLGAs } from "./electoral";
+
+import { lookupConstituencyLgaIds } from "@/data/constituencies";
 
 import type { OrganizationalPosition, ScopeType } from "@/types";
 
@@ -17,17 +24,26 @@ import type { OrganizationalPosition, ScopeType } from "@/types";
  *   {uid}__{permission}__global
  *   {uid}__{permission}__{scope_type}__{scope_id}
  *
- * Nothing in the application used to write those documents, so the only
- * election results a non-admin could ever read were the ones they
- * submitted themselves or the results for their own registered polling
- * unit — a ward or LGA coordinator fell back to nothing even though the
- * client claimed their whole scope.
- *
+ * Nothing used to write those documents for campaign permissions, so
+ * every non-admin campaign write (activity create, report submit,
+ * issue raise) was denied by the rules even though the UI offered it.
  * This module keeps the index in step with `organizational_assignments`,
  * which is the single source of truth for a member's geographic
- * authority. It is called from the assignment write path, so an
- * assignment is never granted without its access projection and an
- * assignment is never removed while its projection lingers.
+ * authority, and is called from the assignment write path.
+ *
+ * Scope expansion:
+ *
+ *   state / campaign .... one global document per permission
+ *   senatorial_zone ..... the zone's LGAs and their wards
+ *   lga ................. the LGA and its wards
+ *   ward ................ the ward
+ *   polling_unit ........ the polling unit
+ *
+ * Polling units are deliberately NOT enumerated. Every campaign
+ * document that can be scoped to a PU also carries the ward it belongs
+ * to (`scope_ward_id` / `target_ward_id`), and the rules fall back to
+ * the ward-level grant. That keeps a zone assignment to a few hundred
+ * index rows instead of several thousand.
  *
  * Rules constraints honoured here:
  *
@@ -47,6 +63,7 @@ export const ELECTION_RESULTS_PERMISSION = "view_election_results";
  * location marker, not authority, so it deliberately grants nothing.
  */
 const SCOPE_GRANTING_POSITIONS: OrganizationalPosition[] = [
+  "pu_coordinator",
   "ward_coordinator",
   "lga_coordinator",
   "zone_coordinator",
@@ -54,6 +71,115 @@ const SCOPE_GRANTING_POSITIONS: OrganizationalPosition[] = [
   "campaign_manager",
   "council_chairman",
 ];
+
+/*
+ * The campaign permissions each position implies. This mirrors the
+ * position matrix in `src/lib/permissions.ts` — it is the subset the
+ * Firestore rules actually consult.
+ */
+const CAMPAIGN_PERMISSIONS: Record<OrganizationalPosition, string[]> = {
+  campaign_member: [
+    "view_members",
+    "view_assignments",
+    "view_activities",
+    "submit_field_report",
+    "report_issue",
+  ],
+  pu_coordinator: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+  ],
+  ward_coordinator: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+  ],
+  lga_coordinator: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+  ],
+  zone_coordinator: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+  ],
+  state_coordinator: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+    "manage_members",
+  ],
+  campaign_manager: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+    "manage_members",
+  ],
+  council_chairman: [
+    "view_members",
+    "view_assignments",
+    "create_assignment",
+    "review_assignment",
+    "view_activities",
+    "create_activity",
+    "manage_activity",
+    "submit_field_report",
+    "review_field_report",
+    "report_issue",
+    "manage_issue",
+    "manage_members",
+  ],
+};
 
 interface AccessTarget {
   scope_type: ScopeType | "global";
@@ -71,48 +197,111 @@ export function buildAccessDocId(
     : `${userId}__${permission}__${scopeType}__${scopeId}`;
 }
 
-/*
- * Translate an assignment into the exact scope documents the rules look
- * for. Only `ward` and `polling_unit` scopes are consulted by
- * `canReadElectionResult()`, so an LGA (or wider) assignment is expanded
- * into the wards it covers using the electoral hierarchy.
+/* ============================================================
+ * SCOPE EXPANSION
+ * ============================================================ */
+
+/**
+ * Expand an assignment scope into the documents the rules look for.
  *
- * A senatorial zone cannot be expanded — the electoral dataset carries
- * no zone membership — so it grants nothing rather than something
- * broader than intended.
+ * `includePollingUnits` stays false for campaign permissions (the ward
+ * stamp covers PU documents) and is used by the election projection,
+ * which has no such stamp.
  */
 async function resolveAccessTargets(
   scopeType: ScopeType,
   scopeId: string,
+  includePollingUnits = false,
 ): Promise<AccessTarget[]> {
+  const id = (scopeId ?? "").trim();
+  if (!id) return [];
+
   switch (scopeType) {
     case "polling_unit":
-      return scopeId ? [{ scope_type: "polling_unit", scope_id: scopeId }] : [];
+      return [{ scope_type: "polling_unit", scope_id: id }];
 
     case "ward":
-      return scopeId ? [{ scope_type: "ward", scope_id: scopeId }] : [];
+      return [{ scope_type: "ward", scope_id: id }];
 
     case "lga": {
-      const target = (scopeId ?? "").trim().toLowerCase();
-      if (!target) return [];
-
       const allLgas = await getAllEnuguLGAs();
+      const target = id.toLowerCase();
 
       const match = allLgas.find((lga) => {
-        const id = lga.id.toLowerCase();
+        const lgaId = lga.id.toLowerCase();
         return (
-          id === target ||
-          id === target.replace(/-lga$/, "") ||
-          `${id}-lga` === target
+          lgaId === target ||
+          lgaId === target.replace(/-lga$/, "") ||
+          `${lgaId}-lga` === target
         );
       });
 
       if (!match) return [];
 
-      return match.wards.map((ward) => ({
-        scope_type: "ward" as const,
-        scope_id: ward.id,
-      }));
+      const targets: AccessTarget[] = [
+        { scope_type: "lga", scope_id: match.id },
+        ...match.wards.map((ward) => ({
+          scope_type: "ward" as const,
+          scope_id: ward.id,
+        })),
+      ];
+
+      if (includePollingUnits) {
+        targets.push(
+          ...match.wards.flatMap((ward) =>
+            ward.pollingUnits.map((unit) => ({
+              scope_type: "polling_unit" as const,
+              scope_id: unit.id,
+            })),
+          ),
+        );
+      }
+
+      return targets;
+    }
+
+    case "senatorial_zone": {
+      const zoneLgaIds = lookupConstituencyLgaIds({
+        scope_type: "senatorial_zone",
+        scope_id: id,
+      });
+
+      if (zoneLgaIds.length === 0) return [];
+
+      const allLgas = await getAllEnuguLGAs();
+      const zoneIds = zoneLgaIds.map((item) => item.toLowerCase());
+
+      const covered = allLgas.filter((lga) =>
+        zoneIds.includes(lga.id.toLowerCase()),
+      );
+
+      const targets: AccessTarget[] = [
+        ...covered.map((lga) => ({
+          scope_type: "lga" as const,
+          scope_id: lga.id,
+        })),
+        ...covered.flatMap((lga) =>
+          lga.wards.map((ward) => ({
+            scope_type: "ward" as const,
+            scope_id: ward.id,
+          })),
+        ),
+      ];
+
+      if (includePollingUnits) {
+        targets.push(
+          ...covered.flatMap((lga) =>
+            lga.wards.flatMap((ward) =>
+              ward.pollingUnits.map((unit) => ({
+                scope_type: "polling_unit" as const,
+                scope_id: unit.id,
+              })),
+            ),
+          ),
+        );
+      }
+
+      return targets;
     }
 
     case "state":
@@ -124,6 +313,126 @@ async function resolveAccessTargets(
   }
 }
 
+/* ============================================================
+ * BATCHED WRITES
+ * ============================================================ */
+
+const BATCH_LIMIT = 400;
+
+async function writeAccessDocs(
+  entries: Array<{ id: string; data: Record<string, unknown> }>,
+): Promise<void> {
+  for (let index = 0; index < entries.length; index += BATCH_LIMIT) {
+    const chunk = entries.slice(index, index + BATCH_LIMIT);
+    const batch = writeBatch(db);
+
+    for (const entry of chunk) {
+      batch.set(doc(db, "user_access", entry.id), entry.data, { merge: true });
+    }
+
+    await batch.commit();
+  }
+}
+
+async function deleteAccessDocs(ids: string[]): Promise<void> {
+  for (let index = 0; index < ids.length; index += BATCH_LIMIT) {
+    const chunk = ids.slice(index, index + BATCH_LIMIT);
+    const batch = writeBatch(db);
+
+    for (const id of chunk) {
+      batch.delete(doc(db, "user_access", id));
+    }
+
+    await batch.commit();
+  }
+}
+
+/* ============================================================
+ * CAMPAIGN PERMISSION PROJECTION
+ * ============================================================ */
+
+function campaignAccessIds(
+  userId: string,
+  position: OrganizationalPosition,
+  targets: AccessTarget[],
+): Array<{ id: string; target: AccessTarget; permission: string }> {
+  const permissions = CAMPAIGN_PERMISSIONS[position] ?? [];
+
+  return permissions.flatMap((permission) =>
+    targets.map((target) => ({
+      id: buildAccessDocId(
+        userId,
+        permission,
+        target.scope_type,
+        target.scope_id,
+      ),
+      target,
+      permission,
+    })),
+  );
+}
+
+export async function syncCampaignAccessForAssignment(
+  userId: string,
+  position: OrganizationalPosition,
+  scopeType: ScopeType,
+  scopeId: string,
+): Promise<void> {
+  try {
+    if (!userId) return;
+
+    const targets = await resolveAccessTargets(scopeType, scopeId, false);
+    if (targets.length === 0) return;
+
+    const entries = campaignAccessIds(userId, position, targets).map(
+      ({ id, target, permission }) => ({
+        id,
+        data: {
+          user_id: userId,
+          permission,
+          allowed: true,
+          scope_type: target.scope_type,
+          scope_id: target.scope_id,
+          updated_at: serverTimestamp(),
+        },
+      }),
+    );
+
+    await writeAccessDocs(entries);
+  } catch (error) {
+    console.warn(
+      "Failed to project campaign access for assignment:",
+      error,
+    );
+  }
+}
+
+export async function revokeCampaignAccessForAssignment(
+  userId: string,
+  position: OrganizationalPosition,
+  scopeType: ScopeType,
+  scopeId: string,
+): Promise<void> {
+  try {
+    if (!userId) return;
+
+    const targets = await resolveAccessTargets(scopeType, scopeId, false);
+    if (targets.length === 0) return;
+
+    const ids = campaignAccessIds(userId, position, targets).map(
+      (entry) => entry.id,
+    );
+
+    await deleteAccessDocs(Array.from(new Set(ids)));
+  } catch (error) {
+    console.warn("Failed to revoke campaign access for assignment:", error);
+  }
+}
+
+/* ============================================================
+ * ELECTION RESULT PROJECTION
+ * ============================================================ */
+
 async function targetKeysForAssignment(
   userId: string,
   position: OrganizationalPosition,
@@ -132,7 +441,7 @@ async function targetKeysForAssignment(
 ): Promise<{ id: string; target: AccessTarget }[]> {
   if (!userId || !SCOPE_GRANTING_POSITIONS.includes(position)) return [];
 
-  const targets = await resolveAccessTargets(scopeType, scopeId);
+  const targets = await resolveAccessTargets(scopeType, scopeId, true);
 
   return targets.map((target) => ({
     id: buildAccessDocId(
@@ -165,10 +474,10 @@ export async function syncElectionResultAccessForAssignment(
       scopeId,
     );
 
-    for (const { id, target } of entries) {
-      await setDoc(
-        doc(db, "user_access", id),
-        {
+    await writeAccessDocs(
+      entries.map(({ id, target }) => ({
+        id,
+        data: {
           user_id: userId,
           permission: ELECTION_RESULTS_PERMISSION,
           allowed: true,
@@ -176,9 +485,8 @@ export async function syncElectionResultAccessForAssignment(
           scope_id: target.scope_id,
           updated_at: serverTimestamp(),
         },
-        { merge: true },
-      );
-    }
+      })),
+    );
   } catch (error) {
     console.warn(
       "Failed to project election result access for assignment:",
@@ -204,13 +512,27 @@ export async function revokeElectionResultAccessForAssignment(
       scopeId,
     );
 
-    for (const { id } of entries) {
-      await deleteDoc(doc(db, "user_access", id));
-    }
+    await deleteAccessDocs(entries.map((entry) => entry.id));
   } catch (error) {
     console.warn(
       "Failed to revoke election result access for assignment:",
       error,
     );
   }
+}
+
+/*
+ * Exported for the verification script: the exact document ids an
+ * assignment projects, without touching Firestore.
+ */
+export async function previewCampaignAccessIds(
+  userId: string,
+  position: OrganizationalPosition,
+  scopeType: ScopeType,
+  scopeId: string,
+): Promise<string[]> {
+  const targets = await resolveAccessTargets(scopeType, scopeId, false);
+  return Array.from(
+    new Set(campaignAccessIds(userId, position, targets).map((e) => e.id)),
+  );
 }

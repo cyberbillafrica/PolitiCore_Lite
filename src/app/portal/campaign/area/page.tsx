@@ -1,163 +1,277 @@
 "use client";
 
+/*
+ * ============================================================
+ * MY AREA
+ * ============================================================
+ *
+ * Two variants, both driven by `useCampaignAuthority()`:
+ *
+ *   Plain member   read-only polling-unit stats. No create actions.
+ *
+ *   Coordinator    scope stats, permitted quick actions, a subordinate
+ *                  level filter, and the members inside their area.
+ *
+ * This page previously used a local stub that always returned an empty
+ * assignment list, so it rendered "no assignment" for everyone. It now
+ * reads the resolved scope from the shared authority hook.
+ */
+
 import Link from "next/link";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   ArrowLeft,
   ArrowRight,
-  Building2,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
-  Flag,
+  FileText,
   MapPin,
+  Plus,
   ShieldCheck,
+  TriangleAlert,
   Users,
   Vote,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { useAuth } from "@/contexts/AuthContext";
-
+import { useCampaignAuthority } from "@/hooks/useCampaignAuthority";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
+import { deriveLgaIdFromWard } from "@/lib/election-scope";
+
 import {
+  formatOrganizationalPosition,
   formatScopeType,
-  getPrimaryOrganizationalScope,
 } from "@/lib/organization";
 
+import {
+  getAssignmentsForUser,
+  getAssignmentsInScope,
+} from "@/lib/firebase/campaignAssignments";
+import { getCampaignMembersInScope } from "@/lib/firebase/campaignMembers";
+import { getActivitiesInScope } from "@/lib/firebase/campaignActivities";
+import { getIssuesInScope } from "@/lib/firebase/campaignIssues";
+
+import { notify } from "@/lib/notify";
+
+import type { ScopedCampaignMember } from "@/lib/firebase/campaignMembers";
 import type {
+  CampaignActivity,
+  CampaignAssignment,
+  CampaignIssue,
   OrganizationalAssignment,
-  OrganizationalPosition,
-  ScopeType,
 } from "@/types";
 
-function useMyOrganizationalAssignments(_userId?: string): {
-  assignments: OrganizationalAssignment[];
-  loading: boolean;
-  error: string | null;
-} {
-  return {
-    assignments: [],
-    loading: false,
-    error: null,
-  };
-}
-
-/*
- * ============================================================
- * CAMPAIGN AREA
- * ============================================================
- *
- * This page answers:
- *
- * "What part of the campaign organization am I responsible for?"
- *
- * IMPORTANT:
- *
- * Registered electoral location and organizational assignment
- * are deliberately kept separate.
- *
- * Example:
- *
- * A member may personally be registered in:
- *
- *   Ward 7 / PU 003
- *
- * while their campaign assignment may be:
- *
- *   LGA Coordinator / Nkanu West
- *
- * ============================================================
- */
+/* ============================================================
+ * PAGE
+ * ============================================================ */
 
 export default function CampaignAreaPage() {
-  const { profile } = useAuth();
-
-  const { assignments, loading, error } = useMyOrganizationalAssignments(
-    profile?.id,
-  );
-
-  if (!profile) {
-    return null;
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * PRIMARY ORGANIZATIONAL ASSIGNMENT
-   * ------------------------------------------------------------
-   */
-
-  const primaryScope = getPrimaryOrganizationalScope(assignments);
-
-  const hasAssignment = primaryScope.assignment !== null;
-
-  /*
-   * ------------------------------------------------------------
-   * PERSONAL ELECTORAL LOCATION
-   * ------------------------------------------------------------
-   */
+  const {
+    profile,
+    assignments,
+    isAdmin,
+    isCoordinator,
+    scope,
+    scopeLoading,
+    scopeLabel,
+    loading,
+    canCreateAt,
+  } = useCampaignAuthority();
 
   const lookup = useElectoralLookup();
 
-  const registeredLocation = lookup.describe(
-    profile.lga_id,
-    profile.ward_id,
-    profile.polling_unit_id,
+  const [members, setMembers] = useState<ScopedCampaignMember[]>([]);
+  const [activities, setActivities] = useState<CampaignActivity[]>([]);
+  const [ownAssignments, setOwnAssignments] = useState<CampaignAssignment[]>([]);
+  const [scopedAssignments, setScopedAssignments] = useState<CampaignAssignment[]>(
+    [],
+  );
+  const [issues, setIssues] = useState<CampaignIssue[]>([]);
+
+  const [dataLoading, setDataLoading] = useState(true);
+
+  const [subordinateId, setSubordinateId] = useState("");
+
+  const userId = profile?.id ?? "";
+
+  /* ------------------------------------------------------------
+   * LOAD
+   * ------------------------------------------------------------ */
+
+  const load = useCallback(async () => {
+    if (!userId) {
+      setMembers([]);
+      setActivities([]);
+      setOwnAssignments([]);
+      setScopedAssignments([]);
+      setIssues([]);
+      setDataLoading(false);
+      return;
+    }
+
+    if (!scope) {
+      setDataLoading(false);
+      return;
+    }
+
+    setDataLoading(true);
+
+    try {
+      const [memberList, activityList, mine] = await Promise.all([
+        getCampaignMembersInScope(scope),
+        getActivitiesInScope(scope),
+        getAssignmentsForUser(userId),
+      ]);
+
+      setMembers(memberList);
+      setActivities(activityList);
+      setOwnAssignments(mine);
+
+      if (isCoordinator) {
+        const [areaAssignments, areaIssues] = await Promise.all([
+          getAssignmentsInScope(
+            { level: scope.level, scopeId: scope.scope_id },
+            scope.wardIds,
+            lookup.lgas,
+          ),
+          getIssuesInScope(scope),
+        ]);
+
+        setScopedAssignments(areaAssignments);
+        setIssues(areaIssues);
+      } else {
+        setScopedAssignments([]);
+        setIssues([]);
+      }
+    } catch (error) {
+      console.error("Failed to load campaign area:", error);
+      notify.error("Unable to load your campaign area right now.");
+    } finally {
+      setDataLoading(false);
+    }
+  }, [isCoordinator, lookup.lgas, scope, userId]);
+
+  useEffect(() => {
+    if (loading || scopeLoading) return;
+
+    void load();
+  }, [load, loading, scopeLoading]);
+
+  /* Reset the subordinate filter when the area changes. */
+  useEffect(() => {
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setSubordinateId("");
+  }, [scope?.level, scope?.scope_id]);
+
+  /* ------------------------------------------------------------
+   * SUBORDINATE OPTIONS
+   * ------------------------------------------------------------ */
+
+  const subordinateOptions = useMemo<Array<{ id: string; label: string }>>(() => {
+    if (!scope || !isCoordinator) return [];
+
+    if (scope.level === "state" || scope.level === "senatorial_zone") {
+      return scope.lgaIds.map((id) => ({
+        id,
+        label: `${lookup.lgaById(id)?.name ?? id} LGA`,
+      }));
+    }
+
+    if (scope.level === "lga") {
+      return scope.wardIds.map((id) => ({
+        id,
+        label: lookup.wardById(id)?.name ?? id,
+      }));
+    }
+
+    if (scope.level === "ward") {
+      return scope.pollingUnitIds.map((id) => ({
+        id,
+        label: pollingUnitShortLabel(id),
+      }));
+    }
+
+    return [];
+  }, [isCoordinator, lookup, scope]);
+
+  const subordinateLabel =
+    scope?.level === "state" || scope?.level === "senatorial_zone"
+      ? "Filter by LGA"
+      : scope?.level === "lga"
+        ? "Filter by ward"
+        : "Filter by polling unit";
+
+  const visibleMembers = useMemo(() => {
+    if (!scope || !subordinateId) return members;
+
+    if (scope.level === "state" || scope.level === "senatorial_zone") {
+      return members.filter(
+        (member) =>
+          (member.lga_id ||
+            deriveLgaIdFromWard(lookup.lgas, member.ward_id)) === subordinateId,
+      );
+    }
+
+    if (scope.level === "lga") {
+      return members.filter((member) => member.ward_id === subordinateId);
+    }
+
+    if (scope.level === "ward") {
+      return members.filter(
+        (member) => member.polling_unit_id === subordinateId,
+      );
+    }
+
+    return members;
+  }, [lookup.lgas, members, scope, subordinateId]);
+
+  /* ------------------------------------------------------------
+   * STATS
+   * ------------------------------------------------------------ */
+
+  const stats = useMemo(() => {
+    const openAssignments = isCoordinator
+      ? scopedAssignments.filter((item) => item.status === "open").length
+      : ownAssignments.filter((item) => item.status === "open").length;
+
+    return {
+      members: members.length,
+      pollingUnits: scope?.pollingUnitIds.length ?? 0,
+      openAssignments,
+      completedAssignments: ownAssignments.filter(
+        (item) => item.status === "closed",
+      ).length,
+      openIssues: issues.filter((item) => item.status !== "resolved").length,
+      activities: activities.length,
+    };
+  }, [activities, isCoordinator, issues, members, ownAssignments, scope, scopedAssignments]);
+
+  const canCreateHere = scope
+    ? canCreateAt({ level: scope.level, scopeId: scope.scope_id })
+    : false;
+
+  const registered = lookup.describe(
+    profile?.lga_id,
+    profile?.ward_id,
+    profile?.polling_unit_id,
   );
 
-  const wardLabel = registeredLocation.wardLabel;
+  /* ------------------------------------------------------------
+   * GUARDS
+   * ------------------------------------------------------------ */
 
-  const pollingUnitLabel = registeredLocation.pollingUnitLabel;
+  if (!profile) return null;
 
-  /*
-   * ------------------------------------------------------------
-   * LOADING
-   * ------------------------------------------------------------
-   */
-
-  if (loading) {
+  if (loading || scopeLoading || dataLoading) {
     return <CampaignAreaLoading />;
   }
 
-  /*
-   * ------------------------------------------------------------
-   * ERROR
-   * ------------------------------------------------------------
-   */
-
-  if (error) {
-    return (
-      <div className="space-y-6 pb-8">
-        <BackLink />
-
-        <Card className="border-red-200">
-          <CardContent className="p-6">
-            <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100">
-                <ShieldCheck className="h-5 w-5 text-red-600" />
-              </div>
-
-              <div>
-                <h2 className="font-semibold text-gray-900">
-                  Unable to load your campaign area
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-600">{error}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  /*
-   * ------------------------------------------------------------
-   * NO ASSIGNMENT
-   * ------------------------------------------------------------
-   */
-
-  if (!hasAssignment) {
+  if (!scope) {
     return (
       <div className="space-y-6 pb-8">
         <BackLink />
@@ -171,59 +285,71 @@ export default function CampaignAreaPage() {
           <CardContent className="p-6">
             <div className="flex gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-yellow-100">
-                <ShieldCheck className="h-5 w-5 text-yellow-700" />
+                <TriangleAlert className="h-5 w-5 text-yellow-700" />
               </div>
 
               <div>
                 <h2 className="font-semibold text-yellow-900">
-                  No organizational assignment yet
+                  No campaign area yet
                 </h2>
 
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-yellow-800">
-                  Your account is registered as a campaign member, but you have
-                  not yet been assigned a campaign organizational position.
+                  Your area is derived from your organizational assignment, or
+                  from the polling unit you registered with. Neither is available
+                  on your account yet.
                 </p>
 
                 <p className="mt-3 text-sm text-yellow-800">
-                  Once an administrator assigns you to a campaign area, your
-                  organizational scope will appear here.
+                  An administrator can assign you a position and scope; you can
+                  also complete your registered ward and polling unit in your
+                  profile.
                 </p>
+
+                <Link
+                  href="/portal/profile"
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-yellow-900 underline"
+                >
+                  Update my registered area
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <RegisteredArea
-          wardLabel={wardLabel}
-          pollingUnitLabel={pollingUnitLabel}
+          wardLabel={registered.wardLabel}
+          pollingUnitLabel={registered.pollingUnitLabel}
         />
       </div>
     );
   }
 
-  /*
-   * ------------------------------------------------------------
-   * NORMAL AREA VIEW
-   * ------------------------------------------------------------
-   */
+  /* ------------------------------------------------------------
+   * PAGE
+   * ------------------------------------------------------------ */
 
-  const assignment = primaryScope.assignment!;
+  const positionLabel = isCoordinator
+    ? formatOrganizationalPosition(
+        assignments.find((item) => item.status === "active")?.position ?? null,
+      )
+    : "Campaign Member";
 
   return (
     <div className="space-y-6 pb-8">
       <BackLink />
 
-      {/* ======================================================
-          HEADER
-          ====================================================== */}
-
       <PageHeader
         title="My Campaign Area"
-        description="Your organizational responsibility within the campaign."
+        description={
+          isCoordinator
+            ? "Your organizational responsibility and everything inside it."
+            : "Your polling unit and your own campaign work."
+        }
       />
 
       {/* ======================================================
-          PRIMARY ASSIGNMENT
+          AUTHORITY CARD
           ====================================================== */}
 
       <Card className="overflow-hidden border-apc-primary/20">
@@ -231,209 +357,394 @@ export default function CampaignAreaPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-sm font-medium text-white/70">
-                Current Organizational Position
+                {isCoordinator ? "Your position" : "Your area"}
               </p>
 
               <h2 className="mt-1 text-2xl font-bold">
-                {formatPosition(assignment.position)}
+                {isAdmin ? `${positionLabel} · Admin` : positionLabel}
               </h2>
+
+              <p className="mt-1 text-sm text-white/75">
+                {scopeLabel}
+                {scope.scope_id ? ` · ${scope.scope_id}` : ""}
+              </p>
             </div>
 
             <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm">
               <CheckCircle2 className="h-4 w-4" />
-              Active Assignment
+
+              {isCoordinator ? "Active assignment" : "Read-only area"}
             </div>
           </div>
         </div>
 
-        <CardContent className="p-6">
-          <div className="grid gap-4 md:grid-cols-3">
-            <AreaInfo
-              icon={<Building2 className="h-4 w-4" />}
-              label="Organizational Scope"
-              value={formatScopeType(assignment.scope_type)}
-            />
+        <CardContent className="grid gap-4 p-6 md:grid-cols-3">
+          <AreaInfo
+            icon={<ShieldCheck className="h-4 w-4" />}
+            label="Authority level"
+            value={formatScopeType(scope.level)}
+          />
 
-            <AreaInfo
-              icon={<MapPin className="h-4 w-4" />}
-              label="Scope"
-              value={assignment.scope_id}
-            />
+          <AreaInfo
+            icon={<MapPin className="h-4 w-4" />}
+            label="Scope"
+            value={scope.label || scope.scope_id}
+          />
 
-            <AreaInfo
-              icon={<ShieldCheck className="h-4 w-4" />}
-              label="Assignment Status"
-              value={formatAssignmentStatus(assignment.status)}
-            />
-          </div>
+          <AreaInfo
+            icon={<Vote className="h-4 w-4" />}
+            label="Polling units covered"
+            value={
+              scope.pollingUnitIds.length === 0
+                ? "None resolved"
+                : String(scope.pollingUnitIds.length)
+            }
+          />
         </CardContent>
       </Card>
 
       {/* ======================================================
-          ORGANIZATIONAL HIERARCHY
-          ====================================================== */}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Organizational Scope</CardTitle>
-
-          <p className="text-sm text-gray-500">
-            The level of the campaign organization you are currently assigned
-            to.
-          </p>
-        </CardHeader>
-
-        <CardContent>
-          <OrganizationalHierarchy assignment={assignment} />
-        </CardContent>
-      </Card>
-
-      {/* ======================================================
-          AREA SUMMARY
+          SCOPE STATS
           ====================================================== */}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           icon={<Users className="h-5 w-5" />}
-          title="Members"
-          value="—"
-          description="Members within your scope"
-        />
-
-        <SummaryCard
-          icon={<Users className="h-5 w-5" />}
-          title="Volunteers"
-          value="—"
-          description="Volunteers within your scope"
+          title={isCoordinator ? "Members in scope" : "Members in your PU"}
+          value={
+            stats.members === 0 ? "No members yet" : String(stats.members)
+          }
+          description={
+            isCoordinator
+              ? "Everyone registered inside your area"
+              : "Members registered at your polling unit"
+          }
+          muted={stats.members === 0}
         />
 
         <SummaryCard
           icon={<Vote className="h-5 w-5" />}
-          title="Polling Units"
-          value="—"
-          description="Polling units within your scope"
+          title="Polling units"
+          value={
+            stats.pollingUnits === 0 ? "None resolved" : String(stats.pollingUnits)
+          }
+          description="Polling units inside your area"
+          muted={stats.pollingUnits === 0}
         />
 
         <SummaryCard
-          icon={<ShieldCheck className="h-5 w-5" />}
-          title="Coordinators"
-          value="—"
-          description="Coordinators within your scope"
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          title={isCoordinator ? "Open assignments" : "My open assignments"}
+          value={
+            stats.openAssignments === 0
+              ? "No assignments yet"
+              : String(stats.openAssignments)
+          }
+          description={
+            isCoordinator
+              ? "Assignments targeting your area"
+              : "Work assigned directly to you"
+          }
+          muted={stats.openAssignments === 0}
         />
+
+        {isCoordinator ? (
+          <SummaryCard
+            icon={<TriangleAlert className="h-5 w-5" />}
+            title="Open issues"
+            value={
+              stats.openIssues === 0 ? "No issues yet" : String(stats.openIssues)
+            }
+            description="Issues raised in your area, not yet resolved"
+            muted={stats.openIssues === 0}
+          />
+        ) : (
+          <SummaryCard
+            icon={<CalendarDays className="h-5 w-5" />}
+            title="Activities"
+            value={
+              stats.activities === 0
+                ? "No activities yet"
+                : String(stats.activities)
+            }
+            description="Activities visible in your area"
+            muted={stats.activities === 0}
+          />
+        )}
       </div>
 
       {/* ======================================================
-          AREA OPERATIONS
+          QUICK ACTIONS (COORDINATORS)
+          ====================================================== */}
+
+      {isCoordinator && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">What you can do here</CardTitle>
+
+            <p className="text-sm text-gray-500">
+              Actions available at your level within {scopeLabel}.
+            </p>
+          </CardHeader>
+
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-2">
+              {canCreateHere && (
+                <AreaAction
+                  icon={<CalendarDays className="h-5 w-5" />}
+                  title="Create activity"
+                  description="Organise a meeting, rally or outreach in your area."
+                  href="/portal/campaign/activities"
+                />
+              )}
+
+              {canCreateHere && (
+                <AreaAction
+                  icon={<Plus className="h-5 w-5" />}
+                  title="Create assignment"
+                  description="Assign work to a member or a scope inside your area."
+                  href="/portal/campaign/assignments"
+                />
+              )}
+
+              <AreaAction
+                icon={<FileText className="h-5 w-5" />}
+                title="View reports received"
+                description="Reports submitted against assignments you created."
+                href="/portal/campaign/reports"
+              />
+
+              <AreaAction
+                icon={<TriangleAlert className="h-5 w-5" />}
+                title="View issues"
+                description="Issues raised by members anywhere inside your area."
+                href="/portal/campaign/issues"
+              />
+            </div>
+
+            {!canCreateHere && (
+              <p className="mt-4 rounded-xl border border-dashed p-4 text-sm text-gray-500">
+                Your position can read this area but cannot create activities or
+                assignments at this level.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ======================================================
+          MEMBERS IN AREA
           ====================================================== */}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Area Operations</CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-lg">
+                {isCoordinator ? "Members in your area" : "Your polling unit"}
+              </CardTitle>
 
-          <p className="text-sm text-gray-500">
-            Campaign functions available for your organizational scope.
-          </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {isCoordinator
+                  ? "Members registered inside your scope and everything below it."
+                  : "Members registered at the same polling unit as you."}
+              </p>
+            </div>
+
+            {isCoordinator && subordinateOptions.length > 0 && (
+              <div className="w-full sm:w-64">
+                <label
+                  htmlFor="subordinate-filter"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400"
+                >
+                  {subordinateLabel}
+                </label>
+
+                <select
+                  id="subordinate-filter"
+                  value={subordinateId}
+                  onChange={(event) => setSubordinateId(event.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-apc-primary"
+                >
+                  <option value="">All</option>
+
+                  {subordinateOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </CardHeader>
 
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-2">
-            <AreaAction
-              icon={<Users className="h-5 w-5" />}
-              title="Members"
-              description="View members belonging to your organizational area."
-              href="/portal/campaign/members"
+          {visibleMembers.length === 0 ? (
+            <EmptyState
+              icon={<Users className="h-8 w-8" />}
+              title="No members yet"
+              description={
+                subordinateId
+                  ? "Nobody is registered in the selected part of your area."
+                  : "Nobody has registered inside your area yet."
+              }
             />
+          ) : (
+            <div className="space-y-2">
+              {visibleMembers.slice(0, 12).map((member) => (
+                <Link
+                  key={member.id}
+                  href={`/portal/campaign/members/${member.id}`}
+                  className="flex items-center gap-3 rounded-xl border p-3 transition hover:bg-gray-50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-apc-primary/10 text-sm font-bold text-apc-primary">
+                    {member.full_name?.charAt(0)?.toUpperCase() ?? "M"}
+                  </div>
 
-            <AreaAction
-              icon={<CheckCircle2 className="h-5 w-5" />}
-              title="Assignments"
-              description="Review campaign assignments associated with your area."
-              href="/portal/campaign/assignments"
-            />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-900">
+                      {member.full_name || "Member"}
+                    </p>
 
-            <AreaAction
-              icon={<CalendarIcon />}
-              title="Activities"
-              description="View campaign activities taking place in your area."
-              href="/portal/campaign/activities"
-            />
+                    <p className="truncate text-xs text-gray-500">
+                      {lookup.wardLabel(member.ward_id)} ·{" "}
+                      {lookup.pollingUnitLabel(
+                        member.ward_id,
+                        member.polling_unit_id,
+                      )}
+                    </p>
+                  </div>
 
-            <AreaAction
-              icon={<Flag className="h-5 w-5" />}
-              title="Field Reports"
-              description="Review or submit campaign field reports."
-              href="/portal/campaign/reports"
-            />
-          </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                </Link>
+              ))}
+
+              {visibleMembers.length > 12 && (
+                <Link
+                  href="/portal/campaign/members"
+                  className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-apc-primary hover:underline"
+                >
+                  View all {visibleMembers.length} members
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* ======================================================
-          ASSIGNMENTS
+          ACTIVITIES
           ====================================================== */}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">
-            My Organizational Assignments
-          </CardTitle>
+          <CardTitle className="text-lg">Activities in your area</CardTitle>
 
           <p className="text-sm text-gray-500">
-            All active campaign positions currently assigned to your account.
+            The most relevant activities visible from your scope.
           </p>
         </CardHeader>
 
         <CardContent>
-          <div className="space-y-3">
-            {assignments.map((item) => (
-              <AssignmentRow key={item.id} assignment={item} />
-            ))}
-          </div>
+          {activities.length === 0 ? (
+            <EmptyState
+              icon={<CalendarDays className="h-8 w-8" />}
+              title="No activities yet"
+              description="No campaign activity has been scheduled for your area."
+            />
+          ) : (
+            <div className="space-y-2">
+              {activities.slice(0, 5).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex flex-col gap-1 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-gray-900">
+                      {activity.title}
+                    </p>
+
+                    <p className="text-xs text-gray-500">
+                      {formatScopeType(activity.scope_type)} · {activity.scope_id}
+                      {activity.venue ? ` · ${activity.venue}` : ""}
+                    </p>
+                  </div>
+
+                  <span className="w-fit shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                    {activity.date || "No date"}
+                  </span>
+                </div>
+              ))}
+
+              <Link
+                href="/portal/campaign/activities"
+                className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-apc-primary hover:underline"
+              >
+                View all activities
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* ======================================================
-          REGISTERED ELECTORAL LOCATION
+          MY ASSIGNMENTS
+          ====================================================== */}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">My organizational assignments</CardTitle>
+
+          <p className="text-sm text-gray-500">
+            Positions recorded against your account.
+          </p>
+        </CardHeader>
+
+        <CardContent>
+          {assignments.length === 0 ? (
+            <EmptyState
+              icon={<ShieldCheck className="h-8 w-8" />}
+              title="No position assigned yet"
+              description="You participate as a campaign member. An administrator can assign you a coordinating position."
+            />
+          ) : (
+            <div className="space-y-3">
+              {assignments.map((item) => (
+                <AssignmentRow key={item.id} assignment={item} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ======================================================
+          REGISTERED AREA
           ====================================================== */}
 
       <RegisteredArea
-        wardLabel={wardLabel}
-        pollingUnitLabel={pollingUnitLabel}
+        wardLabel={registered.wardLabel}
+        pollingUnitLabel={registered.pollingUnitLabel}
       />
-
-      {/* ======================================================
-          ELECTION OPERATIONS
-          ====================================================== */}
-
-      <Card className="border-dashed">
-        <CardHeader>
-          <CardTitle className="text-lg">Election Operations</CardTitle>
-
-          <p className="text-sm text-gray-500">
-            Election activity remains separate from your campaign organizational
-            assignment.
-          </p>
-        </CardHeader>
-
-        <CardContent>
-          <Link
-            href="/portal/election"
-            className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            Election Operations
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </CardContent>
-      </Card>
     </div>
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
+ * HELPERS
+ * ============================================================ */
+
+function pollingUnitShortLabel(pollingUnitId: string): string {
+  const tail = pollingUnitId.split("-pu-").pop();
+
+  return tail ? `PU ${tail.toUpperCase()}` : pollingUnitId;
+}
+
+/* ============================================================
  * PAGE HEADER
- * ============================================================
- */
+ * ============================================================ */
 
 function PageHeader({
   title,
@@ -455,11 +766,9 @@ function PageHeader({
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * BACK LINK
- * ============================================================
- */
+ * ============================================================ */
 
 function BackLink() {
   return (
@@ -473,11 +782,9 @@ function BackLink() {
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * AREA INFO
- * ============================================================
- */
+ * ============================================================ */
 
 function AreaInfo({
   icon,
@@ -503,22 +810,22 @@ function AreaInfo({
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * SUMMARY CARD
- * ============================================================
- */
+ * ============================================================ */
 
 function SummaryCard({
   icon,
   title,
   value,
   description,
+  muted = false,
 }: {
   icon: React.ReactNode;
   title: string;
   value: string;
   description: string;
+  muted?: boolean;
 }) {
   return (
     <Card>
@@ -528,7 +835,13 @@ function SummaryCard({
             {icon}
           </div>
 
-          <span className="text-2xl font-bold text-gray-900">{value}</span>
+          <span
+            className={`text-right text-sm font-bold ${
+              muted ? "text-gray-400" : "text-gray-900"
+            }`}
+          >
+            {value}
+          </span>
         </div>
 
         <p className="mt-4 font-semibold text-gray-900">{title}</p>
@@ -539,11 +852,9 @@ function SummaryCard({
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * AREA ACTION
- * ============================================================
- */
+ * ============================================================ */
 
 function AreaAction({
   icon,
@@ -576,11 +887,37 @@ function AreaAction({
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
+ * EMPTY STATE
+ * ============================================================ */
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed p-10 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 text-gray-400">
+        {icon}
+      </div>
+
+      <p className="mt-3 font-semibold text-gray-900">{title}</p>
+
+      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================
  * ASSIGNMENT ROW
- * ============================================================
- */
+ * ============================================================ */
 
 function AssignmentRow({
   assignment,
@@ -595,7 +932,7 @@ function AssignmentRow({
 
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-gray-900">
-          {formatPosition(assignment.position)}
+          {formatOrganizationalPosition(assignment.position)}
         </p>
 
         <p className="mt-1 text-sm text-gray-500">
@@ -612,56 +949,9 @@ function AssignmentRow({
   );
 }
 
-/*
- * ============================================================
- * ORGANIZATIONAL HIERARCHY
- * ============================================================
- */
-
-function OrganizationalHierarchy({
-  assignment,
-}: {
-  assignment: OrganizationalAssignment;
-}) {
-  const levels = getHierarchyLevels(assignment);
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex min-w-max items-center gap-2">
-        {levels.map((level, index) => (
-          <div
-            key={`${level.type}-${level.id}`}
-            className="flex items-center gap-2"
-          >
-            <div
-              className={`rounded-xl border px-4 py-3 ${
-                index === levels.length - 1
-                  ? "border-apc-primary bg-apc-primary/5"
-                  : "bg-white"
-              }`}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                {formatScopeType(level.type)}
-              </p>
-
-              <p className="mt-1 font-semibold text-gray-900">{level.id}</p>
-            </div>
-
-            {index < levels.length - 1 && (
-              <ChevronRight className="h-4 w-4 text-gray-300" />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/*
- * ============================================================
+/* ============================================================
  * REGISTERED ELECTORAL AREA
- * ============================================================
- */
+ * ============================================================ */
 
 function RegisteredArea({
   wardLabel,
@@ -673,7 +963,7 @@ function RegisteredArea({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">My Registered Electoral Area</CardTitle>
+        <CardTitle className="text-lg">My registered electoral area</CardTitle>
 
         <p className="text-sm text-gray-500">
           Your personal electoral registration is separate from your campaign
@@ -685,13 +975,13 @@ function RegisteredArea({
         <div className="grid gap-4 md:grid-cols-2">
           <AreaInfo
             icon={<MapPin className="h-4 w-4" />}
-            label="Registered Ward"
+            label="Registered ward"
             value={wardLabel}
           />
 
           <AreaInfo
             icon={<MapPin className="h-4 w-4" />}
-            label="Registered Polling Unit"
+            label="Registered polling unit"
             value={pollingUnitLabel}
           />
         </div>
@@ -700,11 +990,9 @@ function RegisteredArea({
   );
 }
 
-/*
- * ============================================================
+/* ============================================================
  * LOADING
- * ============================================================
- */
+ * ============================================================ */
 
 function CampaignAreaLoading() {
   return (
@@ -731,55 +1019,9 @@ function CampaignAreaLoading() {
   );
 }
 
-/*
- * ============================================================
- * CALENDAR ICON
- * ============================================================
- */
-
-function CalendarIcon() {
-  return <Building2 className="h-5 w-5" />;
-}
-
-/*
- * ============================================================
- * POSITION FORMATTER
- * ============================================================
- */
-
-function formatPosition(position: OrganizationalPosition): string {
-  switch (position) {
-    case "campaign_member":
-      return "Campaign Member";
-
-    case "ward_coordinator":
-      return "Ward Coordinator";
-
-    case "lga_coordinator":
-      return "LGA Coordinator";
-
-    case "zone_coordinator":
-      return "Zone Coordinator";
-
-    case "state_coordinator":
-      return "State Coordinator";
-
-    case "campaign_manager":
-      return "Campaign Manager";
-
-    case "council_chairman":
-      return "Council Chairman";
-
-    default:
-      return position;
-  }
-}
-
-/*
- * ============================================================
+/* ============================================================
  * STATUS FORMATTER
- * ============================================================
- */
+ * ============================================================ */
 
 function formatAssignmentStatus(
   status: OrganizationalAssignment["status"],
@@ -800,36 +1042,5 @@ function formatAssignmentStatus(
     default:
       return status;
   }
-}
-
-/*
- * ============================================================
- * HIERARCHY BUILDER
- * ============================================================
- *
- * At this stage we know the assigned scope IDs, but we do not
- * yet have a complete relational hierarchy service.
- *
- * Therefore we deliberately do NOT invent parent IDs.
- *
- * Later, when the organizational location data service is
- * connected, this function can resolve:
- *
- * State → Zone → LGA → Ward → PU
- *
- * without changing the dashboard architecture.
- * ============================================================
- */
-
-function getHierarchyLevels(assignment: OrganizationalAssignment): Array<{
-  type: ScopeType;
-  id: string;
-}> {
-  return [
-    {
-      type: assignment.scope_type,
-      id: assignment.scope_id,
-    },
-  ];
 }
 

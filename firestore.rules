@@ -527,6 +527,19 @@ service cloud.firestore {
           && resource.data.user_id == request.auth.uid
         );
 
+      /*
+       * R2 — a coordinator may read the assignments of members inside
+       * the scope they cover, which is what the Members page needs to
+       * list "coordinators in my area" with their position and
+       * sub-scope. `user_access` carries the position's scope grants.
+       */
+      allow read: if isSignedIn()
+        && hasAccess(
+          "view_members",
+          resource.data.scope_type,
+          resource.data.scope_id
+        );
+
       allow create, update, delete: if isAdmin();
     }
 
@@ -579,6 +592,29 @@ service cloud.firestore {
           resource.data.scope_id
         );
 
+      /*
+       * Membership read: an activity is visible to the scope it was
+       * created at and everything below it. The writer stamps the ward
+       * and (for PU-scoped rows) polling-unit audience at create time.
+       * A PU-scoped activity is readable only by that PU; everything
+       * else is readable by every member of the stamped wards.
+       */
+      allow read: if isSignedIn()
+        && isCampaignMember()
+        && (
+          (
+            resource.data.get("visibility_pu_ids", []).size() > 0
+            && callerProfile().polling_unit_id
+              in resource.data.get("visibility_pu_ids", [])
+          )
+          ||
+          (
+            resource.data.get("visibility_pu_ids", []).size() == 0
+            && callerProfile().ward_id
+              in resource.data.get("visibility_ward_ids", [])
+          )
+        );
+
       allow create: if isSignedIn()
         && request.resource.data.created_by == request.auth.uid
         && hasAccess(
@@ -618,7 +654,89 @@ service cloud.firestore {
           && resource.data.assigned_to == request.auth.uid
         );
 
-      allow create, update, delete: if isAdmin();
+      /*
+       * R3 — dual-target reads.
+       *
+       *   individual target ... the assignee (new + legacy field)
+       *   creator ............. their own assignments
+       *   scope target ........ the target scope and everything below,
+       *                         via the target's own scope document and
+       *                         the ward stamp written at create time
+       */
+      allow read: if isSignedIn()
+        && resource.data.get("assigned_to_user", "") == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && resource.data.get("created_by", "") == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && hasAccess(
+          "view_assignments",
+          resource.data.scope_type,
+          resource.data.scope_id
+        );
+
+      allow read: if isSignedIn()
+        && resource.data.get("target_ward_id", "") != ""
+        && hasAccess(
+          "view_assignments",
+          "ward",
+          resource.data.get("target_ward_id", "")
+        );
+
+      /*
+       * Creation is checked against the target scope: an admin may
+       * target anything, a coordinator only their own scope or below
+       * (the client also runs assignmentCoversScope before writing).
+       */
+      allow create: if isAdmin();
+
+      allow create: if isSignedIn()
+        && request.resource.data.get("created_by", "") == request.auth.uid
+        && hasAccess(
+          "create_assignment",
+          request.resource.data.scope_type,
+          request.resource.data.scope_id
+        );
+
+      allow update, delete: if isAdmin();
+
+      allow update: if isSignedIn()
+        && resource.data.get("created_by", "") == request.auth.uid;
+
+      /*
+       * Per-person completion records.
+       */
+      match /completions/{userId} {
+
+        allow read: if isAdmin()
+          || request.auth.uid == userId
+          || (
+            isSignedIn()
+            && get(
+              /databases/$(database)/documents/campaign_assignments/$(assignmentId)
+            ).data.get("created_by", "") == request.auth.uid
+          );
+
+        allow create: if isAdmin()
+          || (
+            isSignedIn()
+            && get(
+              /databases/$(database)/documents/campaign_assignments/$(assignmentId)
+            ).data.get("created_by", "") == request.auth.uid
+          );
+
+        allow update: if isAdmin()
+          || request.auth.uid == userId
+          || (
+            isSignedIn()
+            && get(
+              /databases/$(database)/documents/campaign_assignments/$(assignmentId)
+            ).data.get("created_by", "") == request.auth.uid
+          );
+
+        allow delete: if isAdmin();
+      }
     }
 
     // ============================================================
@@ -632,6 +750,16 @@ service cloud.firestore {
 
       allow read: if isAdmin();
 
+      /*
+       * R4 — the assignment's creator sees every report against their
+       * own assignments. Combined with the two reads above this is the
+       * COMPLETE visibility model: submitter + creator + admin. It is
+       * deliberately not cascade-up, so there is no scope-based read.
+       */
+      allow read: if isSignedIn()
+        && resource.data.get("assignment_creator_id", "")
+          == request.auth.uid;
+
       allow read: if isSignedIn()
         && hasAccess(
           "review_field_report",
@@ -642,6 +770,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.status == "submitted"
+        && request.resource.data.get("assignment_id", "") is string
         && hasAccess(
           "submit_field_report",
           request.resource.data.scope_type,
@@ -669,6 +798,9 @@ service cloud.firestore {
       allow read: if isAdmin();
 
       allow read: if isSignedIn()
+        && resource.data.get("raised_by", "") == request.auth.uid;
+
+      allow read: if isSignedIn()
         && resource.data.reported_by == request.auth.uid;
 
       allow read: if isSignedIn()
@@ -676,6 +808,21 @@ service cloud.firestore {
           "manage_issue",
           resource.data.scope_type,
           resource.data.scope_id
+        );
+
+      /*
+       * R5 — cascade UP. An issue raised at a polling unit is readable
+       * by the coordinator of its ward, LGA, zone or state. The writer
+       * stamps `scope_ward_id`, and the coordinator holds "manage_issue"
+       * for every ward inside their scope, so a single ward-level check
+       * covers the whole chain without a PU document per polling unit.
+       */
+      allow read: if isSignedIn()
+        && resource.data.get("scope_ward_id", "") != ""
+        && hasAccess(
+          "manage_issue",
+          "ward",
+          resource.data.get("scope_ward_id", "")
         );
 
       allow create: if isSignedIn()
@@ -698,6 +845,15 @@ service cloud.firestore {
           "manage_issue",
           resource.data.scope_type,
           resource.data.scope_id
+        );
+
+      /* Same ward-level cascade for acknowledge / resolve. */
+      allow update: if isSignedIn()
+        && resource.data.get("scope_ward_id", "") != ""
+        && hasAccess(
+          "manage_issue",
+          "ward",
+          resource.data.get("scope_ward_id", "")
         );
 
       allow delete: if isAdmin();

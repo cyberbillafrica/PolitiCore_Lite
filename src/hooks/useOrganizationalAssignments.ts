@@ -144,6 +144,7 @@ export function useOrganizationalAssignments() {
       zone_coordinator: 70,
       lga_coordinator: 60,
       ward_coordinator: 50,
+      pu_coordinator: 40,
       campaign_member: 10,
     };
 

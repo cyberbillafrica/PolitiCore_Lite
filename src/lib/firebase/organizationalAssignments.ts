@@ -17,7 +17,9 @@ import {
 
 import { db } from "@/lib/firebase/config";
 import {
+  revokeCampaignAccessForAssignment,
   revokeElectionResultAccessForAssignment,
+  syncCampaignAccessForAssignment,
   syncElectionResultAccessForAssignment,
 } from "./userAccess";
 import type {
@@ -215,16 +217,28 @@ export async function createOrganizationalAssignment(data: {
 
   /*
    * Project the assignment into the `user_access` index the Firestore
-   * rules read for scoped election results. Only active assignments
-   * grant access.
+   * rules read. Only active assignments grant access.
+   *
+   * Two projections live side by side:
+   *
+   *   campaign permissions ... every campaign page's reads and writes
+   *   election results ....... the election result / PU-report reads
    */
   if (data.status === "active") {
-    await syncElectionResultAccessForAssignment(
-      data.user_id,
-      data.position,
-      data.scope_type,
-      data.scope_id,
-    );
+    await Promise.all([
+      syncCampaignAccessForAssignment(
+        data.user_id,
+        data.position,
+        data.scope_type,
+        data.scope_id,
+      ),
+      syncElectionResultAccessForAssignment(
+        data.user_id,
+        data.position,
+        data.scope_type,
+        data.scope_id,
+      ),
+    ]);
   }
 
   return ref.id;
@@ -263,23 +277,39 @@ export async function updateOrganizationalAssignment(
   if (!previous) return;
 
   if (previous.status === "active") {
-    await revokeElectionResultAccessForAssignment(
-      previous.user_id,
-      previous.position,
-      previous.scope_type,
-      previous.scope_id,
-    );
+    await Promise.all([
+      revokeCampaignAccessForAssignment(
+        previous.user_id,
+        previous.position,
+        previous.scope_type,
+        previous.scope_id,
+      ),
+      revokeElectionResultAccessForAssignment(
+        previous.user_id,
+        previous.position,
+        previous.scope_type,
+        previous.scope_id,
+      ),
+    ]);
   }
 
   const nextStatus = data.status ?? previous.status;
 
   if (nextStatus === "active") {
-    await syncElectionResultAccessForAssignment(
-      previous.user_id,
-      data.position ?? previous.position,
-      data.scope_type ?? previous.scope_type,
-      data.scope_id ?? previous.scope_id,
-    );
+    await Promise.all([
+      syncCampaignAccessForAssignment(
+        previous.user_id,
+        data.position ?? previous.position,
+        data.scope_type ?? previous.scope_type,
+        data.scope_id ?? previous.scope_id,
+      ),
+      syncElectionResultAccessForAssignment(
+        previous.user_id,
+        data.position ?? previous.position,
+        data.scope_type ?? previous.scope_type,
+        data.scope_id ?? previous.scope_id,
+      ),
+    ]);
   }
 }
 
@@ -303,12 +333,20 @@ export async function deleteOrganizationalAssignment(
   await deleteDoc(assignmentRef);
 
   if (previous) {
-    await revokeElectionResultAccessForAssignment(
-      previous.user_id,
-      previous.position,
-      previous.scope_type,
-      previous.scope_id,
-    );
+    await Promise.all([
+      revokeCampaignAccessForAssignment(
+        previous.user_id,
+        previous.position,
+        previous.scope_type,
+        previous.scope_id,
+      ),
+      revokeElectionResultAccessForAssignment(
+        previous.user_id,
+        previous.position,
+        previous.scope_type,
+        previous.scope_id,
+      ),
+    ]);
   }
 }
 

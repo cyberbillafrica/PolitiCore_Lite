@@ -1,248 +1,386 @@
 "use client";
 
+/*
+ * ============================================================
+ * CAMPAIGN ASSIGNMENTS
+ * ============================================================
+ *
+ * An assignment targets one person, a scope, or both:
+ *
+ *   { assigned_to_user }                       individual
+ *   { assigned_to_scope }                      per_person
+ *   { assigned_to_user, assigned_to_scope }    both
+ *
+ * Legacy documents written before Round 5 carry
+ * `assigned_to` / `assigned_by` / `scope_type` / `scope_id` only. The
+ * mapper accepts either shape, and new documents keep writing the
+ * legacy fields so nothing that still reads them breaks.
+ *
+ * Per-person completions live at
+ *   campaign_assignments/{id}/completions/{uid}
+ * and are only used when `completion_mode` is "per_person".
+ */
+
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
   serverTimestamp,
-  type Query,
   updateDoc,
   where,
+  writeBatch,
+  type Query,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
+import { resolveCampaignScope } from "@/lib/campaign-scope";
 
-/*
- * ============================================================
- * CAMPAIGN ASSIGNMENT
- * ============================================================
- */
+import type {
+  AssignmentCompletion,
+  AssignmentCompletionStatus,
+  AssignmentScope,
+  CampaignAssignment,
+  LGA,
+  ScopeType,
+} from "@/types";
 
-export interface CampaignAssignment {
-  id: string;
-
-  title: string;
-  description?: string;
-
-  assigned_to: string;
-  assigned_by: string;
-
-  scope_type: string;
-  scope_id: string;
-
-  priority: "low" | "medium" | "high" | "urgent";
-
-  status:
-    | "not_started"
-    | "in_progress"
-    | "submitted"
-    | "under_review"
-    | "completed"
-    | "overdue";
-
-  due_date?: string | null;
-
-  location?: string | null;
-
-  evidence_url?: string | null;
-
-  created_at?: unknown;
-  updated_at?: unknown;
-}
-
-/*
- * ============================================================
- * COLLECTION
- * ============================================================
- */
+export type { CampaignAssignment } from "@/types";
 
 const COLLECTION = "campaign_assignments";
+const COMPLETIONS = "completions";
+const IN_FILTER_LIMIT = 30;
 
-/*
- * ============================================================
- * MAP FIRESTORE DOCUMENT
- * ============================================================
+/* ============================================================
+ * MAPPING
+ * ============================================================ */
+
+function asScope(value: unknown): AssignmentScope | null {
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const level = typeof record.level === "string" ? record.level : "";
+  const scopeId = typeof record.scope_id === "string" ? record.scope_id : "";
+
+  if (!level || !scopeId) return null;
+
+  return {
+    level: level as ScopeType,
+    scope_id: scopeId,
+    role_filter:
+      typeof record.role_filter === "string" && record.role_filter
+        ? (record.role_filter as AssignmentScope["role_filter"])
+        : null,
+  };
+}
+
+/**
+ * Legacy status values map onto the two-state model:
+ * anything that finished is closed; everything else is open.
  */
+function asStatus(value: unknown): CampaignAssignment["status"] {
+  const raw = String(value ?? "");
+  if (raw === "closed" || raw === "completed") return "closed";
+  return "open";
+}
 
 function mapAssignment(
   id: string,
   data: Record<string, unknown>,
 ): CampaignAssignment {
+  const assignedToUser =
+    typeof data.assigned_to_user === "string" && data.assigned_to_user
+      ? data.assigned_to_user
+      : typeof data.assigned_to === "string" && data.assigned_to
+        ? data.assigned_to
+        : null;
+
+  const assignedToScope = asScope(data.assigned_to_scope);
+
+  /*
+   * Legacy rows stored a bare scope_type/scope_id pair. Treat that as
+   * a scope target when the row was not addressed to one person.
+   */
+  const legacyScope =
+    !assignedToScope &&
+    typeof data.scope_type === "string" &&
+    typeof data.scope_id === "string" &&
+    data.scope_id
+      ? {
+          level: data.scope_type as ScopeType,
+          scope_id: String(data.scope_id),
+          role_filter: null,
+        }
+      : null;
+
+  const createdBy =
+    typeof data.created_by === "string" && data.created_by
+      ? data.created_by
+      : String(data.assigned_by ?? "");
+
+  const scope = assignedToScope ?? legacyScope;
+  const completionMode =
+    data.completion_mode === "per_person" || data.completion_mode === "individual"
+      ? data.completion_mode
+      : scope
+        ? "per_person"
+        : "individual";
+
   return {
     id,
-
     title: String(data.title ?? ""),
     description:
-      typeof data.description === "string" ? data.description : undefined,
-
-    assigned_to: String(data.assigned_to ?? ""),
-    assigned_by: String(data.assigned_by ?? ""),
-
-    scope_type: String(data.scope_type ?? ""),
-    scope_id: String(data.scope_id ?? ""),
-
-    priority: (data.priority as CampaignAssignment["priority"]) ?? "medium",
-
-    status: (data.status as CampaignAssignment["status"]) ?? "not_started",
-
-    due_date: typeof data.due_date === "string" ? data.due_date : null,
-
-    location: typeof data.location === "string" ? data.location : null,
-
-    evidence_url:
-      typeof data.evidence_url === "string" ? data.evidence_url : null,
-
+      typeof data.description === "string" && data.description
+        ? data.description
+        : undefined,
+    created_by: createdBy,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    due_at:
+      typeof data.due_at === "string"
+        ? data.due_at
+        : typeof data.due_date === "string"
+          ? data.due_date
+          : null,
+    assigned_to_user: assignedToUser,
+    assigned_to_scope: scope,
+    assigned_to: assignedToUser ?? "",
+    status: asStatus(data.status),
+    completion_mode: completionMode,
+    priority:
+      (data.priority as CampaignAssignment["priority"]) ?? "medium",
+    created_scope: asScope(data.created_scope),
   };
 }
 
-/*
- * ============================================================
- * GET MY ASSIGNMENTS
- * ============================================================
- *
- * This is the safe first implementation:
- *
- * A normal campaign member can see assignments actually
- * assigned to them.
- *
- * Coordinators/admin expansion will use organizational scope
- * as we strengthen the Firestore authorization layer.
- */
+/* ============================================================
+ * READS
+ * ============================================================ */
 
 export async function getAllCampaignAssignments(): Promise<CampaignAssignment[]> {
-  const q = query(
-    collection(db, COLLECTION),
-    orderBy("created_at", "desc"),
+  const snapshot = await getDocs(
+    query(collection(db, COLLECTION), orderBy("created_at", "desc")),
   );
-
-  const snapshot = await getDocs(q);
 
   return snapshot.docs.map((item) => mapAssignment(item.id, item.data()));
 }
 
-export async function getMyCampaignAssignments(
+/**
+ * Assignments directly addressed to the user.
+ *
+ * Queries both `assigned_to_user` and the legacy `assigned_to` field so
+ * pre-Round-5 rows stay visible.
+ */
+export async function getAssignmentsForUser(
   userId: string,
-  userEmail?: string,
 ): Promise<CampaignAssignment[]> {
-  if (!userId && !userEmail) {
-    return [];
-  }
+  if (!userId) return [];
 
-  const seen = new Set<string>();
-  const results: CampaignAssignment[] = [];
+  const byId = new Map<string, CampaignAssignment>();
 
-  const queries: Query[] = [];
-
-  if (userId) {
-    queries.push(
-      query(
-        collection(db, COLLECTION),
-        where("assigned_to", "==", userId),
-        orderBy("created_at", "desc"),
-      ),
-    );
-  }
-
-  if (userEmail) {
-    queries.push(
-      query(
-        collection(db, COLLECTION),
-        where("assigned_to", "==", userEmail),
-        orderBy("created_at", "desc"),
-      ),
-    );
-  }
+  const queries: Query[] = [
+    query(collection(db, COLLECTION), where("assigned_to_user", "==", userId)),
+    query(collection(db, COLLECTION), where("assigned_to", "==", userId)),
+    query(collection(db, COLLECTION), where("created_by", "==", userId)),
+    query(collection(db, COLLECTION), where("assigned_by", "==", userId)),
+  ];
 
   for (const q of queries) {
     const snapshot = await getDocs(q);
+    for (const document of snapshot.docs) {
+      byId.set(document.id, mapAssignment(document.id, document.data()));
+    }
+  }
 
-    for (const docSnapshot of snapshot.docs) {
-      const assignment = mapAssignment(docSnapshot.id, docSnapshot.data());
+  return sortAssignments(Array.from(byId.values()));
+}
 
-      if (!seen.has(assignment.id)) {
-        seen.add(assignment.id);
-        results.push(assignment);
+/**
+ * Scope-targeted assignments visible to the viewer's scope.
+ *
+ * `wardIds` should be the wards the viewer covers (the assignment's own
+ * scope and everything below it). Two queries cover the whole hierarchy:
+ * assignments whose target resolves to one of those wards, and
+ * assignments targeted directly at the viewer's own scope level.
+ */
+export async function getAssignmentsInScope(
+  scope: { level: ScopeType; scopeId: string } | null,
+  wardIds: string[],
+  lgas?: LGA[],
+): Promise<CampaignAssignment[]> {
+  if (!scope?.level || !scope.scopeId) return [];
+
+  const byId = new Map<string, CampaignAssignment>();
+
+  if (scope.level === "state" || scope.level === "campaign") {
+    return sortAssignments(await getAllCampaignAssignments());
+  }
+
+  /* 1. Own-level target (e.g. a ward-scoped assignment for a ward coord). */
+  const ownLevel = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("scope_type", "==", scope.level),
+      where("scope_id", "==", scope.scopeId),
+    ),
+  );
+
+  for (const document of ownLevel.docs) {
+    byId.set(document.id, mapAssignment(document.id, document.data()));
+  }
+
+  /*
+   * 2. LGA-scoped targets inside a zone.
+   *
+   * An LGA target carries no `target_ward_id`, so a zone coordinator
+   * would otherwise miss the LGA-level work inside their zone.
+   */
+  if (scope.level === "senatorial_zone") {
+    const resolved = await resolveCampaignScope(scope.level, scope.scopeId, lgas);
+    const zoneLgaIds = Array.from(new Set(resolved?.lgaIds ?? []));
+
+    for (let index = 0; index < zoneLgaIds.length; index += IN_FILTER_LIMIT) {
+      const chunk = zoneLgaIds.slice(index, index + IN_FILTER_LIMIT);
+
+      const snapshot = await getDocs(
+        query(
+          collection(db, COLLECTION),
+          where("scope_type", "==", "lga"),
+          where("scope_id", "in", chunk),
+        ),
+      );
+
+      for (const document of snapshot.docs) {
+        byId.set(document.id, mapAssignment(document.id, document.data()));
       }
     }
   }
 
-  return results.sort((a, b) => {
-    const aDate = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
-    const bDate = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
-    return bDate - aDate;
+  /* 3. Any target whose ward is inside the viewer's scope. */
+  const unique = Array.from(new Set(wardIds.filter(Boolean)));
+
+  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
+    const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
+
+    const snapshot = await getDocs(
+      query(collection(db, COLLECTION), where("target_ward_id", "in", chunk)),
+    );
+
+    for (const document of snapshot.docs) {
+      byId.set(document.id, mapAssignment(document.id, document.data()));
+    }
+  }
+
+  return sortAssignments(Array.from(byId.values()));
+}
+
+function sortAssignments(items: CampaignAssignment[]): CampaignAssignment[] {
+  return [...items].sort((a, b) => {
+    const left = a.created_at ? String(a.created_at) : "";
+    const right = b.created_at ? String(b.created_at) : "";
+    return right.localeCompare(left);
   });
 }
 
-/*
- * ============================================================
- * GET AREA ASSIGNMENTS
- * ============================================================
- *
- * Used by authorized coordinators.
- *
- * The page supplies the coordinator's organizational scope.
- */
+export async function getCampaignAssignment(
+  assignmentId: string,
+): Promise<CampaignAssignment | null> {
+  if (!assignmentId) return null;
 
-export async function getScopedCampaignAssignments(
-  scopeType: string,
-  scopeId: string,
-): Promise<CampaignAssignment[]> {
-  if (!scopeType || !scopeId) {
-    return [];
-  }
+  const snapshot = await getDoc(doc(db, COLLECTION, assignmentId));
+  if (!snapshot.exists()) return null;
 
-  const q = query(
-    collection(db, COLLECTION),
-    where("scope_type", "==", scopeType),
-    where("scope_id", "==", scopeId),
-    orderBy("created_at", "desc"),
-  );
-
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((item) => mapAssignment(item.id, item.data()));
+  return mapAssignment(snapshot.id, snapshot.data());
 }
 
-/*
- * ============================================================
- * CREATE ASSIGNMENT
- * ============================================================
- */
+/* ============================================================
+ * WRITES
+ * ============================================================ */
 
-export async function createCampaignAssignment(data: {
+export interface CreateAssignmentInput {
   title: string;
   description?: string;
 
-  assigned_to: string;
-  assigned_by: string;
+  created_by: string;
 
-  scope_type: string;
-  scope_id: string;
+  assigned_to_user?: string | null;
+  assigned_to_scope?: AssignmentScope | null;
 
+  due_at?: string | null;
   priority?: CampaignAssignment["priority"];
 
-  due_date?: string | null;
+  created_scope?: { level: ScopeType; scope_id: string } | null;
 
-  location?: string | null;
-}) {
-  const ref = await addDoc(collection(db, COLLECTION), {
-    ...data,
+  /** Ward the target belongs to, used for scoped reads. */
+  target_ward_id?: string | null;
+}
 
-    priority: data.priority ?? "medium",
+/**
+ * Create an assignment.
+ *
+ * `completion_mode` is derived: a scope target always produces
+ * per-person tracking; an individual target produces one completion.
+ */
+export async function createCampaignAssignment(
+  input: CreateAssignmentInput,
+): Promise<string> {
+  if (!input.assigned_to_user && !input.assigned_to_scope) {
+    throw new Error(
+      "An assignment must target a member, a scope, or both.",
+    );
+  }
 
-    status: "not_started",
+  const scope = input.assigned_to_scope ?? null;
+  const completionMode = scope ? "per_person" : "individual";
 
-    evidence_url: null,
-
+  const document: Record<string, unknown> = {
+    title: input.title.trim(),
+    created_by: input.created_by,
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
-  });
+
+    status: "open",
+    completion_mode: completionMode,
+
+    priority: input.priority ?? "medium",
+    due_at: input.due_at || null,
+
+    assigned_to_user: input.assigned_to_user || null,
+    assigned_to_scope: scope,
+
+    /* Legacy fields — kept so older readers keep working. */
+    assigned_to: input.assigned_to_user || "",
+    assigned_by: input.created_by,
+    scope_type: scope?.level ?? "",
+    scope_id: scope?.scope_id ?? "",
+    due_date: input.due_at || null,
+
+    created_scope: input.created_scope ?? null,
+    target_ward_id: input.target_ward_id ?? null,
+  };
+
+  if (input.description?.trim()) {
+    document.description = input.description.trim();
+  }
+
+  const ref = await addDoc(collection(db, COLLECTION), document);
+
+  /*
+   * When the target is a scope, every targeted member gets their own
+   * pending completion row so the creator can track them individually.
+   */
+  if (scope) {
+    const targetIds = await resolveTargetMemberIds({
+      scope,
+      assigned_to_user: input.assigned_to_user ?? null,
+    });
+
+    await seedCompletions(ref.id, targetIds);
+  }
 
   return ref.id;
 }
@@ -251,19 +389,24 @@ export async function updateCampaignAssignment(
   assignmentId: string,
   data: Partial<{
     title: string;
-    description?: string;
-    assigned_to: string;
-    assigned_by: string;
-    scope_type: string;
-    scope_id: string;
+    description: string;
+    due_at: string | null;
     priority: CampaignAssignment["priority"];
     status: CampaignAssignment["status"];
-    due_date: string | null;
-    location: string | null;
   }>,
 ): Promise<void> {
   await updateDoc(doc(db, COLLECTION, assignmentId), {
     ...data,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function setAssignmentStatus(
+  assignmentId: string,
+  status: CampaignAssignment["status"],
+): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, assignmentId), {
+    status,
     updated_at: serverTimestamp(),
   });
 }
@@ -274,3 +417,200 @@ export async function deleteCampaignAssignment(
   await deleteDoc(doc(db, COLLECTION, assignmentId));
 }
 
+/* ============================================================
+ * COMPLETIONS
+ * ============================================================ */
+
+/**
+ * Members a scope target resolves to.
+ *
+ * Kept in this module (rather than importing the member loader) so an
+ * assignment write never depends on the member page's view model.
+ * `role_filter` narrows the set to one position, resolved from
+ * `organizational_assignments`.
+ */
+async function resolveTargetMemberIds(input: {
+  scope: AssignmentScope;
+  assigned_to_user: string | null;
+}): Promise<string[]> {
+  const { resolveCampaignScope } = await import("@/lib/campaign-scope");
+
+  const resolved = await resolveCampaignScope(
+    input.scope.level,
+    input.scope.scope_id,
+  );
+
+  if (!resolved) return input.assigned_to_user ? [input.assigned_to_user] : [];
+
+  const { getCampaignMembersInScope } = await import(
+    "@/lib/firebase/campaignMembers"
+  );
+
+  const members = await getCampaignMembersInScope(resolved);
+
+  let ids = members.map((member) => member.id);
+
+  if (input.scope.role_filter) {
+    const assignmentSnapshot = await getDocs(
+      query(
+        collection(db, "organizational_assignments"),
+        where("position", "==", input.scope.role_filter),
+        where("status", "==", "active"),
+      ),
+    );
+
+    const allowed = new Set(
+      assignmentSnapshot.docs.map((item) => String(item.data().user_id ?? "")),
+    );
+
+    ids = ids.filter((id) => allowed.has(id));
+  }
+
+  if (input.assigned_to_user) {
+    ids = Array.from(new Set([...ids, input.assigned_to_user]));
+  }
+
+  return ids;
+}
+
+async function seedCompletions(
+  assignmentId: string,
+  userIds: string[],
+): Promise<void> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return;
+
+  for (let index = 0; index < unique.length; index += 450) {
+    const chunk = unique.slice(index, index + 450);
+    const batch = writeBatch(db);
+
+    for (const userId of chunk) {
+      batch.set(
+        doc(db, COLLECTION, assignmentId, COMPLETIONS, userId),
+        {
+          assignment_id: assignmentId,
+          user_id: userId,
+          status: "pending" satisfies AssignmentCompletionStatus,
+          submitted_at: null,
+          reviewed_at: null,
+          reviewed_by: null,
+          report_id: null,
+          updated_at: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+
+    await batch.commit();
+  }
+}
+
+export async function getAssignmentCompletions(
+  assignmentId: string,
+): Promise<AssignmentCompletion[]> {
+  if (!assignmentId) return [];
+
+  const snapshot = await getDocs(
+    collection(db, COLLECTION, assignmentId, COMPLETIONS),
+  );
+
+  return snapshot.docs.map((item) => {
+    const data = item.data();
+    return {
+      id: item.id,
+      assignment_id: String(data.assignment_id ?? assignmentId),
+      user_id: String(data.user_id ?? item.id),
+      status: (data.status as AssignmentCompletionStatus) ?? "pending",
+      submitted_at: data.submitted_at,
+      reviewed_at: data.reviewed_at,
+      reviewed_by: typeof data.reviewed_by === "string" ? data.reviewed_by : null,
+      review_notes:
+        typeof data.review_notes === "string" ? data.review_notes : null,
+      report_id: typeof data.report_id === "string" ? data.report_id : null,
+      updated_at: data.updated_at,
+    };
+  });
+}
+
+/**
+ * Record that a member submitted a completion, linked to their report.
+ */
+export async function markCompletionSubmitted(
+  assignmentId: string,
+  userId: string,
+  reportId: string,
+): Promise<void> {
+  await updateDoc(
+    doc(db, COLLECTION, assignmentId, COMPLETIONS, userId),
+    {
+      assignment_id: assignmentId,
+      user_id: userId,
+      status: "submitted",
+      submitted_at: serverTimestamp(),
+      report_id: reportId,
+      updated_at: serverTimestamp(),
+    },
+  );
+}
+
+/**
+ * Creator decision on one member's completion.
+ */
+export async function reviewCompletion(input: {
+  assignmentId: string;
+  userId: string;
+  status: "approved" | "rejected";
+  reviewedBy: string;
+  notes?: string | null;
+}): Promise<void> {
+  await updateDoc(
+    doc(db, COLLECTION, input.assignmentId, COMPLETIONS, input.userId),
+    {
+      status: input.status,
+      reviewed_by: input.reviewedBy,
+      reviewed_at: serverTimestamp(),
+      review_notes: input.notes?.trim() || null,
+      updated_at: serverTimestamp(),
+    },
+  );
+}
+
+/**
+ * Close the parent assignment when every completion is approved.
+ * Returns true when the write happened.
+ */
+export async function closeAssignmentIfComplete(
+  assignmentId: string,
+): Promise<boolean> {
+  const completions = await getAssignmentCompletions(assignmentId);
+
+  if (completions.length === 0) return false;
+  if (!completions.every((item) => item.status === "approved")) return false;
+
+  await setAssignmentStatus(assignmentId, "closed");
+  return true;
+}
+
+/* ============================================================
+ * SCOPE RESOLUTION FOR WRITES
+ * ============================================================ */
+
+/**
+ * The ward a scope target belongs to, used for scoped reads of the
+ * assignment. Returns null for state / zone / LGA targets, which are
+ * readable through their own scope document instead.
+ */
+export async function targetWardIdForScope(
+  scope: AssignmentScope | null,
+): Promise<string | null> {
+  if (!scope) return null;
+
+  if (scope.level === "ward") return scope.scope_id;
+
+  if (scope.level === "polling_unit") {
+    const resolved = await resolveCampaignScope("polling_unit", scope.scope_id);
+    return resolved?.wardIds[0] ?? null;
+  }
+
+  return null;
+}
