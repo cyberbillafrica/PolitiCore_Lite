@@ -17,9 +17,8 @@ import {
 
 import { db } from "@/lib/firebase/config";
 import {
-  revokeCampaignAccessForAssignment,
   revokeElectionResultAccessForAssignment,
-  syncCampaignAccessForAssignment,
+  syncCampaignAccessForUser,
   syncElectionResultAccessForAssignment,
 } from "./userAccess";
 import type {
@@ -217,29 +216,29 @@ export async function createOrganizationalAssignment(data: {
 
   /*
    * Project the assignment into the `user_access` index the Firestore
-   * rules read. Only active assignments grant access.
+   * rules read.
    *
    * Two projections live side by side:
    *
-   *   campaign permissions ... every campaign page's reads and writes
-   *   election results ....... the election result / PU-report reads
+   *   campaign permissions ... RECOMPUTED from the user's full state, so
+   *                            the baseline is always present and a
+   *                            previous position's grants cannot survive
+   *   election results ....... additive per assignment
+   *
+   * The campaign recompute reads the assignments collection, so it sees
+   * the assignment added just above.
    */
-  if (data.status === "active") {
-    await Promise.all([
-      syncCampaignAccessForAssignment(
-        data.user_id,
-        data.position,
-        data.scope_type,
-        data.scope_id,
-      ),
-      syncElectionResultAccessForAssignment(
-        data.user_id,
-        data.position,
-        data.scope_type,
-        data.scope_id,
-      ),
-    ]);
-  }
+  await Promise.all([
+    syncCampaignAccessForUser(data.user_id),
+    data.status === "active"
+      ? syncElectionResultAccessForAssignment(
+          data.user_id,
+          data.position,
+          data.scope_type,
+          data.scope_id,
+        )
+      : Promise.resolve(),
+  ]);
 
   return ref.id;
 }
@@ -277,40 +276,31 @@ export async function updateOrganizationalAssignment(
   if (!previous) return;
 
   if (previous.status === "active") {
-    await Promise.all([
-      revokeCampaignAccessForAssignment(
-        previous.user_id,
-        previous.position,
-        previous.scope_type,
-        previous.scope_id,
-      ),
-      revokeElectionResultAccessForAssignment(
-        previous.user_id,
-        previous.position,
-        previous.scope_type,
-        previous.scope_id,
-      ),
-    ]);
+    await revokeElectionResultAccessForAssignment(
+      previous.user_id,
+      previous.position,
+      previous.scope_type,
+      previous.scope_id,
+    );
   }
 
   const nextStatus = data.status ?? previous.status;
 
   if (nextStatus === "active") {
-    await Promise.all([
-      syncCampaignAccessForAssignment(
-        previous.user_id,
-        data.position ?? previous.position,
-        data.scope_type ?? previous.scope_type,
-        data.scope_id ?? previous.scope_id,
-      ),
-      syncElectionResultAccessForAssignment(
-        previous.user_id,
-        data.position ?? previous.position,
-        data.scope_type ?? previous.scope_type,
-        data.scope_id ?? previous.scope_id,
-      ),
-    ]);
+    await syncElectionResultAccessForAssignment(
+      previous.user_id,
+      data.position ?? previous.position,
+      data.scope_type ?? previous.scope_type,
+      data.scope_id ?? previous.scope_id,
+    );
   }
+
+  /*
+   * Recompute the campaign projection from the user's full state: the
+   * documents belonging to the previous position or scope are deleted,
+   * the new ones are written, and the baseline is preserved.
+   */
+  await syncCampaignAccessForUser(previous.user_id);
 }
 
 /*
@@ -332,22 +322,18 @@ export async function deleteOrganizationalAssignment(
 
   await deleteDoc(assignmentRef);
 
-  if (previous) {
-    await Promise.all([
-      revokeCampaignAccessForAssignment(
-        previous.user_id,
-        previous.position,
-        previous.scope_type,
-        previous.scope_id,
-      ),
-      revokeElectionResultAccessForAssignment(
-        previous.user_id,
-        previous.position,
-        previous.scope_type,
-        previous.scope_id,
-      ),
-    ]);
-  }
+  if (!previous) return;
+
+  await revokeElectionResultAccessForAssignment(
+    previous.user_id,
+    previous.position,
+    previous.scope_type,
+    previous.scope_id,
+  );
+
+  /* The recompute deletes the removed assignment's grants and keeps the
+   * baseline the member is still entitled to. */
+  await syncCampaignAccessForUser(previous.user_id);
 }
 
 /*

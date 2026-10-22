@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
+import { syncCampaignAccessForUser } from "./userAccess";
 
 import {
   scopeForAssignment,
@@ -361,6 +362,22 @@ export async function setMemberSuspended(
  * ============================================================
  */
 
+/**
+ * Profile fields that change the user's access projection.
+ *
+ * A home-area change moves every baseline grant, an access-role or
+ * membership change can end eligibility entirely. Editing a name or a
+ * phone number must not trigger a recompute.
+ */
+const PROJECTION_AFFECTING_FIELDS = [
+  "lga_id",
+  "ward_id",
+  "polling_unit_id",
+  "access_role",
+  "membership_types",
+  "status",
+];
+
 export async function updateCampaignMemberProfile(
   memberId: string,
   data: Partial<UserProfile>,
@@ -385,6 +402,15 @@ export async function updateCampaignMemberProfile(
     ...rest,
     updated_at: serverTimestamp(),
   });
+
+  /*
+   * A home-area change must move the projection: the old area's grants
+   * are deleted and the new area's baseline is written. The recompute
+   * reads the profile back, so it sees the values just written.
+   */
+  if (PROJECTION_AFFECTING_FIELDS.some((field) => field in rest)) {
+    await syncCampaignAccessForUser(memberId);
+  }
 }
 
 /*
@@ -403,6 +429,12 @@ export async function updateMemberMembershipTypes(
     membership_types: membershipTypes,
     updated_at: serverTimestamp(),
   });
+
+  /*
+   * Removing `campaign_member` removes every campaign grant (baseline
+   * and coordinator), because eligibility is decided in one place.
+   */
+  await syncCampaignAccessForUser(memberId);
 }
 
 /*
@@ -421,4 +453,6 @@ export async function updateMemberAccessRole(
     access_role: accessRole,
     updated_at: serverTimestamp(),
   });
+
+  await syncCampaignAccessForUser(memberId);
 }

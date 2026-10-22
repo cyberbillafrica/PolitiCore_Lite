@@ -155,6 +155,74 @@ service cloud.firestore {
         || hasScopedAccess(permission, scopeType, scopeId);
     }
 
+    /*
+     * ============================================================
+     * CAMPAIGN BASELINE SELF-PROVISIONING
+     * ============================================================
+     *
+     * `user_access` writes are admin-only, with ONE narrow exception: a
+     * member may write their own BASELINE documents after signup or
+     * after their home area moves. Without it a plain campaign member
+     * has zero grants and every campaign read is denied.
+     *
+     * The exception is deliberately clamped to the baseline shape (see
+     * docs/campaign-member-baseline.md):
+     *
+     *   - the document's own user_id must be the caller
+     *   - allowed must be true
+     *   - `view_activities` at the caller's own polling unit, ward, LGA,
+     *     zone or the state
+     *   - view_members / view_assignments / submit_field_report /
+     *     report_issue at the caller's own polling unit ONLY
+     *   - the document id must be exactly derivable from the payload,
+     *     so an id can never disagree with its contents
+     *
+     * It can never grant a coordinator permission, a permission above
+     * the caller's own area, or a permission at somebody else's PU.
+     * (The zone is not verifiable here: rules cannot walk the
+     * LGA -> zone map, so the zone grant is limited to view_activities.)
+     */
+
+    function isBaselineAccessPayload(data) {
+      return
+        (
+          data.permission == "view_activities"
+          && (
+            (data.scope_type == "state" && data.scope_id == "enugu-state")
+            || data.scope_type == "senatorial_zone"
+            || (
+              data.scope_type == "lga"
+              && data.scope_id == callerProfile().get("lga_id", "")
+            )
+            || (
+              data.scope_type == "ward"
+              && data.scope_id == callerProfile().get("ward_id", "")
+            )
+            || (
+              data.scope_type == "polling_unit"
+              && data.scope_id == callerProfile().get("polling_unit_id", "")
+            )
+          )
+        )
+        || (
+          data.scope_type == "polling_unit"
+          && data.scope_id == callerProfile().get("polling_unit_id", "")
+          && data.permission in [
+            "view_members",
+            "view_assignments",
+            "submit_field_report",
+            "report_issue"
+          ]
+        );
+    }
+
+    function isDerivableAccessId(accessId, data) {
+      return accessId == request.auth.uid
+        + "__" + data.permission
+        + "__" + data.scope_type
+        + "__" + data.scope_id;
+    }
+
     // ============================================================
     // ELECTION ACTIVITY
     // ============================================================
@@ -574,7 +642,34 @@ service cloud.firestore {
         && request.resource.data.permission is string
         && request.resource.data.allowed is bool;
 
+      /*
+       * R6 — a member provisions their OWN baseline. See the
+       * `isBaselineAccessPayload()` helper above for the exact clamp.
+       */
+      allow create: if isSignedIn()
+        && userExists()
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.allowed == true
+        && request.resource.data.scope_type is string
+        && request.resource.data.scope_id is string
+        && isBaselineAccessPayload(request.resource.data)
+        && isDerivableAccessId(accessId, request.resource.data);
+
+      allow update: if isSignedIn()
+        && userExists()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.allowed == true
+        && isBaselineAccessPayload(request.resource.data)
+        && isDerivableAccessId(accessId, request.resource.data);
+
       allow delete: if isAdmin();
+
+      /* A member may drop their own baseline (moving home area, losing
+       * campaign membership happens through an admin). */
+      allow delete: if isSignedIn()
+        && userExists()
+        && resource.data.user_id == request.auth.uid;
     }
 
     // ============================================================

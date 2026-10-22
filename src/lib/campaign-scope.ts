@@ -28,10 +28,8 @@
  * carries no explicit `lga_ids`.
  */
 
-import {
-  ENUGU_CONSTITUENCIES,
-  lookupConstituencyLgaIds,
-} from "@/data/constituencies";
+import { lookupConstituencyLgaIds } from "@/data/constituencies";
+import { zoneIdForLga } from "@/lib/campaign-access";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { assignmentCoversScope, isScopeDescendant } from "@/lib/permissions";
 
@@ -391,23 +389,12 @@ export async function resolveCampaignScope(
  * LABELS
  * ============================================================ */
 
-/**
- * The senatorial zone an LGA belongs to, resolved from the same static
- * constituency reference the election engine uses. Returns "" when the
- * LGA is not part of any known zone.
+/*
+ * Zone -> LGA derivation lives in `campaign-access.ts`, which the
+ * projection scripts can import without pulling in the Firebase client.
+ * Re-exported here so the campaign pages keep their single import site.
  */
-export function zoneIdForLga(lgaId: string): string {
-  const target = (lgaId ?? "").trim().toLowerCase();
-  if (!target) return "";
-
-  const entry = ENUGU_CONSTITUENCIES.find(
-    (item) =>
-      item.scope_type === "senatorial_zone" &&
-      item.lga_ids.some((id) => id.toLowerCase() === target),
-  );
-
-  return entry?.aliases?.[0] ?? "";
-}
+export { zoneIdForLga };
 
 export function zoneLabel(scopeId: string): string {
   switch (scopeId) {

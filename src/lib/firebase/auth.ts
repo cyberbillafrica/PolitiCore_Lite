@@ -18,6 +18,10 @@ import {
 } from "firebase/firestore";
 
 import { auth, db, firebaseConfig } from "./config";
+import {
+  ensureBaselineCampaignProjection,
+  syncCampaignAccessForUser,
+} from "./userAccess";
 
 import type { MembershipType, Role } from "@/types";
 
@@ -92,6 +96,25 @@ export async function signUpVolunteer(
 
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
+    });
+
+    /*
+     * Baseline projection.
+     *
+     * Without it a brand-new plain campaign member has ZERO
+     * `user_access` documents, so every campaign read gated on
+     * `hasAccess()` is denied and the portal shows "Missing or
+     * insufficient permissions". Failures are logged inside the helper
+     * and never block the signup.
+     */
+    await ensureBaselineCampaignProjection(user.uid, {
+      profile: {
+        access_role: "member",
+        membership_types: userData.membership_types ?? [],
+        lga_id: userData.lga_id ?? null,
+        ward_id: userData.ward_id ?? null,
+        polling_unit_id: userData.polling_unit_id ?? null,
+      },
     });
 
     return {
@@ -193,6 +216,12 @@ export async function createMemberByAdmin(
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     });
+
+    /*
+     * Full projection (baseline + any coordinator grants): the admin is
+     * the acting user here, so the `user_access` writes pass the rules.
+     */
+    await syncCampaignAccessForUser(newUser.uid);
 
     /**
      * Sign out of the secondary Auth instance so the
