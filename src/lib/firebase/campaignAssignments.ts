@@ -34,20 +34,27 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type Firestore,
   type Query,
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
 import { campaignRead } from "./query-debug";
 import { resolveCampaignScope, type CampaignScope } from "@/lib/campaign-scope";
-import { chunkIds } from "@/lib/campaign-read-scope";
+import {
+  chunkIds,
+  grantScopes,
+  grantWardIds,
+  groupScopeQueries,
+  hasGlobalScope,
+  type ViewerGrant,
+} from "@/lib/campaign-read-scope";
 
 import type {
   AssignmentCompletion,
   AssignmentCompletionStatus,
   AssignmentScope,
   CampaignAssignment,
-  LGA,
   ScopeType,
 } from "@/types";
 
@@ -172,11 +179,17 @@ function mapAssignment(
  * state-scoped coordinator). Everything else must use
  * `getAssignmentsForUser()` / `getAssignmentsInScope()`.
  */
-export async function getAllCampaignAssignments(): Promise<CampaignAssignment[]> {
+export async function getAllCampaignAssignments(
+  options: { db?: Firestore } = {},
+): Promise<CampaignAssignment[]> {
+  const database = options.db ?? db;
+
   const snapshot = await campaignRead(
     { collection: COLLECTION, filter: { all: true } },
     () =>
-      getDocs(query(collection(db, COLLECTION), orderBy("created_at", "desc"))),
+      getDocs(
+        query(collection(database, COLLECTION), orderBy("created_at", "desc")),
+      ),
   );
 
   return snapshot.docs.map((item) => mapAssignment(item.id, item.data()));
@@ -231,91 +244,113 @@ export async function getAssignmentsForUser(
  */
 export async function getAssignmentsInScope(
   scope: CampaignScope | null,
-  lgas?: LGA[],
+  grants: ViewerGrant[],
+  options: { db?: Firestore; viewerId?: string } = {},
 ): Promise<CampaignAssignment[]> {
   if (!scope?.level || !scope.scope_id) return [];
 
-  if (scope.level === "state" || scope.level === "campaign") {
-    return sortAssignments(await getAllCampaignAssignments());
+  const database = options.db ?? db;
+  const scopes = grantScopes(grants, ["view_assignments"]);
+
+  if (
+    scope.level === "state" ||
+    scope.level === "campaign" ||
+    hasGlobalScope(scopes)
+  ) {
+    return sortAssignments(await getAllCampaignAssignments(options));
   }
 
   const byId = new Map<string, CampaignAssignment>();
 
-  /* 1. Own-level target (e.g. a ward-scoped assignment for a ward coord). */
-  const ownLevel = await campaignRead(
-    {
-      collection: COLLECTION,
-      filter: { scope_type: scope.level, scope_id: scope.scope_id },
-    },
-    () =>
-      getDocs(
-        query(
-          collection(db, COLLECTION),
-          where("scope_type", "==", scope.level),
-          where("scope_id", "==", scope.scope_id),
-        ),
-      ),
-  );
+  const collect = (documents: Array<{ id: string; data: () => Record<string, unknown> }>) => {
+    for (const document of documents) {
+      byId.set(document.id, mapAssignment(document.id, document.data()));
+    }
+  };
 
-  for (const document of ownLevel.docs) {
-    byId.set(document.id, mapAssignment(document.id, document.data()));
-  }
+  /* 1. Scope-targeted work at every level the viewer holds. */
+  const { groups } = groupScopeQueries(scopes);
 
-  /*
-   * 2. LGA-scoped targets inside a zone.
-   *
-   * An LGA target carries no `target_ward_id`, so a zone coordinator
-   * would otherwise miss the LGA-level work inside their zone.
-   */
-  if (scope.level === "senatorial_zone") {
-    const resolved = await resolveCampaignScope(scope.level, scope.scope_id, lgas);
-    const zoneLgaIds = Array.from(new Set(resolved?.lgaIds ?? []));
-
-    for (const chunk of chunkIds(zoneLgaIds)) {
+  for (const group of groups) {
+    for (const chunk of chunkIds(group.scope_ids)) {
       const snapshot = await campaignRead(
         {
           collection: COLLECTION,
-          filter: { scope_type: "lga", scope_id: chunk },
+          filter: { scope_type: group.scope_type, scope_id: chunk },
         },
         () =>
           getDocs(
             query(
-              collection(db, COLLECTION),
-              where("scope_type", "==", "lga"),
+              collection(database, COLLECTION),
+              where("scope_type", "==", group.scope_type),
               where("scope_id", "in", chunk),
             ),
           ),
       );
 
-      for (const document of snapshot.docs) {
-        byId.set(document.id, mapAssignment(document.id, document.data()));
-      }
+      collect(snapshot.docs);
     }
   }
 
   /*
-   * 3. Any target whose ward is inside the viewer's AUTHORITY.
+   * 2. Any target whose ward is inside the viewer's AUTHORITY.
    *
-   * Skipped for a polling-unit scope: a PU member holds no ward grant,
-   * so this query would ask the rules to prove something they deny.
+   * A ward stamp is readable only through a WARD `view_assignments`
+   * grant, so this is restricted to granted wards and skipped below
+   * ward level (a PU member's own PU query already covers their PU).
    */
-  const wardIds =
-    scope.level === "polling_unit" ? [] : scope.wardIds;
+  const scopeWards = new Set(
+    scope.level === "polling_unit" ? [] : (scope.wardIds ?? []),
+  );
 
-  for (const chunk of chunkIds(wardIds)) {
+  const stampedWardIds = grantWardIds(grants, ["view_assignments"]).filter(
+    (wardId) => scopeWards.has(wardId),
+  );
+
+  for (const chunk of chunkIds(stampedWardIds)) {
     const snapshot = await campaignRead(
       { collection: COLLECTION, filter: { target_ward_id: chunk } },
       () =>
         getDocs(
           query(
-            collection(db, COLLECTION),
+            collection(database, COLLECTION),
             where("target_ward_id", "in", chunk),
           ),
         ),
     );
 
-    for (const document of snapshot.docs) {
-      byId.set(document.id, mapAssignment(document.id, document.data()));
+    collect(snapshot.docs);
+  }
+
+  /*
+   * 3. Work addressed to the viewer personally, or created by them.
+   *
+   * Both are single-field equalities on clauses the rules already have
+   * (`assigned_to_user` / `created_by`), so they are provable without a
+   * scope grant — an individual assignment has no scope to match.
+   */
+  if (options.viewerId) {
+    const personal: Query[] = [
+      query(
+        collection(database, COLLECTION),
+        where("assigned_to_user", "==", options.viewerId),
+      ),
+      query(
+        collection(database, COLLECTION),
+        where("created_by", "==", options.viewerId),
+      ),
+    ];
+
+    for (const q of personal) {
+      const snapshot = await campaignRead(
+        {
+          collection: COLLECTION,
+          filter: { viewer: options.viewerId },
+        },
+        () => getDocs(q),
+      );
+
+      collect(snapshot.docs);
     }
   }
 

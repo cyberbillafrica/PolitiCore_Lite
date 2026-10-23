@@ -124,6 +124,7 @@ export default function CampaignReportsPage() {
     isAdmin,
     authority,
     scope,
+    grants,
   } = useCampaignAuthority();
 
   const { lgas } = useElectoralLookup();
@@ -214,7 +215,7 @@ export default function CampaignReportsPage() {
       const [direct, inScope] = await Promise.all([
         getAssignmentsForUser(uid),
         scope
-          ? getAssignmentsInScope(scope, lgas)
+          ? getAssignmentsInScope(scope, grants, { viewerId: uid })
           : Promise.resolve<CampaignAssignment[]>([]),
       ]);
 
@@ -254,7 +255,7 @@ export default function CampaignReportsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [uid, isAdmin, adminFilter, scope, lgas]);
+  }, [uid, isAdmin, adminFilter, scope, grants, lgas]);
 
   useEffect(() => {
     if (authorityLoading) return;

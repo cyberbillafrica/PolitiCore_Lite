@@ -35,6 +35,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  type Firestore,
 } from "firebase/firestore";
 
 import { db } from "./config";
@@ -115,14 +116,20 @@ function sortReports(items: CampaignReport[]): CampaignReport[] {
 /** Reports the user submitted. */
 export async function getMyCampaignReports(
   userId: string,
+  options: { db?: Firestore } = {},
 ): Promise<CampaignReport[]> {
   if (!userId) return [];
+
+  const database = options.db ?? db;
 
   const snapshot = await campaignRead(
     { collection: COLLECTION, filter: { submitted_by: userId } },
     () =>
       getDocs(
-        query(collection(db, COLLECTION), where("submitted_by", "==", userId)),
+        query(
+          collection(database, COLLECTION),
+          where("submitted_by", "==", userId),
+        ),
       ),
   );
 
@@ -139,15 +146,18 @@ export async function getMyCampaignReports(
  */
 export async function getReportsReceived(
   creatorId: string,
+  options: { db?: Firestore } = {},
 ): Promise<CampaignReport[]> {
   if (!creatorId) return [];
+
+  const database = options.db ?? db;
 
   const snapshot = await campaignRead(
     { collection: COLLECTION, filter: { assignment_creator_id: creatorId } },
     () =>
       getDocs(
         query(
-          collection(db, COLLECTION),
+          collection(database, COLLECTION),
           where("assignment_creator_id", "==", creatorId),
         ),
       ),
@@ -156,6 +166,36 @@ export async function getReportsReceived(
   return sortReports(
     snapshot.docs.map((item) => mapReport(item.id, item.data())),
   );
+}
+
+/**
+ * Every report the user may read, by the two identity clauses the rules
+ * expose: they submitted it, or they created the assignment it answers.
+ *
+ * This is the complete visibility model for `campaign_field_reports`
+ * (submitted_by + assignment_creator_id + admin), so no scope grant is
+ * involved — a report is never visible just because it was filed inside
+ * the viewer's area. Both queries are single-field equalities the rules
+ * can prove without an index of their own.
+ */
+export async function getReportsForUser(
+  userId: string,
+  options: { db?: Firestore } = {},
+): Promise<CampaignReport[]> {
+  if (!userId) return [];
+
+  const [mine, received] = await Promise.all([
+    getMyCampaignReports(userId, options),
+    getReportsReceived(userId, options),
+  ]);
+
+  const byId = new Map<string, CampaignReport>();
+
+  for (const report of [...mine, ...received]) {
+    byId.set(report.id, report);
+  }
+
+  return sortReports(Array.from(byId.values()));
 }
 
 /*
@@ -175,14 +215,19 @@ export async function getReportsReceived(
  * stored scope is a snapshot (a ward-scoped report from a PU member
  * must still be visible when the admin filters to the ward).
  */
-export async function getAllCampaignReports(filter?: {
-  level?: ScopeType | null;
-  wardIds?: string[];
-  pollingUnitIds?: string[];
-}): Promise<CampaignReport[]> {
+export async function getAllCampaignReports(
+  filter?: {
+    level?: ScopeType | null;
+    wardIds?: string[];
+    pollingUnitIds?: string[];
+  },
+  options: { db?: Firestore } = {},
+): Promise<CampaignReport[]> {
+  const database = options.db ?? db;
+
   const snapshot = await campaignRead(
     { collection: COLLECTION, filter: { all: true } },
-    () => getDocs(query(collection(db, COLLECTION))),
+    () => getDocs(query(collection(database, COLLECTION))),
   );
 
   const all = sortReports(

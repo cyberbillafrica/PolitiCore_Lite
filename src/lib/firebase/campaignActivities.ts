@@ -36,6 +36,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  type Firestore,
 } from "firebase/firestore";
 
 import { db } from "./config";
@@ -46,13 +47,13 @@ import {
   type CampaignScope,
 } from "@/lib/campaign-scope";
 import {
-  activityReadScopes,
   activityWardIds,
-  areaFromScope,
   chunkIds,
+  grantScopes,
+  grantWardIds,
   groupScopeQueries,
   hasGlobalScope,
-  type ViewerArea,
+  type ViewerGrant,
 } from "@/lib/campaign-read-scope";
 
 import type {
@@ -239,12 +240,16 @@ export async function buildActivityVisibility(
  * any of them. Only admins and state-scoped coordinators (whose
  * `view_activities` grant is GLOBAL) may reach this.
  */
-export async function getAllCampaignActivities(): Promise<
+export async function getAllCampaignActivities(
+  options: { db?: Firestore } = {},
+): Promise<
   CampaignActivityRecord[]
 > {
+  const database = options.db ?? db;
+
   const snapshot = await campaignRead(
     { collection: "campaign_activities", filter: { all: true } },
-    () => getDocs(query(collection(db, "campaign_activities"))),
+    () => getDocs(query(collection(database, "campaign_activities"))),
   );
 
   return sortActivities(
@@ -259,32 +264,31 @@ export async function getAllCampaignActivities(): Promise<
  * "enugu-state"`, which matches EVERY activity in the state. Firestore
  * validates the whole query against the rules before streaming, so the
  * first document outside the viewer's five baseline scopes failed the
- * entire read — the campaign-page outage this round fixes.
+ * entire read — the campaign-page outage Round 7 fixed.
  *
- * The replacement asks for exactly the (scope_type, scope_id) pairs the
- * viewer holds: baseline PU / ward / LGA / zone / state, plus every
- * scope their coordinator assignment projects. Each query constrains
- * both fields the rule reads, so it is provable per document.
- *
- * `area` is the signed-in profile's home area. When it is omitted the
- * resolved scope's own geography is used (still filtered, never
- * unfiltered).
+ * Round 7.5 removes the remaining guesswork: the query set is the
+ * viewer's `view_activities` GRANTS (`grantScopes`), not the hierarchy
+ * above their home area. A PU coordinator holds `view_activities` at
+ * their PU, ward, LGA, zone and state, so those five are queried; a
+ * level they hold no grant for is never asked for and can therefore
+ * never be denied.
  */
 export async function getActivitiesInScope(
   scope: CampaignScope | null,
-  area?: ViewerArea | null,
+  grants: ViewerGrant[],
+  options: { db?: Firestore } = {},
 ): Promise<CampaignActivityRecord[]> {
   if (!scope) return [];
 
-  const viewerArea = areaFromScope(scope, area);
-  const scopes = activityReadScopes(viewerArea, scope);
+  const database = options.db ?? db;
+  const scopes = grantScopes(grants, ["view_activities"]);
 
   if (
     scope.level === "state" ||
     scope.level === "campaign" ||
     hasGlobalScope(scopes)
   ) {
-    return getAllCampaignActivities();
+    return getAllCampaignActivities(options);
   }
 
   const byId = new Map<string, CampaignActivityRecord>();
@@ -308,7 +312,7 @@ export async function getActivitiesInScope(
           () =>
             getDocs(
               query(
-                collection(db, "campaign_activities"),
+                collection(database, "campaign_activities"),
                 where("scope_type", "==", group.scope_type),
                 where("scope_id", "in", ids),
               ),
@@ -321,13 +325,19 @@ export async function getActivitiesInScope(
   );
 
   /*
-   * PU-scoped activities inside a coordinator's wards. The rules read
-   * the stamped `scope_ward_id` (the campaign_activities read clause),
-   * so this is
-   * provable for a coordinator and is skipped entirely for a plain
-   * member, whose own PU query already covers their PU.
+   * PU-scoped activities inside the viewer's wards. The rules read the
+   * stamped `scope_ward_id` against a WARD grant, so this is provable
+   * only for wards where `view_activities` actually exists, and is
+   * skipped entirely below ward level (a PU or plain member's own PU
+   * query already covers their PU).
    */
-  for (const ids of chunkIds(activityWardIds(scope))) {
+  const scopeWards = new Set(activityWardIds(scope));
+
+  const stampedWardIds = grantWardIds(grants, ["view_activities"]).filter(
+    (wardId) => scopeWards.has(wardId),
+  );
+
+  for (const ids of chunkIds(stampedWardIds)) {
     const snapshot = await campaignRead(
       {
         collection: "campaign_activities",
@@ -336,7 +346,7 @@ export async function getActivitiesInScope(
       () =>
         getDocs(
           query(
-            collection(db, "campaign_activities"),
+            collection(database, "campaign_activities"),
             where("scope_type", "==", "polling_unit"),
             where("scope_ward_id", "in", ids),
           ),

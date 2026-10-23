@@ -145,6 +145,7 @@ export default function CampaignDashboard() {
     scopeLoading,
     scopeLabel,
     authority,
+    grants,
   } = useCampaignAuthority();
 
   const lookup = useElectoralLookup();
@@ -202,10 +203,10 @@ export default function CampaignDashboard() {
         if (isAdmin) {
           const [members, assignments, activities, issues, reports] =
             await Promise.all([
-              getCampaignMembersInScope(effective),
-              getAssignmentsInScope(effective, lgas),
-              getActivitiesInScope(effective, profile),
-              getIssuesInScope(effective),
+              getCampaignMembersInScope(effective, grants),
+              getAssignmentsInScope(effective, grants, { viewerId: userId }),
+              getActivitiesInScope(effective, grants),
+              getIssuesInScope(effective, grants),
               getAllCampaignReports(),
             ]);
 
@@ -227,10 +228,10 @@ export default function CampaignDashboard() {
         if (isCoordinator) {
           const [members, assignments, activities, issues, reports] =
             await Promise.all([
-              getCampaignMembersInScope(effective),
-              getAssignmentsInScope(effective, lgas),
-              getActivitiesInScope(effective, profile),
-              getIssuesInScope(effective),
+              getCampaignMembersInScope(effective, grants),
+              getAssignmentsInScope(effective, grants, { viewerId: userId }),
+              getActivitiesInScope(effective, grants),
+              getIssuesInScope(effective, grants),
               userId
                 ? getReportsReceived(userId)
                 : Promise.resolve<CampaignReport[]>([]),
@@ -253,8 +254,8 @@ export default function CampaignDashboard() {
 
         /* Plain member: own work plus the PU they registered in. */
         const [members, activities] = await Promise.all([
-          getCampaignMembersInScope(effective),
-          getActivitiesInScope(effective, profile),
+          getCampaignMembersInScope(effective, grants),
+          getActivitiesInScope(effective, grants),
         ]);
 
         if (cancelled) return;
@@ -294,6 +295,7 @@ export default function CampaignDashboard() {
     lgas,
     userId,
     profile,
+    grants,
   ]);
 
   if (!profile) return null;

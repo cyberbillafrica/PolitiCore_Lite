@@ -128,6 +128,7 @@ export default function CampaignActivitiesPage() {
     isCoordinator,
     authority,
     canCreateAt,
+    grants,
   } = useCampaignAuthority();
 
   const [activities, setActivities] = useState<CampaignActivityRecord[]>([]);
@@ -195,7 +196,7 @@ export default function CampaignActivitiesPage() {
           wardIds: scope?.wardIds ?? [],
           pollingUnitIds: scope?.pollingUnitIds ?? [],
         },
-        profile,
+        grants,
       );
 
       setActivities(data);
@@ -218,6 +219,7 @@ export default function CampaignActivitiesPage() {
     scopeLabel,
     scopeLevel,
     profile,
+    grants,
   ]);
 
   useEffect(() => {

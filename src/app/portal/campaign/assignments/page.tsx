@@ -145,6 +145,7 @@ export default function CampaignAssignmentsPage() {
     isCoordinator,
     positionLevel,
     canCreateAt,
+    grants,
   } = useCampaignAuthority();
 
   const userId = user?.uid ?? profile?.id ?? "";
@@ -209,7 +210,9 @@ export default function CampaignAssignmentsPage() {
         const all = await getAllCampaignAssignments();
         for (const item of all) byId.set(item.id, item);
       } else if (scope?.level && scope.scope_id) {
-        const inScope = await getAssignmentsInScope(scope);
+        const inScope = await getAssignmentsInScope(scope, grants, {
+          viewerId: userId,
+        });
         for (const item of inScope) byId.set(item.id, item);
       }
 
@@ -232,7 +235,7 @@ export default function CampaignAssignmentsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [profile, userId, isAdmin, scope?.level, scope?.scope_id, scope?.wardIds]);
+  }, [profile, userId, isAdmin, scope?.level, scope?.scope_id, grants]);
 
   const loadMembers = useCallback(async () => {
     if (!canCreate) {
@@ -247,7 +250,7 @@ export default function CampaignAssignmentsPage() {
       }
 
       if (scope) {
-        setMembers(await getCampaignMembersInScope(scope));
+        setMembers(await getCampaignMembersInScope(scope, grants));
         return;
       }
 
@@ -256,7 +259,7 @@ export default function CampaignAssignmentsPage() {
       console.error("Failed to load campaign members for assignment targets:", error);
       setMembers([]);
     }
-  }, [canCreate, isAdmin, scope]);
+  }, [canCreate, grants, isAdmin, scope]);
 
   useEffect(() => {
     if (authorityLoading) return;

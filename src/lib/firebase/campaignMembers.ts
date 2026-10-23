@@ -8,6 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   serverTimestamp,
+  type Firestore,
 } from "firebase/firestore";
 
 import { db } from "./config";
@@ -20,8 +21,11 @@ import {
 } from "@/lib/campaign-scope";
 import {
   chunkIds,
-  coordinatorReadScopes,
+  grantScopes,
+  grantWardIds,
   groupScopeQueries,
+  hasGrant,
+  type ViewerGrant,
 } from "@/lib/campaign-read-scope";
 
 import type {
@@ -72,9 +76,13 @@ export interface ScopedCampaignMembersResult {
  * ============================================================
  */
 
-export async function getAllCampaignMembers(): Promise<ScopedCampaignMember[]> {
+export async function getAllCampaignMembers(
+  options: { db?: Firestore } = {},
+): Promise<ScopedCampaignMember[]> {
+  const database = options.db ?? db;
+
   const membersQuery = query(
-    collection(db, "users"),
+    collection(database, "users"),
     where("membership_types", "array-contains", "campaign_member"),
   );
 
@@ -105,14 +113,34 @@ export async function getAllCampaignMembers(): Promise<ScopedCampaignMember[]> {
 
 export async function getCampaignMembersInScope(
   scope: CampaignScope,
+  grants?: ViewerGrant[],
+  options: { db?: Firestore } = {},
 ): Promise<ScopedCampaignMember[]> {
+  const database = options.db ?? db;
+
   if (scope.level === "state" || scope.level === "campaign") {
-    return getAllCampaignMembers();
+    return getAllCampaignMembers(options);
   }
 
   if (scope.level === "polling_unit") {
+    /*
+     * `view_members` is the only grant that makes another member's
+     * profile a campaign read rather than a directory lookup. Without
+     * it the page shows nothing instead of asking for people it may not
+     * see.
+     */
+    if (
+      grants &&
+      !hasGrant(grants, "view_members", {
+        scope_type: "polling_unit",
+        scope_id: scope.scope_id,
+      })
+    ) {
+      return [];
+    }
+
     const membersQuery = query(
-      collection(db, "users"),
+      collection(database, "users"),
       where("membership_types", "array-contains", "campaign_member"),
       where("polling_unit_id", "==", scope.scope_id),
     );
@@ -125,7 +153,24 @@ export async function getCampaignMembersInScope(
     })) as ScopedCampaignMember[];
   }
 
-  return getCampaignMembersByWardIds(scope.wardIds);
+  /*
+   * Only wards where `view_members` is held: the resolved scope's ward
+   * list is geographic, and a zone/LGA membership grant expands to
+   * exactly those wards.
+   *
+   * `grants` is optional because the assignment-target resolver asks
+   * "who lives in this target scope" on behalf of a creator rather than
+   * "what may I read", and `/users` has no scope rule (any signed-in
+   * read). Campaign pages always pass their grants.
+   */
+  let wardIds = scope.wardIds;
+
+  if (grants) {
+    const grantedWards = new Set(grantWardIds(grants, ["view_members"]));
+    wardIds = wardIds.filter((wardId) => grantedWards.has(wardId));
+  }
+
+  return getCampaignMembersByWardIds(wardIds, database);
 }
 
 /*
@@ -141,6 +186,7 @@ export async function getCampaignMembersInScope(
 
 export async function getScopedCampaignMembers(
   assignment: OrganizationalAssignment,
+  options: { grants?: ViewerGrant[]; db?: Firestore } = {},
 ): Promise<ScopedCampaignMembersResult> {
   const scope = await scopeForAssignment(assignment);
 
@@ -163,7 +209,7 @@ export async function getScopedCampaignMembers(
   }
 
   return {
-    members: await getCampaignMembersInScope(scope),
+    members: await getCampaignMembersInScope(scope, options.grants, options),
     scopeSupported: true,
   };
 }
@@ -176,6 +222,7 @@ export async function getScopedCampaignMembers(
 
 async function getCampaignMembersByWardIds(
   wardIds: string[],
+  database: Firestore,
 ): Promise<ScopedCampaignMember[]> {
   const unique = Array.from(new Set(wardIds.filter(Boolean)));
   if (unique.length === 0) return [];
@@ -186,7 +233,7 @@ async function getCampaignMembersByWardIds(
     const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
 
     const membersQuery = query(
-      collection(db, "users"),
+      collection(database, "users"),
       where("membership_types", "array-contains", "campaign_member"),
       where("ward_id", "in", chunk),
     );
@@ -225,9 +272,13 @@ async function getCampaignMembersByWardIds(
 export async function getMemberPositions(
   userIds: string[],
   scope: CampaignScope | null,
+  grants: ViewerGrant[],
+  options: { db?: Firestore } = {},
 ): Promise<
   Map<string, { position: OrganizationalPosition; level: string; scope_id: string }>
 > {
+  const database = options.db ?? db;
+
   const result = new Map<
     string,
     { position: OrganizationalPosition; level: string; scope_id: string }
@@ -238,7 +289,14 @@ export async function getMemberPositions(
 
   if (unique.length === 0 || !scope) return result;
 
-  const { global, groups } = groupScopeQueries(coordinatorReadScopes(scope));
+  /*
+   * Only scopes where `view_members` is actually held. The old call
+   * expanded the resolved scope's geography, so a PU coordinator asked
+   * for the LGA and Firestore denied the whole read.
+   */
+  const { global, groups } = groupScopeQueries(
+    grantScopes(grants, ["view_members"]),
+  );
 
   const snapshots: Array<
     Array<{ id: string; data: () => Record<string, unknown> }>
@@ -254,7 +312,7 @@ export async function getMemberPositions(
       () =>
         getDocs(
           query(
-            collection(db, "organizational_assignments"),
+            collection(database, "organizational_assignments"),
             where("status", "==", "active"),
           ),
         ),
@@ -273,7 +331,7 @@ export async function getMemberPositions(
         () =>
           getDocs(
             query(
-              collection(db, "organizational_assignments"),
+              collection(database, "organizational_assignments"),
               where("scope_type", "==", group.scope_type),
               where("scope_id", "in", ids),
               where("status", "==", "active"),

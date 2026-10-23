@@ -96,6 +96,7 @@ export default function CampaignMembersPage() {
     isCoordinator,
     scope,
     scopeLabel,
+    grants,
   } = useCampaignAuthority();
 
   const lookup = useElectoralLookup();
@@ -136,7 +137,7 @@ export default function CampaignMembersPage() {
       const list = isAdmin
         ? await getAllCampaignMembers()
         : scope
-          ? await getCampaignMembersInScope(scope)
+          ? await getCampaignMembersInScope(scope, grants)
           : [];
 
       setMembers(list);
@@ -146,6 +147,7 @@ export default function CampaignMembersPage() {
           await getMemberPositions(
             list.map((member) => member.id),
             scope,
+            grants,
           ),
         );
       } else {
@@ -159,7 +161,7 @@ export default function CampaignMembersPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [isAdmin, profile, scope]);
+  }, [grants, isAdmin, profile, scope]);
 
   useEffect(() => {
     if (loading) return;

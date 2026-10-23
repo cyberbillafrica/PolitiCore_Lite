@@ -32,12 +32,20 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  type Firestore,
 } from "firebase/firestore";
 
 import { db } from "./config";
 import { campaignRead } from "./query-debug";
 
-import { chunkIds } from "@/lib/campaign-read-scope";
+import {
+  chunkIds,
+  grantScopes,
+  grantWardIds,
+  groupScopeQueries,
+  hasGlobalScope,
+  type ViewerGrant,
+} from "@/lib/campaign-read-scope";
 import type { CampaignScope } from "@/lib/campaign-scope";
 
 import type { CampaignIssue, CampaignIssueStatus, ScopeType } from "@/types";
@@ -145,83 +153,113 @@ export async function getMyCampaignIssues(
 }
 
 /**
- * Issues at or below a scope — the coordinator's cascade-up view.
+ * Issues the viewer may read, resolved from their GRANTS.
  *
- * Three queries cover the whole hierarchy:
- *   1. issues whose own scope is exactly the viewer's scope
- *   2. issues in the wards the viewer covers (ward-scoped rows)
- *   3. issues stamped with one of those wards (PU-scoped rows)
+ * Firestore proves a list read per query, so every query must name the
+ * exact (scope_type, scope_id) pair the rules look up. The old version
+ * walked the geographic hierarchy above the viewer's home area and
+ * asked for each level: a PU coordinator's ward query is denied because
+ * their `manage_issue` grant exists ONLY at the polling unit, and one
+ * denied query fails the whole page.
+ *
+ * The query set is now `grantScopes(grants, ["manage_issue"])` — the
+ * only permission any `issues` read clause consults that is scoped.
+ * A plain member holds no `manage_issue` grant, so they issue no query
+ * at all instead of one the rules would deny.
  */
 export async function getIssuesInScope(
   scope: CampaignScope | null,
+  grants: ViewerGrant[],
+  options: { db?: Firestore } = {},
 ): Promise<CampaignIssue[]> {
   if (!scope) return [];
 
+  const database = options.db ?? db;
   const byId = new Map<string, CampaignIssue>();
 
+  const scopes = grantScopes(grants, ["manage_issue"]);
+
   /*
-   * A state-scoped viewer holds a GLOBAL `manage_issue` grant, which is
-   * the only thing that makes an unfiltered list provable. Anyone else
-   * must come through the scoped queries below.
+   * A GLOBAL `manage_issue` grant (a state coordinator) is the only
+   * thing that makes an unfiltered list provable from `user_access`.
+   *
+   * A state-level scope is reached only by an admin or a state
+   * coordinator: an admin's `isAdmin()` clause proves the same read, and
+   * every lower authority resolves to a ward or a polling unit. Nothing
+   * else can arrive here with `scope.level === "state"`.
    */
-  if (scope.level === "state" || scope.level === "campaign") {
+  if (
+    hasGlobalScope(scopes) ||
+    scope.level === "state" ||
+    scope.level === "campaign"
+  ) {
     const all = await campaignRead(
       { collection: COLLECTION, filter: { all: true } },
-      () => getDocs(query(collection(db, COLLECTION))),
+      () => getDocs(query(collection(database, COLLECTION))),
     );
+
     mergeInto(
       byId,
       all.docs.map((item) => mapIssue(item.id, item.data())),
     );
+
     return sortIssues(Array.from(byId.values()));
   }
 
-  /* 1. Exact-level rows (covers legacy documents with no ward stamp). */
-  const exact = await campaignRead(
-    {
-      collection: COLLECTION,
-      filter: { scope_type: scope.level, scope_id: scope.scope_id },
-    },
-    () =>
-      getDocs(
-        query(
-          collection(db, COLLECTION),
-          where("scope_type", "==", scope.level),
-          where("scope_id", "==", scope.scope_id),
-        ),
-      ),
-  );
-  mergeInto(
-    byId,
-    exact.docs.map((item) => mapIssue(item.id, item.data())),
+  const { groups } = groupScopeQueries(scopes);
+
+  for (const group of groups) {
+    for (const ids of chunkIds(group.scope_ids)) {
+      const snapshot = await campaignRead(
+        {
+          collection: COLLECTION,
+          filter: { scope_type: group.scope_type, scope_id: ids },
+        },
+        () =>
+          getDocs(
+            query(
+              collection(database, COLLECTION),
+              where("scope_type", "==", group.scope_type),
+              where("scope_id", "in", ids),
+            ),
+          ),
+      );
+
+      mergeInto(
+        byId,
+        snapshot.docs.map((item) => mapIssue(item.id, item.data())),
+      );
+    }
+  }
+
+  /*
+   * Cascade UP: a PU-scoped issue is readable by the coordinator of its
+   * ward, LGA, zone or state through the stamped `scope_ward_id`. Only
+   * wards where the viewer actually holds `manage_issue` are queried,
+   * and only inside the viewed scope — a viewer below ward level has no
+   * ward grant and already covers their own PU exactly.
+   */
+  const scopeWards = new Set(scope.wardIds ?? []);
+
+  const stampedWardIds = grantWardIds(grants, ["manage_issue"]).filter(
+    (wardId) => scopeWards.has(wardId),
   );
 
-  for (const chunk of chunkIds(scope.wardIds)) {
-    /* 2. Ward-scoped rows inside the scope. */
-    const wards = await campaignRead(
-      { collection: COLLECTION, filter: { scope_type: "ward", scope_id: chunk } },
+  for (const ids of chunkIds(stampedWardIds)) {
+    const stamped = await campaignRead(
+      {
+        collection: COLLECTION,
+        filter: { scope_ward_id: ids },
+      },
       () =>
         getDocs(
           query(
-            collection(db, COLLECTION),
-            where("scope_type", "==", "ward"),
-            where("scope_id", "in", chunk),
+            collection(database, COLLECTION),
+            where("scope_ward_id", "in", ids),
           ),
         ),
     );
-    mergeInto(
-      byId,
-      wards.docs.map((item) => mapIssue(item.id, item.data())),
-    );
 
-    /* 3. Anything stamped to one of those wards (PU-scoped rows). */
-    const stamped = await campaignRead(
-      { collection: COLLECTION, filter: { scope_ward_id: chunk } },
-      () =>
-        getDocs(
-          query(collection(db, COLLECTION), where("scope_ward_id", "in", chunk)),
-        ),
-    );
     mergeInto(
       byId,
       stamped.docs.map((item) => mapIssue(item.id, item.data())),

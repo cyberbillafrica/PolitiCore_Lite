@@ -36,6 +36,10 @@ import {
   type CampaignAuthority,
   type CampaignScope,
 } from "@/lib/campaign-scope";
+import {
+  viewerGrants,
+  type ViewerGrant,
+} from "@/lib/campaign-read-scope";
 
 import type { Permission, ScopeType } from "@/types";
 
@@ -64,6 +68,13 @@ export interface CampaignAuthorityState {
 
   /** May the caller create an assignment / activity at this target? */
   canCreateAt: (target: { level: ScopeType; scopeId: string }) => boolean;
+
+  /**
+   * The caller's campaign projection: one entry per `user_access`
+   * document the rules will look up. Campaign reads filter by these, so
+   * a level the caller holds no grant for is never queried.
+   */
+  grants: ViewerGrant[];
 }
 
 export function useCampaignAuthority(): CampaignAuthorityState {
@@ -127,6 +138,22 @@ export function useCampaignAuthority(): CampaignAuthorityState {
     [profile, assignments, lookup.lgas],
   );
 
+  /*
+   * Derived from the profile and active assignments — the same pure
+   * function the projection writes from — so the read plan and the
+   * grants can never disagree for a healthy user.
+   */
+  const grants = useMemo(
+    () =>
+      viewerGrants({
+        userId: profile?.id ?? "",
+        profile,
+        assignments,
+        lgas: lookup.lgas,
+      }),
+    [profile, assignments, lookup.lgas],
+  );
+
   return {
     profile,
     assignments,
@@ -143,5 +170,6 @@ export function useCampaignAuthority(): CampaignAuthorityState {
     isCoordinator: authority.isCoordinator,
     positionLevel: positionScopeLevel(authority.position),
     canCreateAt,
+    grants,
   };
 }

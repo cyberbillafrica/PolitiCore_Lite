@@ -44,6 +44,7 @@ import {
   resolveCampaignScope,
   type CampaignScope,
 } from "@/lib/campaign-scope";
+import { adminScopeGrants } from "@/lib/campaign-read-scope";
 
 import {
   acknowledgeCampaignIssue,
@@ -100,6 +101,7 @@ export default function CampaignIssuesPage() {
     loading,
     isAdmin,
     isCoordinator,
+    grants,
   } = useCampaignAuthority();
 
   const lookup = useElectoralLookup();
@@ -164,6 +166,14 @@ export default function CampaignIssuesPage() {
         isAdmin || isCoordinator
           ? await getIssuesInScope(
               isAdmin ? filterScope : scope,
+              /*
+               * `isAdmin()` proves every scope pair, so an admin's read
+               * plan is the filtered scope's own geography rather than
+               * a `user_access` grant list (which an admin may not have).
+               */
+              isAdmin
+                ? adminScopeGrants(filterScope, ["manage_issue"])
+                : grants,
             )
           : [];
 
@@ -188,7 +198,7 @@ export default function CampaignIssuesPage() {
       setDataLoading(false);
       setRefreshing(false);
     }
-  }, [filterScope, isAdmin, isCoordinator, scope, userId]);
+  }, [filterScope, grants, isAdmin, isCoordinator, scope, userId]);
 
   useEffect(() => {
     if (loading) return;

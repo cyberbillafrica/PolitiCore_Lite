@@ -28,10 +28,16 @@
  * See docs/campaign-read-queries.md for the per-collection pattern.
  */
 
-import { STATE_SCOPE_ID, zoneIdForLga } from "@/lib/campaign-access";
+import {
+  STATE_SCOPE_ID,
+  computeExpectedCampaignAccess,
+  zoneIdForLga,
+  type CampaignAccessAssignment,
+  type CampaignAccessProfile,
+} from "@/lib/campaign-access";
 
 import type { CampaignScope } from "@/lib/campaign-scope";
-import type { ScopeType } from "@/types";
+import type { LGA, ScopeType } from "@/types";
 
 /** Firestore caps an `in` filter at 30 values. */
 export const IN_FILTER_LIMIT = 30;
@@ -122,6 +128,205 @@ export function groupScopeQueries(scopes: ReadScope[]): {
       scope_ids: Array.from(new Set(scope_ids)),
     })),
   };
+}
+
+/* ============================================================
+ * VIEWER GRANTS — per-permission authority
+ * ============================================================
+ *
+ * The baseline/coordinator helpers below answer "what area is the
+ * viewer over". That is the WRONG question for a per-collection read:
+ * a PU coordinator is over a polling unit, but their `manage_issue`
+ * grant exists ONLY at that polling unit, so asking for ward-scoped
+ * issues is denied by the rules even though the ward is inside their
+ * area.
+ *
+ * A read therefore has to be driven by the access documents the rules
+ * actually look up, which the campaign projection derives from the
+ * signed-in profile and its active assignments (see
+ * `computeExpectedCampaignAccess()`). Everything here is pure: the
+ * same call in the browser and in the rules tests produces the same
+ * grant list.
+ */
+
+/** One `user_access` entitlement, exactly as the rules read it. */
+export interface ViewerGrant {
+  permission: string;
+  scope_type: ScopeType | "global";
+  scope_id: string;
+}
+
+/**
+ * The grants the campaign projection writes for this viewer.
+ *
+ * Returns [] for an ineligible account (no `campaign_member`, an
+ * election officer), which callers must treat as "reads nothing",
+ * never as "reads everything".
+ */
+export function viewerGrants(params: {
+  userId: string;
+  profile: CampaignAccessProfile | null | undefined;
+  assignments: CampaignAccessAssignment[];
+  lgas: LGA[];
+}): ViewerGrant[] {
+  return computeExpectedCampaignAccess(params).map((doc) => ({
+    permission: doc.permission,
+    scope_type: doc.scope_type,
+    scope_id: doc.scope_id,
+  }));
+}
+
+/**
+ * Read a grant list straight from `user_access` documents.
+ *
+ * Used where the documents are already in hand (tests, an admin
+ * recompute): the resolver is source-agnostic, so the DB-backed and the
+ * derived lists are interchangeable.
+ */
+export function grantsFromAccessDocs(
+  docs: Array<Record<string, unknown>>,
+): ViewerGrant[] {
+  const grants: ViewerGrant[] = [];
+
+  for (const doc of docs) {
+    if (doc.allowed === false) continue;
+
+    const permission = String(doc.permission ?? "");
+    const scopeType = String(doc.scope_type ?? "");
+    const scopeId = String(doc.scope_id ?? "");
+
+    if (!permission || !scopeType) continue;
+    if (scopeType !== "global" && !scopeId) continue;
+
+    grants.push({
+      permission,
+      scope_type: scopeType as ViewerGrant["scope_type"],
+      scope_id: scopeId,
+    });
+  }
+
+  return grants;
+}
+
+/**
+ * The scopes at which the viewer holds ANY of `permissions`.
+ *
+ * This is the ONLY source a filtered read may use: every returned pair
+ * is a pair the rules can prove for that document shape.
+ */
+export function grantScopes(
+  grants: ViewerGrant[],
+  permissions: string[],
+): ReadScope[] {
+  const wanted = new Set(permissions);
+
+  return dedupeScopes(
+    grants
+      .filter((grant) => wanted.has(grant.permission))
+      .map((grant) => ({
+        scope_type: grant.scope_type,
+        scope_id: grant.scope_id,
+      })),
+  );
+}
+
+/** True when the viewer holds `permission` at `scope` (or globally). */
+export function hasGrant(
+  grants: ViewerGrant[],
+  permission: string,
+  scope: ReadScope,
+): boolean {
+  return grants.some(
+    (grant) =>
+      grant.permission === permission &&
+      (grant.scope_type === "global" ||
+        (grant.scope_type === scope.scope_type &&
+          grant.scope_id === scope.scope_id)),
+  );
+}
+
+/**
+ * The grants an ADMIN effectively holds inside a scope.
+ *
+ * `isAdmin()` short-circuits every campaign read clause, so for an admin
+ * every scope pair in the requested scope is provable — no `user_access`
+ * document is consulted. The read plan is therefore the scope's own
+ * geography, which is what keeps an admin's scope filter meaningful.
+ */
+export function adminScopeGrants(
+  scope: CampaignScope | null,
+  permissions: string[],
+): ViewerGrant[] {
+  const targets: ReadScope[] =
+    !scope || scope.level === "state" || scope.level === "campaign"
+      ? [{ scope_type: "global", scope_id: "" }]
+      : [{ scope_type: scope.level, scope_id: scope.scope_id }];
+
+  if (scope && scope.level !== "state" && scope.level !== "campaign") {
+    for (const lgaId of scope.lgaIds ?? []) {
+      targets.push({ scope_type: "lga", scope_id: lgaId });
+    }
+
+    for (const wardId of scope.wardIds ?? []) {
+      targets.push({ scope_type: "ward", scope_id: wardId });
+    }
+  }
+
+  const scopes = dedupeScopes(targets);
+  const grants: ViewerGrant[] = [];
+
+  for (const permission of permissions) {
+    for (const scope of scopes) {
+      grants.push({
+        permission,
+        scope_type: scope.scope_type,
+        scope_id: scope.scope_id,
+      });
+    }
+  }
+
+  return grants;
+}
+
+/** Ward ids where the viewer holds ANY of `permissions`. */
+export function grantWardIds(
+  grants: ViewerGrant[],
+  permissions: string[],
+): string[] {
+  const wanted = new Set(permissions);
+
+  return Array.from(
+    new Set(
+      grants
+        .filter(
+          (grant) =>
+            wanted.has(grant.permission) && grant.scope_type === "ward",
+        )
+        .map((grant) => grant.scope_id)
+        .filter(Boolean),
+    ),
+  );
+}
+
+/** Ids at one level where the viewer holds ANY of `permissions`. */
+export function grantScopeIds(
+  grants: ViewerGrant[],
+  permissions: string[],
+  scopeType: ScopeType,
+): string[] {
+  const wanted = new Set(permissions);
+
+  return Array.from(
+    new Set(
+      grants
+        .filter(
+          (grant) =>
+            wanted.has(grant.permission) && grant.scope_type === scopeType,
+        )
+        .map((grant) => grant.scope_id)
+        .filter(Boolean),
+    ),
+  );
 }
 
 /* ============================================================

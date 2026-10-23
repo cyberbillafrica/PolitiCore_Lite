@@ -81,6 +81,7 @@ export default function CampaignAreaPage() {
     scopeLabel,
     loading,
     canCreateAt,
+    grants,
   } = useCampaignAuthority();
 
   const lookup = useElectoralLookup();
@@ -123,8 +124,8 @@ export default function CampaignAreaPage() {
 
     try {
       const [memberList, activityList, mine] = await Promise.all([
-        getCampaignMembersInScope(scope),
-        getActivitiesInScope(scope, profile),
+        getCampaignMembersInScope(scope, grants),
+        getActivitiesInScope(scope, grants),
         getAssignmentsForUser(userId),
       ]);
 
@@ -134,8 +135,8 @@ export default function CampaignAreaPage() {
 
       if (isCoordinator) {
         const [areaAssignments, areaIssues] = await Promise.all([
-          getAssignmentsInScope(scope, lookup.lgas),
-          getIssuesInScope(scope),
+          getAssignmentsInScope(scope, grants, { viewerId: userId }),
+          getIssuesInScope(scope, grants),
         ]);
 
         setScopedAssignments(areaAssignments);
@@ -150,7 +151,7 @@ export default function CampaignAreaPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [isCoordinator, lookup.lgas, scope, userId]);
+  }, [grants, isCoordinator, scope, userId]);
 
   useEffect(() => {
     if (loading || scopeLoading) return;
