@@ -11,12 +11,18 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
+import { campaignRead } from "./query-debug";
 import { syncCampaignAccessForUser } from "./userAccess";
 
 import {
   scopeForAssignment,
   type CampaignScope,
 } from "@/lib/campaign-scope";
+import {
+  chunkIds,
+  coordinatorReadScopes,
+  groupScopeQueries,
+} from "@/lib/campaign-read-scope";
 
 import type {
   OrganizationalAssignment,
@@ -204,12 +210,21 @@ async function getCampaignMembersByWardIds(
  * ============================================================
  *
  * Positions live in organizational_assignments, never on the profile.
- * This resolves them in one query so the Members page can show a
- * coordinator's position and sub-scope without N+1 reads.
+ *
+ * The rules (`firestore.rules` — organizational_assignments read) only
+ * allow reading someone
+ * else's assignment through `hasAccess("view_members", scope_type,
+ * scope_id)`, so a query MUST constrain both scope fields. The old
+ * `where("user_id", "in", …)` shape constrained neither, which denied
+ * the Members page for every non-admin — including plain members.
+ *
+ * The replacement asks only for the scopes the viewer holds and drops
+ * anything outside the member list in memory.
  */
 
 export async function getMemberPositions(
   userIds: string[],
+  scope: CampaignScope | null,
 ): Promise<
   Map<string, { position: OrganizationalPosition; level: string; scope_id: string }>
 > {
@@ -219,24 +234,64 @@ export async function getMemberPositions(
   >();
 
   const unique = Array.from(new Set(userIds.filter(Boolean)));
+  const wanted = new Set(unique);
 
-  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
-    const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
+  if (unique.length === 0 || !scope) return result;
 
-    const snapshot = await getDocs(
-      query(
-        collection(db, "organizational_assignments"),
-        where("user_id", "in", chunk),
-        where("status", "==", "active"),
-      ),
+  const { global, groups } = groupScopeQueries(coordinatorReadScopes(scope));
+
+  const snapshots: Array<
+    Array<{ id: string; data: () => Record<string, unknown> }>
+  > = [];
+
+  /* A state-scoped coordinator holds a GLOBAL view_members grant. */
+  if (global) {
+    const all = await campaignRead(
+      {
+        collection: "organizational_assignments",
+        filter: { status: "active", global: true },
+      },
+      () =>
+        getDocs(
+          query(
+            collection(db, "organizational_assignments"),
+            where("status", "==", "active"),
+          ),
+        ),
     );
 
-    for (const document of snapshot.docs) {
+    snapshots.push(all.docs);
+  }
+
+  for (const group of groups) {
+    for (const ids of chunkIds(group.scope_ids)) {
+      const snapshot = await campaignRead(
+        {
+          collection: "organizational_assignments",
+          filter: { scope_type: group.scope_type, scope_id: ids },
+        },
+        () =>
+          getDocs(
+            query(
+              collection(db, "organizational_assignments"),
+              where("scope_type", "==", group.scope_type),
+              where("scope_id", "in", ids),
+              where("status", "==", "active"),
+            ),
+          ),
+      );
+
+      snapshots.push(snapshot.docs);
+    }
+  }
+
+  for (const documents of snapshots) {
+    for (const document of documents) {
       const data = document.data();
       const userId = String(data.user_id ?? "");
       const position = data.position as OrganizationalPosition;
 
-      if (!userId || !position) continue;
+      if (!userId || !position || !wanted.has(userId)) continue;
 
       /* Highest-ranking position wins for display. */
       const rank: Record<string, number> = {

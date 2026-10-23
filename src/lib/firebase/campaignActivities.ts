@@ -39,11 +39,21 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
+import { campaignRead } from "./query-debug";
 import {
   resolveCampaignScope,
   zoneIdForLga,
   type CampaignScope,
 } from "@/lib/campaign-scope";
+import {
+  activityReadScopes,
+  activityWardIds,
+  areaFromScope,
+  chunkIds,
+  groupScopeQueries,
+  hasGlobalScope,
+  type ViewerArea,
+} from "@/lib/campaign-read-scope";
 
 import type {
   CampaignActivity,
@@ -55,6 +65,7 @@ import type {
 
 export interface CampaignActivityRecord extends CampaignActivity {
   scope_chain?: string[];
+  scope_ward_id?: string;
   visibility_ward_ids?: string[];
   visibility_pu_ids?: string[];
   created_by?: string;
@@ -119,6 +130,8 @@ function mapActivity(
     scope_chain: Array.isArray(data.scope_chain)
       ? (data.scope_chain as string[])
       : undefined,
+    scope_ward_id:
+      typeof data.scope_ward_id === "string" ? data.scope_ward_id : undefined,
     visibility_ward_ids: Array.isArray(data.visibility_ward_ids)
       ? (data.visibility_ward_ids as string[])
       : undefined,
@@ -144,6 +157,13 @@ function sortActivities(
 
 export interface ActivityVisibility {
   scope_chain: string[];
+  /**
+   * The ward a PU-scoped row belongs to. Stamped so a coordinator can
+   * read the PU activity with ONE ward-stamped query (firestore.rules
+   * reads this field); null for ward and above, which are already
+   * addressable by their own scope pair.
+   */
+  scope_ward_id: string | null;
   visibility_ward_ids: string[];
   visibility_pu_ids: string[];
 }
@@ -163,7 +183,12 @@ export async function buildActivityVisibility(
   const resolved = await resolveCampaignScope(level, scopeId, lgas);
 
   if (!resolved) {
-    return { scope_chain: [], visibility_ward_ids: [], visibility_pu_ids: [] };
+    return {
+      scope_chain: [],
+      scope_ward_id: null,
+      visibility_ward_ids: [],
+      visibility_pu_ids: [],
+    };
   }
 
   const chain: string[] = ["enugu-state"];
@@ -185,8 +210,16 @@ export async function buildActivityVisibility(
     }
   }
 
+  const scopeWardId =
+    level === "ward"
+      ? scopeId
+      : level === "polling_unit"
+        ? (resolved.wardIds[0] ?? null)
+        : null;
+
   return {
     scope_chain: Array.from(new Set(chain)),
+    scope_ward_id: scopeWardId,
     visibility_ward_ids: resolved.wardIds,
     visibility_pu_ids:
       level === "polling_unit" ? [resolved.scope_id] : [],
@@ -197,11 +230,22 @@ export async function buildActivityVisibility(
  * READS
  * ============================================================ */
 
-/** Every activity. Admin only (rules also gate this). */
+/**
+ * Every activity.
+ *
+ * UNSAFE for any non-admin: the rules (`firestore.rules` — the
+ * campaign_activities read clauses) gate
+ * each document on its own scope, and an unfiltered query cannot prove
+ * any of them. Only admins and state-scoped coordinators (whose
+ * `view_activities` grant is GLOBAL) may reach this.
+ */
 export async function getAllCampaignActivities(): Promise<
   CampaignActivityRecord[]
 > {
-  const snapshot = await getDocs(query(collection(db, "campaign_activities")));
+  const snapshot = await campaignRead(
+    { collection: "campaign_activities", filter: { all: true } },
+    () => getDocs(query(collection(db, "campaign_activities"))),
+  );
 
   return sortActivities(
     snapshot.docs.map((item) => mapActivity(item.id, item.data())),
@@ -209,55 +253,97 @@ export async function getAllCampaignActivities(): Promise<
 }
 
 /**
- * Activities visible to a scope: the scope itself, everything above it
- * (state -> zone -> LGA -> ward), and everything below it.
+ * Activities visible to the viewer.
+ *
+ * The old implementation asked for `scope_chain array-contains
+ * "enugu-state"`, which matches EVERY activity in the state. Firestore
+ * validates the whole query against the rules before streaming, so the
+ * first document outside the viewer's five baseline scopes failed the
+ * entire read — the campaign-page outage this round fixes.
+ *
+ * The replacement asks for exactly the (scope_type, scope_id) pairs the
+ * viewer holds: baseline PU / ward / LGA / zone / state, plus every
+ * scope their coordinator assignment projects. Each query constrains
+ * both fields the rule reads, so it is provable per document.
+ *
+ * `area` is the signed-in profile's home area. When it is omitted the
+ * resolved scope's own geography is used (still filtered, never
+ * unfiltered).
  */
 export async function getActivitiesInScope(
   scope: CampaignScope | null,
+  area?: ViewerArea | null,
 ): Promise<CampaignActivityRecord[]> {
   if (!scope) return [];
 
-  if (scope.level === "state" || scope.level === "campaign") {
+  const viewerArea = areaFromScope(scope, area);
+  const scopes = activityReadScopes(viewerArea, scope);
+
+  if (
+    scope.level === "state" ||
+    scope.level === "campaign" ||
+    hasGlobalScope(scopes)
+  ) {
     return getAllCampaignActivities();
   }
 
   const byId = new Map<string, CampaignActivityRecord>();
 
-  /* The chain ids of my own location, nearest first. */
-  const chain = await buildActivityVisibility(scope.level, scope.scope_id);
-
-  /*
-   * One query per chain id covers "at or below me" (my own id) and
-   * "above me" (ancestors). A state-scoped activity carries only
-   * "enugu-state", which every chain includes.
-   */
-  for (const chainId of chain.scope_chain) {
-    const snapshot = await getDocs(
-      query(
-        collection(db, "campaign_activities"),
-        where("scope_chain", "array-contains", chainId),
-      ),
-    );
-
-    for (const document of snapshot.docs) {
+  const collect = (documents: Array<{ id: string; data: () => Record<string, unknown> }>) => {
+    for (const document of documents) {
       byId.set(document.id, mapActivity(document.id, document.data()));
     }
-  }
+  };
 
-  /*
-   * Legacy rows written before the chain existed: fall back to exact
-   * scope matches so an older activity still appears for its own scope.
-   */
-  const exact = await getDocs(
-    query(
-      collection(db, "campaign_activities"),
-      where("scope_type", "==", scope.level),
-      where("scope_id", "==", scope.scope_id),
-    ),
+  const { groups } = groupScopeQueries(scopes);
+
+  await Promise.all(
+    groups.map(async (group) => {
+      for (const ids of chunkIds(group.scope_ids)) {
+        const snapshot = await campaignRead(
+          {
+            collection: "campaign_activities",
+            filter: { scope_type: group.scope_type, scope_id: ids },
+          },
+          () =>
+            getDocs(
+              query(
+                collection(db, "campaign_activities"),
+                where("scope_type", "==", group.scope_type),
+                where("scope_id", "in", ids),
+              ),
+            ),
+        );
+
+        collect(snapshot.docs);
+      }
+    }),
   );
 
-  for (const document of exact.docs) {
-    byId.set(document.id, mapActivity(document.id, document.data()));
+  /*
+   * PU-scoped activities inside a coordinator's wards. The rules read
+   * the stamped `scope_ward_id` (the campaign_activities read clause),
+   * so this is
+   * provable for a coordinator and is skipped entirely for a plain
+   * member, whose own PU query already covers their PU.
+   */
+  for (const ids of chunkIds(activityWardIds(scope))) {
+    const snapshot = await campaignRead(
+      {
+        collection: "campaign_activities",
+        filter: { scope_type: "polling_unit", scope_ward_id: ids },
+      },
+      () =>
+        getDocs(
+          query(
+            collection(db, "campaign_activities"),
+            where("scope_type", "==", "polling_unit"),
+            where("scope_ward_id", "in", ids),
+          ),
+        ),
+    );
+
+    collect(snapshot.docs);
   }
 
   return sortActivities(Array.from(byId.values()));
@@ -265,6 +351,9 @@ export async function getActivitiesInScope(
 
 /**
  * Admin filter: activities at the selected scope or below.
+ *
+ * Admin-only by design: the `scope_chain` queries below are `array-contains`
+ * reads that only the `isAdmin()` clause can prove.
  */
 export async function getActivitiesForAdminScope(
   level: ScopeType | null,
@@ -278,11 +367,18 @@ export async function getActivitiesForAdminScope(
 
   const byId = new Map<string, CampaignActivityRecord>();
 
-  const snapshot = await getDocs(
-    query(
-      collection(db, "campaign_activities"),
-      where("scope_chain", "array-contains", scopeId),
-    ),
+  const snapshot = await campaignRead(
+    {
+      collection: "campaign_activities",
+      filter: { scope_chain: scopeId },
+    },
+    () =>
+      getDocs(
+        query(
+          collection(db, "campaign_activities"),
+          where("scope_chain", "array-contains", scopeId),
+        ),
+      ),
   );
 
   for (const document of snapshot.docs) {
@@ -290,11 +386,15 @@ export async function getActivitiesForAdminScope(
   }
 
   /* State-wide activities stay visible under every filter. */
-  const stateWide = await getDocs(
-    query(
-      collection(db, "campaign_activities"),
-      where("scope_type", "==", "state"),
-    ),
+  const stateWide = await campaignRead(
+    { collection: "campaign_activities", filter: { scope_type: "state" } },
+    () =>
+      getDocs(
+        query(
+          collection(db, "campaign_activities"),
+          where("scope_type", "==", "state"),
+        ),
+      ),
   );
 
   for (const document of stateWide.docs) {
@@ -363,6 +463,7 @@ export async function createCampaignActivity(
     status: input.status ?? "scheduled",
 
     scope_chain: visibility.scope_chain,
+    scope_ward_id: visibility.scope_ward_id,
     visibility_ward_ids: visibility.visibility_ward_ids,
     visibility_pu_ids: visibility.visibility_pu_ids,
 

@@ -142,7 +142,12 @@ export default function CampaignMembersPage() {
       setMembers(list);
 
       if (list.length > 0) {
-        setPositions(await getMemberPositions(list.map((member) => member.id)));
+        setPositions(
+          await getMemberPositions(
+            list.map((member) => member.id),
+            scope,
+          ),
+        );
       } else {
         setPositions(new Map());
       }

@@ -124,7 +124,7 @@ export default function CampaignAreaPage() {
     try {
       const [memberList, activityList, mine] = await Promise.all([
         getCampaignMembersInScope(scope),
-        getActivitiesInScope(scope),
+        getActivitiesInScope(scope, profile),
         getAssignmentsForUser(userId),
       ]);
 
@@ -134,11 +134,7 @@ export default function CampaignAreaPage() {
 
       if (isCoordinator) {
         const [areaAssignments, areaIssues] = await Promise.all([
-          getAssignmentsInScope(
-            { level: scope.level, scopeId: scope.scope_id },
-            scope.wardIds,
-            lookup.lgas,
-          ),
+          getAssignmentsInScope(scope, lookup.lgas),
           getIssuesInScope(scope),
         ]);
 

@@ -472,6 +472,14 @@ export function resolveScopeTargets(
       );
 
       return [
+        /*
+         * The zone itself. Without this the coordinator holds grants in
+         * every LGA and ward inside the zone but NOT at the zone level,
+         * so a zone-scoped activity, issue or assignment is denied to the
+         * zone coordinator — and every query filtering on the zone scope
+         * fails with "Missing or insufficient permissions".
+         */
+        { scope_type: "senatorial_zone" as const, scope_id: id },
         ...covered.map((lga) => ({
           scope_type: "lga" as const,
           scope_id: lga.id,

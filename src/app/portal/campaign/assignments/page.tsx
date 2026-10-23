@@ -209,10 +209,7 @@ export default function CampaignAssignmentsPage() {
         const all = await getAllCampaignAssignments();
         for (const item of all) byId.set(item.id, item);
       } else if (scope?.level && scope.scope_id) {
-        const inScope = await getAssignmentsInScope(
-          { level: scope.level, scopeId: scope.scope_id },
-          scope.wardIds,
-        );
+        const inScope = await getAssignmentsInScope(scope);
         for (const item of inScope) byId.set(item.id, item);
       }
 
@@ -318,7 +315,19 @@ export default function CampaignAssignmentsPage() {
 
     setExpandedId(assignment.id);
 
-    if (assignment.completion_mode === "per_person" && !completions[assignment.id]) {
+    /*
+     * Per-person completions are readable only by the assignment's
+     * creator and by admin (the completions read clause). A member who
+     * was merely targeted by the assignment must not issue the
+     * subcollection read: it would be denied as a whole.
+     */
+    const canSeeCompletions = isAdmin || assignment.created_by === userId;
+
+    if (
+      canSeeCompletions &&
+      assignment.completion_mode === "per_person" &&
+      !completions[assignment.id]
+    ) {
       await loadCompletions(assignment.id);
     }
   }

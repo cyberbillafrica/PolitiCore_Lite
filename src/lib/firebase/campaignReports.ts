@@ -38,6 +38,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
+import { campaignRead } from "./query-debug";
 
 import type { CampaignReport, ScopeType } from "@/types";
 
@@ -117,8 +118,12 @@ export async function getMyCampaignReports(
 ): Promise<CampaignReport[]> {
   if (!userId) return [];
 
-  const snapshot = await getDocs(
-    query(collection(db, COLLECTION), where("submitted_by", "==", userId)),
+  const snapshot = await campaignRead(
+    { collection: COLLECTION, filter: { submitted_by: userId } },
+    () =>
+      getDocs(
+        query(collection(db, COLLECTION), where("submitted_by", "==", userId)),
+      ),
   );
 
   return sortReports(
@@ -137,11 +142,15 @@ export async function getReportsReceived(
 ): Promise<CampaignReport[]> {
   if (!creatorId) return [];
 
-  const snapshot = await getDocs(
-    query(
-      collection(db, COLLECTION),
-      where("assignment_creator_id", "==", creatorId),
-    ),
+  const snapshot = await campaignRead(
+    { collection: COLLECTION, filter: { assignment_creator_id: creatorId } },
+    () =>
+      getDocs(
+        query(
+          collection(db, COLLECTION),
+          where("assignment_creator_id", "==", creatorId),
+        ),
+      ),
   );
 
   return sortReports(
@@ -149,36 +158,32 @@ export async function getReportsReceived(
   );
 }
 
-/**
- * Reports against one assignment. Used by the assignment detail view.
+/*
+ * `getReportsForAssignment()` used to live here. It filtered only on
+ * `assignment_id`, which no rule reads, so Firestore could not prove a
+ * single document and the read was denied for every non-admin — and it
+ * had no callers. Removed rather than kept as a trap. Use
+ * `getMyCampaignReports()` + `getReportsReceived()`, which filter on
+ * the two fields the rules do read.
  */
-export async function getReportsForAssignment(
-  assignmentId: string,
-): Promise<CampaignReport[]> {
-  if (!assignmentId) return [];
-
-  const snapshot = await getDocs(
-    query(collection(db, COLLECTION), where("assignment_id", "==", assignmentId)),
-  );
-
-  return sortReports(
-    snapshot.docs.map((item) => mapReport(item.id, item.data())),
-  );
-}
 
 /**
  * Admin view: every report, optionally narrowed to a scope and below.
  *
- * Filtering happens in memory because the stored scope is a snapshot
- * (a ward-scoped report from a PU member must still be visible when
- * the admin filters to the ward).
+ * Admin-only by design: the unfiltered list is provable only through
+ * the `isAdmin()` clause. Filtering happens in memory because the
+ * stored scope is a snapshot (a ward-scoped report from a PU member
+ * must still be visible when the admin filters to the ward).
  */
 export async function getAllCampaignReports(filter?: {
   level?: ScopeType | null;
   wardIds?: string[];
   pollingUnitIds?: string[];
 }): Promise<CampaignReport[]> {
-  const snapshot = await getDocs(query(collection(db, COLLECTION)));
+  const snapshot = await campaignRead(
+    { collection: COLLECTION, filter: { all: true } },
+    () => getDocs(query(collection(db, COLLECTION))),
+  );
 
   const all = sortReports(
     snapshot.docs.map((item) => mapReport(item.id, item.data())),

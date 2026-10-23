@@ -38,7 +38,9 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
-import { resolveCampaignScope } from "@/lib/campaign-scope";
+import { campaignRead } from "./query-debug";
+import { resolveCampaignScope, type CampaignScope } from "@/lib/campaign-scope";
+import { chunkIds } from "@/lib/campaign-read-scope";
 
 import type {
   AssignmentCompletion,
@@ -53,7 +55,6 @@ export type { CampaignAssignment } from "@/types";
 
 const COLLECTION = "campaign_assignments";
 const COMPLETIONS = "completions";
-const IN_FILTER_LIMIT = 30;
 
 /* ============================================================
  * MAPPING
@@ -161,9 +162,21 @@ function mapAssignment(
  * READS
  * ============================================================ */
 
+/**
+ * Every assignment.
+ *
+ * UNSAFE for a non-admin: the campaign_assignments read clauses gate each
+ * document
+ * on its assignee, creator or scope, so an unfiltered list is only
+ * provable for an admin or a GLOBAL `view_assignments` grant (a
+ * state-scoped coordinator). Everything else must use
+ * `getAssignmentsForUser()` / `getAssignmentsInScope()`.
+ */
 export async function getAllCampaignAssignments(): Promise<CampaignAssignment[]> {
-  const snapshot = await getDocs(
-    query(collection(db, COLLECTION), orderBy("created_at", "desc")),
+  const snapshot = await campaignRead(
+    { collection: COLLECTION, filter: { all: true } },
+    () =>
+      getDocs(query(collection(db, COLLECTION), orderBy("created_at", "desc"))),
   );
 
   return snapshot.docs.map((item) => mapAssignment(item.id, item.data()));
@@ -190,7 +203,11 @@ export async function getAssignmentsForUser(
   ];
 
   for (const q of queries) {
-    const snapshot = await getDocs(q);
+    const snapshot = await campaignRead(
+      { collection: COLLECTION, filter: { matched_user: userId } },
+      () => getDocs(q),
+    );
+
     for (const document of snapshot.docs) {
       byId.set(document.id, mapAssignment(document.id, document.data()));
     }
@@ -200,33 +217,44 @@ export async function getAssignmentsForUser(
 }
 
 /**
- * Scope-targeted assignments visible to the viewer's scope.
+ * Scope-targeted assignments visible to the viewer's resolved scope.
  *
- * `wardIds` should be the wards the viewer covers (the assignment's own
- * scope and everything below it). Two queries cover the whole hierarchy:
- * assignments whose target resolves to one of those wards, and
- * assignments targeted directly at the viewer's own scope level.
+ * Every query below constrains a field the rules actually read
+ * (`scope_type`/`scope_id` and `target_ward_id`), so each one is
+ * provable for a viewer holding the matching grant.
+ *
+ * A plain member's authority is a single polling unit: their own-level
+ * query is provable (`view_assignments` at their PU, from the
+ * baseline), but a `target_ward_id` query is NOT, because they hold no
+ * ward-level grant. That is why the ward-stamp query is restricted to
+ * coordinators instead of using the geographic ward list blindly.
  */
 export async function getAssignmentsInScope(
-  scope: { level: ScopeType; scopeId: string } | null,
-  wardIds: string[],
+  scope: CampaignScope | null,
   lgas?: LGA[],
 ): Promise<CampaignAssignment[]> {
-  if (!scope?.level || !scope.scopeId) return [];
-
-  const byId = new Map<string, CampaignAssignment>();
+  if (!scope?.level || !scope.scope_id) return [];
 
   if (scope.level === "state" || scope.level === "campaign") {
     return sortAssignments(await getAllCampaignAssignments());
   }
 
+  const byId = new Map<string, CampaignAssignment>();
+
   /* 1. Own-level target (e.g. a ward-scoped assignment for a ward coord). */
-  const ownLevel = await getDocs(
-    query(
-      collection(db, COLLECTION),
-      where("scope_type", "==", scope.level),
-      where("scope_id", "==", scope.scopeId),
-    ),
+  const ownLevel = await campaignRead(
+    {
+      collection: COLLECTION,
+      filter: { scope_type: scope.level, scope_id: scope.scope_id },
+    },
+    () =>
+      getDocs(
+        query(
+          collection(db, COLLECTION),
+          where("scope_type", "==", scope.level),
+          where("scope_id", "==", scope.scope_id),
+        ),
+      ),
   );
 
   for (const document of ownLevel.docs) {
@@ -240,18 +268,23 @@ export async function getAssignmentsInScope(
    * would otherwise miss the LGA-level work inside their zone.
    */
   if (scope.level === "senatorial_zone") {
-    const resolved = await resolveCampaignScope(scope.level, scope.scopeId, lgas);
+    const resolved = await resolveCampaignScope(scope.level, scope.scope_id, lgas);
     const zoneLgaIds = Array.from(new Set(resolved?.lgaIds ?? []));
 
-    for (let index = 0; index < zoneLgaIds.length; index += IN_FILTER_LIMIT) {
-      const chunk = zoneLgaIds.slice(index, index + IN_FILTER_LIMIT);
-
-      const snapshot = await getDocs(
-        query(
-          collection(db, COLLECTION),
-          where("scope_type", "==", "lga"),
-          where("scope_id", "in", chunk),
-        ),
+    for (const chunk of chunkIds(zoneLgaIds)) {
+      const snapshot = await campaignRead(
+        {
+          collection: COLLECTION,
+          filter: { scope_type: "lga", scope_id: chunk },
+        },
+        () =>
+          getDocs(
+            query(
+              collection(db, COLLECTION),
+              where("scope_type", "==", "lga"),
+              where("scope_id", "in", chunk),
+            ),
+          ),
       );
 
       for (const document of snapshot.docs) {
@@ -260,14 +293,25 @@ export async function getAssignmentsInScope(
     }
   }
 
-  /* 3. Any target whose ward is inside the viewer's scope. */
-  const unique = Array.from(new Set(wardIds.filter(Boolean)));
+  /*
+   * 3. Any target whose ward is inside the viewer's AUTHORITY.
+   *
+   * Skipped for a polling-unit scope: a PU member holds no ward grant,
+   * so this query would ask the rules to prove something they deny.
+   */
+  const wardIds =
+    scope.level === "polling_unit" ? [] : scope.wardIds;
 
-  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
-    const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
-
-    const snapshot = await getDocs(
-      query(collection(db, COLLECTION), where("target_ward_id", "in", chunk)),
+  for (const chunk of chunkIds(wardIds)) {
+    const snapshot = await campaignRead(
+      { collection: COLLECTION, filter: { target_ward_id: chunk } },
+      () =>
+        getDocs(
+          query(
+            collection(db, COLLECTION),
+            where("target_ward_id", "in", chunk),
+          ),
+        ),
     );
 
     for (const document of snapshot.docs) {
@@ -433,8 +477,6 @@ async function resolveTargetMemberIds(input: {
   scope: AssignmentScope;
   assigned_to_user: string | null;
 }): Promise<string[]> {
-  const { resolveCampaignScope } = await import("@/lib/campaign-scope");
-
   const resolved = await resolveCampaignScope(
     input.scope.level,
     input.scope.scope_id,
@@ -510,8 +552,17 @@ export async function getAssignmentCompletions(
 ): Promise<AssignmentCompletion[]> {
   if (!assignmentId) return [];
 
-  const snapshot = await getDocs(
-    collection(db, COLLECTION, assignmentId, COMPLETIONS),
+  /*
+   * Creator/admin only by rule. Callers must gate this read: a member
+   * who was merely targeted by the assignment cannot list the whole
+   * completion set, and an unprovable list fails as a whole.
+   */
+  const snapshot = await campaignRead(
+    {
+      collection: `${COLLECTION}/${assignmentId}/${COMPLETIONS}`,
+      filter: { all: true },
+    },
+    () => getDocs(collection(db, COLLECTION, assignmentId, COMPLETIONS)),
   );
 
   return snapshot.docs.map((item) => {

@@ -214,11 +214,7 @@ export default function CampaignReportsPage() {
       const [direct, inScope] = await Promise.all([
         getAssignmentsForUser(uid),
         scope
-          ? getAssignmentsInScope(
-              { level: scope.level, scopeId: scope.scope_id },
-              scope.wardIds,
-              lgas,
-            )
+          ? getAssignmentsInScope(scope, lgas)
           : Promise.resolve<CampaignAssignment[]>([]),
       ]);
 

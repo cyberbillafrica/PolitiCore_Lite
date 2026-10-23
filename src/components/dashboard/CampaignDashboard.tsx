@@ -199,17 +199,12 @@ export default function CampaignDashboard() {
           return;
         }
 
-        const target = {
-          level: effective.level,
-          scopeId: effective.scope_id,
-        };
-
         if (isAdmin) {
           const [members, assignments, activities, issues, reports] =
             await Promise.all([
               getCampaignMembersInScope(effective),
-              getAssignmentsInScope(target, effective.wardIds, lgas),
-              getActivitiesInScope(effective),
+              getAssignmentsInScope(effective, lgas),
+              getActivitiesInScope(effective, profile),
               getIssuesInScope(effective),
               getAllCampaignReports(),
             ]);
@@ -233,8 +228,8 @@ export default function CampaignDashboard() {
           const [members, assignments, activities, issues, reports] =
             await Promise.all([
               getCampaignMembersInScope(effective),
-              getAssignmentsInScope(target, effective.wardIds, lgas),
-              getActivitiesInScope(effective),
+              getAssignmentsInScope(effective, lgas),
+              getActivitiesInScope(effective, profile),
               getIssuesInScope(effective),
               userId
                 ? getReportsReceived(userId)
@@ -259,7 +254,7 @@ export default function CampaignDashboard() {
         /* Plain member: own work plus the PU they registered in. */
         const [members, activities] = await Promise.all([
           getCampaignMembersInScope(effective),
-          getActivitiesInScope(effective),
+          getActivitiesInScope(effective, profile),
         ]);
 
         if (cancelled) return;
@@ -298,6 +293,7 @@ export default function CampaignDashboard() {
     scopeLoading,
     lgas,
     userId,
+    profile,
   ]);
 
   if (!profile) return null;

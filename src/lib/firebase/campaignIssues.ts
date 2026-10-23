@@ -35,7 +35,9 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./config";
+import { campaignRead } from "./query-debug";
 
+import { chunkIds } from "@/lib/campaign-read-scope";
 import type { CampaignScope } from "@/lib/campaign-scope";
 
 import type { CampaignIssue, CampaignIssueStatus, ScopeType } from "@/types";
@@ -43,7 +45,6 @@ import type { CampaignIssue, CampaignIssueStatus, ScopeType } from "@/types";
 export type { CampaignIssue } from "@/types";
 
 const COLLECTION = "issues";
-const IN_FILTER_LIMIT = 30;
 
 /* ============================================================
  * MAPPING
@@ -118,16 +119,22 @@ export async function getMyCampaignIssues(
 
   const byId = new Map<string, CampaignIssue>();
 
-  const raised = await getDocs(
-    query(collection(db, COLLECTION), where("raised_by", "==", userId)),
+  const raised = await campaignRead(
+    { collection: COLLECTION, filter: { raised_by: userId } },
+    () =>
+      getDocs(query(collection(db, COLLECTION), where("raised_by", "==", userId))),
   );
   mergeInto(
     byId,
     raised.docs.map((item) => mapIssue(item.id, item.data())),
   );
 
-  const legacy = await getDocs(
-    query(collection(db, COLLECTION), where("reported_by", "==", userId)),
+  const legacy = await campaignRead(
+    { collection: COLLECTION, filter: { reported_by: userId } },
+    () =>
+      getDocs(
+        query(collection(db, COLLECTION), where("reported_by", "==", userId)),
+      ),
   );
   mergeInto(
     byId,
@@ -152,8 +159,16 @@ export async function getIssuesInScope(
 
   const byId = new Map<string, CampaignIssue>();
 
+  /*
+   * A state-scoped viewer holds a GLOBAL `manage_issue` grant, which is
+   * the only thing that makes an unfiltered list provable. Anyone else
+   * must come through the scoped queries below.
+   */
   if (scope.level === "state" || scope.level === "campaign") {
-    const all = await getDocs(query(collection(db, COLLECTION)));
+    const all = await campaignRead(
+      { collection: COLLECTION, filter: { all: true } },
+      () => getDocs(query(collection(db, COLLECTION))),
+    );
     mergeInto(
       byId,
       all.docs.map((item) => mapIssue(item.id, item.data())),
@@ -162,30 +177,37 @@ export async function getIssuesInScope(
   }
 
   /* 1. Exact-level rows (covers legacy documents with no ward stamp). */
-  const exact = await getDocs(
-    query(
-      collection(db, COLLECTION),
-      where("scope_type", "==", scope.level),
-      where("scope_id", "==", scope.scope_id),
-    ),
+  const exact = await campaignRead(
+    {
+      collection: COLLECTION,
+      filter: { scope_type: scope.level, scope_id: scope.scope_id },
+    },
+    () =>
+      getDocs(
+        query(
+          collection(db, COLLECTION),
+          where("scope_type", "==", scope.level),
+          where("scope_id", "==", scope.scope_id),
+        ),
+      ),
   );
   mergeInto(
     byId,
     exact.docs.map((item) => mapIssue(item.id, item.data())),
   );
 
-  const unique = Array.from(new Set(scope.wardIds.filter(Boolean)));
-
-  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
-    const chunk = unique.slice(index, index + IN_FILTER_LIMIT);
-
+  for (const chunk of chunkIds(scope.wardIds)) {
     /* 2. Ward-scoped rows inside the scope. */
-    const wards = await getDocs(
-      query(
-        collection(db, COLLECTION),
-        where("scope_type", "==", "ward"),
-        where("scope_id", "in", chunk),
-      ),
+    const wards = await campaignRead(
+      { collection: COLLECTION, filter: { scope_type: "ward", scope_id: chunk } },
+      () =>
+        getDocs(
+          query(
+            collection(db, COLLECTION),
+            where("scope_type", "==", "ward"),
+            where("scope_id", "in", chunk),
+          ),
+        ),
     );
     mergeInto(
       byId,
@@ -193,8 +215,12 @@ export async function getIssuesInScope(
     );
 
     /* 3. Anything stamped to one of those wards (PU-scoped rows). */
-    const stamped = await getDocs(
-      query(collection(db, COLLECTION), where("scope_ward_id", "in", chunk)),
+    const stamped = await campaignRead(
+      { collection: COLLECTION, filter: { scope_ward_id: chunk } },
+      () =>
+        getDocs(
+          query(collection(db, COLLECTION), where("scope_ward_id", "in", chunk)),
+        ),
     );
     mergeInto(
       byId,

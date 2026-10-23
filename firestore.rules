@@ -637,6 +637,35 @@ service cloud.firestore {
 
       allow read: if false;
 
+      /*
+       * R7 — admins may read the whole index.
+       *
+       * A recompute triggered by an admin (demotion, role change,
+       * membership removal) runs in the admin's session and must
+       * enumerate the TARGET user's existing grants to delete the ones
+       * that are no longer expected. Admins already write and delete
+       * these documents, so reading them adds no authority.
+       */
+      allow read: if isAdmin();
+
+      /*
+       * R7 — a member may read their OWN grants.
+       *
+       * The projection has to delete grants that are no longer expected,
+       * which means it must know which ones EXIST. `access_projection_ids`
+       * on the profile records what this projection wrote, but a document
+       * written before that field existed (or by another writer) is
+       * invisible to it — the reason a demoted coordinator kept a full
+       * set of grants. Enumerating `where("user_id", "==", uid)` is
+       * provable against this clause.
+       *
+       * It exposes the caller's own entitlements only: the rule compares
+       * the document's user_id with the authenticated uid, so no query
+       * can reach another user's documents.
+       */
+      allow read: if isSignedIn()
+        && resource.data.user_id == request.auth.uid;
+
       allow create, update: if isAdmin()
         && request.resource.data.user_id is string
         && request.resource.data.permission is string
@@ -694,6 +723,23 @@ service cloud.firestore {
        * A PU-scoped activity is readable only by that PU; everything
        * else is readable by every member of the stamped wards.
        */
+      /*
+       * R7 — a PU-scoped activity inside a coordinator's ward.
+       *
+       * The membership clause below only reaches the PU's own members,
+       * so a ward coordinator could not see work logged at a polling
+       * unit in their own ward. The writer stamps `scope_ward_id`, and
+       * the coordinator holds `view_activities` for that ward; both the
+       * rule and the query can then agree on a single field.
+       */
+      allow read: if isSignedIn()
+        && resource.data.get("scope_ward_id", "") != ""
+        && hasAccess(
+          "view_activities",
+          "ward",
+          resource.data.get("scope_ward_id", "")
+        );
+
       allow read: if isSignedIn()
         && isCampaignMember()
         && (
@@ -760,6 +806,20 @@ service cloud.firestore {
        */
       allow read: if isSignedIn()
         && resource.data.get("assigned_to_user", "") == request.auth.uid;
+
+      /*
+       * R7 — legacy assignee / creator fields.
+       *
+       * `getAssignmentsForUser()` queries both the Round 5 field and the
+       * pre-Round 5 one it falls back to (`assigned_to` / `assigned_by`).
+       * Without these clauses those two queries could not be proven and
+       * the WHOLE read failed for every non-admin.
+       */
+      allow read: if isSignedIn()
+        && resource.data.get("assigned_to", "") == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && resource.data.get("assigned_by", "") == request.auth.uid;
 
       allow read: if isSignedIn()
         && resource.data.get("created_by", "") == request.auth.uid;

@@ -186,14 +186,17 @@ export default function CampaignActivitiesPage() {
         return;
       }
 
-      const data = await getActivitiesInScope({
-        level: scopeLevel,
-        scope_id: scopeId,
-        label: scopeLabel,
-        lgaIds: scope?.lgaIds ?? [],
-        wardIds: scope?.wardIds ?? [],
-        pollingUnitIds: scope?.pollingUnitIds ?? [],
-      });
+      const data = await getActivitiesInScope(
+        {
+          level: scopeLevel,
+          scope_id: scopeId,
+          label: scopeLabel,
+          lgaIds: scope?.lgaIds ?? [],
+          wardIds: scope?.wardIds ?? [],
+          pollingUnitIds: scope?.pollingUnitIds ?? [],
+        },
+        profile,
+      );
 
       setActivities(data);
     } catch (error) {
@@ -214,6 +217,7 @@ export default function CampaignActivitiesPage() {
     scopeId,
     scopeLabel,
     scopeLevel,
+    profile,
   ]);
 
   useEffect(() => {

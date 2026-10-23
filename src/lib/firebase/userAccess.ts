@@ -161,11 +161,12 @@ async function applyProjectionChange(
     const batch = writeBatch(db);
 
     for (const entry of toAdd) {
-      batch.set(
-        doc(db, "user_access", entry.id),
-        accessDocData(userId, entry),
-        { merge: true },
-      );
+      /*
+       * Full replace, not merge: a document that already carries legacy
+       * fields (`tenant_id`) must come out clean, and the payload above
+       * is the complete, current shape.
+       */
+      batch.set(doc(db, "user_access", entry.id), accessDocData(userId, entry));
     }
 
     for (const id of toDelete) {
@@ -181,11 +182,7 @@ async function applyProjectionChange(
     const batch = writeBatch(db);
 
     for (const entry of chunk) {
-      batch.set(
-        doc(db, "user_access", entry.id),
-        accessDocData(userId, entry),
-        { merge: true },
-      );
+      batch.set(doc(db, "user_access", entry.id), accessDocData(userId, entry));
     }
 
     await batch.commit();
@@ -233,6 +230,101 @@ function recordedProjectionIds(
   return value
     .filter((item): item is string => typeof item === "string")
     .filter((item) => isCampaignProjectedAccessId(item));
+}
+
+/**
+ * Campaign grant documents that ACTUALLY exist for a user.
+ *
+ * `access_projection_ids` records what this projection wrote, but a
+ * document written before that field existed (or by another writer) is
+ * invisible to it — which is exactly how Chika kept a full set of
+ * coordinator grants after being demoted to plain member: the diff
+ * only ever compared against the recorded ids, so "not recorded" was
+ * treated as "does not exist".
+ *
+ * Enumerating the collection is therefore required for the delete half
+ * of the diff. It is allowed by the self-read clause on `user_access`
+ * (firestore.rules), and it returns ONLY the caller's own documents.
+ *
+ * Election grants are excluded: `view_election_results` is owned by
+ * another projection and must survive every campaign recompute.
+ *
+ * Best effort: when the read fails (older deployed rules, offline) the
+ * recompute falls back to the recorded ids rather than deleting blind.
+ */
+interface ExistingCampaignAccess {
+  /** Ids that exist for the user (campaign permissions only). */
+  ids: string[];
+  /**
+   * Existing ids whose DOCUMENT is stale — a `tenant_id` field, a
+   * legacy key, a mismatched permission/scope, or `allowed` not true.
+   * They are deleted when no longer expected and rewritten when they
+   * still are, so a stale field never survives a recompute.
+   */
+  staleIds: string[];
+}
+
+const ACCESS_DOC_FIELDS = new Set([
+  "user_id",
+  "permission",
+  "allowed",
+  "scope_type",
+  "scope_id",
+  "updated_at",
+]);
+
+function isStaleAccessDoc(
+  id: string,
+  userId: string,
+  data: Record<string, unknown>,
+): boolean {
+  if (data.allowed !== true) return true;
+  if (data.user_id !== userId) return true;
+
+  const [, permission, scopeType] = id.split("__");
+
+  if (data.permission !== permission) return true;
+  if (data.scope_type !== scopeType) return true;
+
+  /* `tenant_id` and any other legacy key. */
+  return Object.keys(data).some((key) => !ACCESS_DOC_FIELDS.has(key));
+}
+
+async function loadExistingCampaignAccess(
+  userId: string,
+): Promise<ExistingCampaignAccess> {
+  try {
+    const snapshot = await getDocs(
+      query(
+        collection(db, "user_access"),
+        where("user_id", "==", userId),
+      ),
+    );
+
+    const ids: string[] = [];
+    const staleIds: string[] = [];
+
+    for (const item of snapshot.docs) {
+      if (!item.id.startsWith(`${userId}__`)) continue;
+      if (!isCampaignProjectedAccessId(item.id)) continue;
+
+      ids.push(item.id);
+
+      if (isStaleAccessDoc(item.id, userId, item.data())) {
+        staleIds.push(item.id);
+      }
+    }
+
+    return { ids, staleIds };
+  } catch (error) {
+    console.warn(
+      "Could not enumerate existing campaign access documents; " +
+        "falling back to the recorded projection index:",
+      error,
+    );
+
+    return { ids: [], staleIds: [] };
+  }
 }
 
 /**
@@ -314,9 +406,13 @@ export async function syncCampaignAccessForUser(
       /*
        * Not eligible any more (campaign membership removed, election
        * officer, or no profile at all): everything this projection owns
-       * goes. The election projection is excluded by the diff.
+       * goes, including documents that predate the recorded index. The
+       * election projection is excluded by the diff.
        */
-      const toDelete = recorded;
+      const existing = await loadExistingCampaignAccess(userId);
+      const toDelete = Array.from(
+        new Set([...recorded, ...existing.ids]),
+      );
 
       await applyProjectionChange(userId, [], toDelete);
 
@@ -332,9 +428,10 @@ export async function syncCampaignAccessForUser(
       return result;
     }
 
-    const [assignments, lgas] = await Promise.all([
+    const [assignments, lgas, existing] = await Promise.all([
       loadActiveAssignments(userId),
       getAllEnuguLGAs(),
+      loadExistingCampaignAccess(userId),
     ]);
 
     const expected = computeExpectedCampaignAccess({
@@ -344,7 +441,28 @@ export async function syncCampaignAccessForUser(
       lgas,
     });
 
-    const { toAdd, toDelete } = diffCampaignAccess(expected, recorded);
+    /*
+     * The diff runs against what EXISTS, not only what was recorded. A
+     * grant written before `access_projection_ids` existed, or at a
+     * scope the user has since left, is deleted on the next recompute.
+     */
+    const known = Array.from(new Set([...recorded, ...existing.ids]));
+    const { toAdd, toDelete } = diffCampaignAccess(expected, known);
+
+    /*
+     * An expected document that still carries stale fields is REWRITTEN
+     * (full replace, see `applyProjectionChange`), so `tenant_id` and
+     * legacy keys are cleaned up without a separate migration.
+     */
+    const stale = new Set(existing.staleIds);
+    const alreadyAdding = new Set(toAdd.map((item) => item.id));
+
+    for (const item of expected) {
+      if (stale.has(item.id) && !alreadyAdding.has(item.id)) {
+        toAdd.push(item);
+        alreadyAdding.add(item.id);
+      }
+    }
 
     await applyProjectionChange(userId, toAdd, toDelete);
 
@@ -429,7 +547,6 @@ export async function ensureBaselineCampaignProjection(
         batch.set(
           doc(db, "user_access", entry.id),
           accessDocData(userId, entry),
-          { merge: true },
         );
       }
 

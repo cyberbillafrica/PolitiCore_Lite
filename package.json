@@ -12,7 +12,9 @@
     "cleanup:grants": "tsx scripts/cleanup-stale-grants.ts",
     "project:campaign-access": "tsx scripts/project-campaign-access.ts",
     "verify:campaign-access": "tsx scripts/verify-campaign-access.ts",
-    "check:campaign-projection": "tsx scripts/check-campaign-projection.ts"
+    "check:campaign-projection": "tsx scripts/check-campaign-projection.ts",
+    "test:rules": "firebase emulators:exec --project demo-politicore --only firestore,auth \"vitest run --config tests/rules/vitest.config.ts\"",
+    "test:rules:watch": "firebase emulators:start --only firestore,auth --project demo-politicore"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -39,6 +41,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -46,9 +49,11 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "firebase-tools": "^15.34.1",
     "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }
