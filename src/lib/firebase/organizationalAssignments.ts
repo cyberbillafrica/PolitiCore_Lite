@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
+import { notifyRoleAssigned } from "./notifications";
 import {
   revokeElectionResultAccessForAssignment,
   syncCampaignAccessForUser,
@@ -239,6 +240,17 @@ export async function createOrganizationalAssignment(data: {
         )
       : Promise.resolve(),
   ]);
+
+  /* The appointment already exists; a failed notification must not undo it. */
+  try {
+    await notifyRoleAssigned({
+      memberId: data.user_id,
+      position: data.position,
+      actorId: data.assigned_by,
+    });
+  } catch (error) {
+    console.error("Failed to notify the appointed member:", error);
+  }
 
   return ref.id;
 }

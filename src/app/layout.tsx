@@ -46,13 +46,10 @@ export default function RootLayout({
                 position="bottom-right"
                 closeButton
                 visibleToasts={3}
+                richColors
                 toastOptions={{
                   classNames: {
                     toast: "group rounded-xl border shadow-lg text-sm font-medium",
-                    success: "border-green-200 bg-green-50 text-green-900",
-                    error: "border-red-200 bg-red-50 text-red-900",
-                    warning: "border-amber-200 bg-amber-50 text-amber-900",
-                    info: "border-sky-200 bg-sky-50 text-sky-900",
                   },
                 }}
               />

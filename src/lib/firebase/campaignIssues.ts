@@ -27,6 +27,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -37,6 +38,10 @@ import {
 
 import { db } from "./config";
 import { campaignRead } from "./query-debug";
+import {
+  notifyIssueRaised,
+  notifyIssueStatusChanged,
+} from "./notifications";
 
 import {
   chunkIds,
@@ -322,7 +327,47 @@ export async function raiseCampaignIssue(
     updated_at: serverTimestamp(),
   });
 
+  /* Admins are the audience a member's report can reliably reach. */
+  try {
+    await notifyIssueRaised({
+      issueId: ref.id,
+      title: input.title.trim(),
+      actorId: input.raised_by,
+    });
+  } catch (error) {
+    console.error("Failed to notify the administrators:", error);
+  }
+
   return ref.id;
+}
+
+/**
+ * Tell the member who raised an issue that its state changed.
+ *
+ * Best-effort: the status write has already committed, and a failed
+ * notification must not undo it.
+ */
+async function notifyIssueOwner(
+  issueId: string,
+  status: string,
+  actorId: string,
+): Promise<void> {
+  try {
+    const snapshot = await getDoc(doc(db, COLLECTION, issueId));
+    if (!snapshot.exists()) return;
+
+    const data = snapshot.data();
+
+    await notifyIssueStatusChanged({
+      issueId,
+      title: String(data.title ?? "Campaign issue"),
+      raisedBy: String(data.raised_by ?? data.reported_by ?? ""),
+      status,
+      actorId,
+    });
+  } catch (error) {
+    console.error("Failed to notify the member who raised the issue:", error);
+  }
 }
 
 /**
@@ -339,6 +384,8 @@ export async function acknowledgeCampaignIssue(
     acknowledged_at: serverTimestamp(),
     updated_at: serverTimestamp(),
   });
+
+  await notifyIssueOwner(issueId, "acknowledged", userId);
 }
 
 /**
@@ -356,4 +403,6 @@ export async function resolveCampaignIssue(input: {
     resolution_notes: input.notes?.trim() || null,
     updated_at: serverTimestamp(),
   });
+
+  await notifyIssueOwner(input.issueId, "resolved", input.userId);
 }

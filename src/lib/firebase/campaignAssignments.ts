@@ -41,6 +41,10 @@ import {
 import { db } from "@/lib/firebase/config";
 import { dateOnlyFromValue, dateOnlyToTimestamp } from "@/lib/campaign-dates";
 import { campaignRead } from "./query-debug";
+import {
+  notifyAssignmentCreated,
+  notifyAssignmentReviewed,
+} from "./notifications";
 import { resolveCampaignScope, type CampaignScope } from "@/lib/campaign-scope";
 import {
   chunkIds,
@@ -393,6 +397,13 @@ export interface CreateAssignmentInput {
 
   /** Ward the target belongs to, used for scoped reads. */
   target_ward_id?: string | null;
+
+  /**
+   * The creator's campaign grants, used to resolve a role-filtered
+   * target. Omit only where the caller is not resolving recipients from
+   * a user session (scripts, tests).
+   */
+  grants?: ViewerGrant[];
 }
 
 /**
@@ -451,17 +462,35 @@ export async function createCampaignAssignment(
 
   const ref = await addDoc(collection(db, COLLECTION), document);
 
+  let targetIds = input.assigned_to_user ? [input.assigned_to_user] : [];
+
   /*
    * When the target is a scope, every targeted member gets their own
    * pending completion row so the creator can track them individually.
    */
   if (scope) {
-    const targetIds = await resolveTargetMemberIds({
+    targetIds = await resolveTargetMemberIds({
       scope,
       assigned_to_user: input.assigned_to_user ?? null,
+      grants: input.grants,
     });
 
     await seedCompletions(ref.id, targetIds);
+  }
+
+  /*
+   * A notification is a courtesy: a failed fan-out must never fail the
+   * assignment that was already written.
+   */
+  try {
+    await notifyAssignmentCreated({
+      assignmentId: ref.id,
+      title: input.title.trim(),
+      recipientIds: targetIds,
+      actorId: input.created_by,
+    });
+  } catch (error) {
+    console.error("Failed to notify assignment recipients:", error);
   }
 
   return ref.id;
@@ -521,12 +550,19 @@ export async function deleteCampaignAssignment(
  *
  * Kept in this module (rather than importing the member loader) so an
  * assignment write never depends on the member page's view model.
- * `role_filter` narrows the set to one position, resolved from
- * `organizational_assignments`.
+ *
+ * `role_filter` narrows the set to one position. Positions live in
+ * `organizational_assignments`, whose read rule requires a
+ * `view_members` grant at the DOCUMENT's scope — so the lookup goes
+ * through `getMemberPositions()`, which queries only the scopes the
+ * caller holds. The old unconstrained `where("position", ==)` query was
+ * denied for every coordinator, which failed the whole create AFTER the
+ * assignment document had already been written.
  */
 async function resolveTargetMemberIds(input: {
   scope: AssignmentScope;
   assigned_to_user: string | null;
+  grants?: ViewerGrant[];
 }): Promise<string[]> {
   const resolved = await resolveCampaignScope(
     input.scope.level,
@@ -535,7 +571,7 @@ async function resolveTargetMemberIds(input: {
 
   if (!resolved) return input.assigned_to_user ? [input.assigned_to_user] : [];
 
-  const { getCampaignMembersInScope } = await import(
+  const { getCampaignMembersInScope, getMemberPositions } = await import(
     "@/lib/firebase/campaignMembers"
   );
 
@@ -543,20 +579,20 @@ async function resolveTargetMemberIds(input: {
 
   let ids = members.map((member) => member.id);
 
-  if (input.scope.role_filter) {
-    const assignmentSnapshot = await getDocs(
-      query(
-        collection(db, "organizational_assignments"),
-        where("position", "==", input.scope.role_filter),
-        where("status", "==", "active"),
-      ),
+  const role = input.scope.role_filter;
+
+  /*
+   * Every targeted member already is a campaign member, so that filter
+   * is the unfiltered set. Any other role needs the position lookup.
+   */
+  if (role && role !== "campaign_member") {
+    const positions = await getMemberPositions(
+      ids,
+      resolved,
+      input.grants ?? [],
     );
 
-    const allowed = new Set(
-      assignmentSnapshot.docs.map((item) => String(item.data().user_id ?? "")),
-    );
-
-    ids = ids.filter((id) => allowed.has(id));
+    ids = ids.filter((id) => positions.get(id)?.position === role);
   }
 
   if (input.assigned_to_user) {
@@ -564,6 +600,33 @@ async function resolveTargetMemberIds(input: {
   }
 
   return ids;
+}
+
+/**
+ * How many members a scope target resolves to.
+ *
+ * The create form asks this before writing, so an assignment that would
+ * land in nobody's inbox is refused instead of created. A read that
+ * cannot be proven (no `view_members` grant covering the target) counts
+ * as zero: the safe direction is to block, never to fan out blind.
+ */
+export async function countScopeRecipients(
+  scope: AssignmentScope,
+  grants: ViewerGrant[] = [],
+  assignedToUser: string | null = null,
+): Promise<number> {
+  try {
+    const ids = await resolveTargetMemberIds({
+      scope,
+      assigned_to_user: assignedToUser,
+      grants,
+    });
+
+    return ids.length;
+  } catch (error) {
+    console.error("Failed to resolve the recipients of this scope:", error);
+    return 0;
+  }
 }
 
 async function seedCompletions(
@@ -675,6 +738,23 @@ export async function reviewCompletion(input: {
       updated_at: serverTimestamp(),
     },
   );
+
+  try {
+    const assignment = await getDoc(doc(db, COLLECTION, input.assignmentId));
+
+    await notifyAssignmentReviewed({
+      assignmentId: input.assignmentId,
+      title: assignment.exists()
+        ? String(assignment.data().title ?? "Assignment")
+        : "Assignment",
+      memberId: input.userId,
+      status: input.status,
+      actorId: input.reviewedBy,
+      notes: input.notes,
+    });
+  } catch (error) {
+    console.error("Failed to notify the reviewed member:", error);
+  }
 }
 
 /**

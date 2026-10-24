@@ -41,6 +41,7 @@ import {
 
 import { db } from "./config";
 import { campaignRead } from "./query-debug";
+import { notifyActivityCreated } from "./notifications";
 import { dateOnlyFromValue, dateOnlyToTimestamp } from "@/lib/campaign-dates";
 import {
   resolveCampaignScope,
@@ -504,6 +505,37 @@ export async function createCampaignActivity(
   }
 
   const ref = await addDoc(collection(db, "campaign_activities"), activityData);
+
+  /*
+   * Everyone the activity is visible to hears about it once. The member
+   * load is read-only and the fan-out caps itself at 100 recipients, so
+   * a state-wide activity does not become an unbounded burst.
+   */
+  try {
+    const target = await resolveCampaignScope(
+      input.scope_type,
+      input.scope_id,
+    );
+
+    if (target) {
+      const { getCampaignMembersInScope } = await import(
+        "@/lib/firebase/campaignMembers"
+      );
+
+      const members = await getCampaignMembersInScope(target);
+
+      await notifyActivityCreated({
+        activityId: ref.id,
+        title: input.title,
+        recipientIds: members.map((member) => member.id),
+        actorId: input.created_by,
+        when: input.date,
+        venue: input.venue,
+      });
+    }
+  } catch (error) {
+    console.error("Failed to notify activity members:", error);
+  }
 
   return ref.id;
 }

@@ -1,12 +1,13 @@
 // src/lib/firebase/portal-content.ts
 
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
 import type {
   PortalContent,
   PortalContentData,
   Announcement,
   EventData,
+  UserProfile,
 } from "@/types";
 
 const COLLECTION = "portal_content";
@@ -51,6 +52,71 @@ export async function getAnnouncements(): Promise<Announcement[]> {
   const items = await getPortalContent();
   return items.filter(
     (item): item is Announcement => item.type === "announcement",
+  );
+}
+
+/**
+ * The announcements one profile may see.
+ *
+ * `portal_content/main` is a single document every signed-in account can
+ * read, so the audience rule is applied here rather than in Firestore.
+ * Shared by the one-shot read and the live subscription in the bell.
+ */
+export function filterAnnouncementsForProfile(
+  items: Announcement[],
+  profile: UserProfile | null | undefined,
+): Announcement[] {
+  return items.filter((announcement) => {
+    if (announcement.scope === "general") return true;
+    if (announcement.scope === "admins" && profile?.access_role === "admin")
+      return true;
+    if (
+      announcement.scope === "campaign_members" &&
+      profile?.membership_types?.includes("campaign_member")
+    )
+      return true;
+    if (
+      announcement.scope === "social_members" &&
+      profile?.membership_types?.includes("social_member")
+    )
+      return true;
+    if (
+      announcement.scope === "election_officers" &&
+      profile?.access_role === "election_officer"
+    )
+      return true;
+    return false;
+  });
+}
+
+/**
+ * Live announcements from `portal_content/main`.
+ *
+ * A new broadcast appears in an open bell without a reload. Returns the
+ * unsubscribe function `onSnapshot()` hands back.
+ */
+export function subscribeToAnnouncements(
+  onChange: (items: Announcement[]) => void,
+): () => void {
+  return onSnapshot(
+    doc(db, COLLECTION, DOC_ID),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onChange([]);
+        return;
+      }
+
+      const data = snapshot.data() as PortalContentData;
+
+      onChange(
+        (data.items ?? []).filter(
+          (item): item is Announcement => item.type === "announcement",
+        ),
+      );
+    },
+    (error) => {
+      console.error("Failed to watch announcements:", error);
+    },
   );
 }
 

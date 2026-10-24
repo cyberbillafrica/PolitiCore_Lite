@@ -582,6 +582,64 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // NOTIFICATIONS (per-user inbox)
+    // ============================================================
+
+    /*
+     * One document per recipient. A member reads and marks read only
+     * their OWN rows; admin may read and delete for support.
+     *
+     * Any signed-in actor may CREATE a row for another user (that is the
+     * fan-out: the actor's session writes the recipients' inboxes), but
+     * the actor id must be the caller and the payload must match the
+     * nine-event vocabulary exactly. `created_at` must be the request
+     * time; the writer always uses serverTimestamp().
+     */
+    match /notifications/{notificationId} {
+
+      allow read: if isAdmin();
+
+      allow read: if isSignedIn()
+        && resource.data.user_id == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && request.resource.data.user_id is string
+        && request.resource.data.user_id.size() > 0
+        && request.resource.data.actor_id == request.auth.uid
+        && request.resource.data.type in [
+          "assignment_created",
+          "assignment_completed",
+          "assignment_approved",
+          "assignment_rejected",
+          "report_reviewed",
+          "issue_raised",
+          "issue_status_changed",
+          "activity_created",
+          "role_assigned"
+        ]
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 500
+        && request.resource.data.link is string
+        && request.resource.data.entity_type is string
+        && request.resource.data.entity_id is string
+        && request.resource.data.read == false
+        && request.resource.data.created_at == request.time;
+
+      allow update: if isSignedIn()
+        && resource.data.user_id == request.auth.uid
+        && request.resource.data.user_id == resource.data.user_id
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly(["read", "read_at"])
+        && request.resource.data.read == true;
+
+      allow delete: if isAdmin();
+    }
+
+    // ============================================================
     // CONTACT MESSAGES (PUBLIC INBOX)
     // ============================================================
 

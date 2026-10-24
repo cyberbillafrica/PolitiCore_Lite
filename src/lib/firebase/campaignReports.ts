@@ -30,6 +30,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -40,6 +41,10 @@ import {
 
 import { db } from "./config";
 import { campaignRead } from "./query-debug";
+import {
+  notifyAssignmentCompleted,
+  notifyReportReviewed,
+} from "./notifications";
 
 import type { CampaignReport, ScopeType } from "@/types";
 
@@ -310,6 +315,19 @@ export async function submitCampaignReport(
     updated_at: serverTimestamp(),
   });
 
+  /* The assignment's creator hears about the submission, not the actor. */
+  try {
+    await notifyAssignmentCompleted({
+      assignmentId: input.assignment_id,
+      reportId: ref.id,
+      reportTitle: input.title.trim(),
+      creatorId: input.assignment_creator_id,
+      actorId: input.submitted_by,
+    });
+  } catch (error) {
+    console.error("Failed to notify the assignment creator:", error);
+  }
+
   return ref.id;
 }
 
@@ -330,4 +348,23 @@ export async function reviewCampaignReport(input: {
     review_comment: input.notes?.trim() || null,
     updated_at: serverTimestamp(),
   });
+
+  try {
+    const snapshot = await getDoc(doc(db, COLLECTION, input.reportId));
+
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+
+      await notifyReportReviewed({
+        reportId: input.reportId,
+        reportTitle: String(data.title ?? "Field report"),
+        submitterId: String(data.submitted_by ?? ""),
+        status: input.status,
+        actorId: input.reviewedBy,
+        notes: input.notes,
+      });
+    }
+  } catch (error) {
+    console.error("Failed to notify the report's submitter:", error);
+  }
 }

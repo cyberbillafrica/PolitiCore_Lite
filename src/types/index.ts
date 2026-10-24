@@ -566,6 +566,48 @@ export interface PortalContentData {
 }
 
 // ============================================================
+// NOTIFICATIONS (per-user inbox)
+// ============================================================
+//
+// A notification is one row addressed to ONE user. Unlike an
+// announcement (a single portal_content item broadcast to a scope),
+// read state is stored on the document, so it follows the account
+// across devices.
+
+export type NotificationType =
+  | "assignment_created"
+  | "assignment_completed"
+  | "assignment_approved"
+  | "assignment_rejected"
+  | "report_reviewed"
+  | "issue_raised"
+  | "issue_status_changed"
+  | "activity_created"
+  | "role_assigned";
+
+export interface AppNotification {
+  id: string;
+
+  user_id: string;
+  actor_id: string;
+
+  type: NotificationType;
+
+  title: string;
+  message: string;
+
+  /** Portal path to open when the notification is clicked. */
+  link: string;
+
+  entity_type: string;
+  entity_id: string;
+
+  read: boolean;
+  created_at?: unknown;
+  read_at?: unknown;
+}
+
+// ============================================================
 // ELECTION TYPES — ported from politicore-firebase-final (3be40b7)
 // ============================================================
 

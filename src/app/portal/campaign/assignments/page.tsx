@@ -52,6 +52,8 @@ import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
 import { isTodayOrFuture, todayLocalDate } from "@/lib/campaign-dates";
 import {
+  assignableRoles,
+  highestGrantedLevel,
   scopeIdsByLevel,
   scopeLevels,
   writableScopes,
@@ -61,6 +63,7 @@ import { notify } from "@/lib/notify";
 
 import {
   closeAssignmentIfComplete,
+  countScopeRecipients,
   createCampaignAssignment,
   deleteCampaignAssignment,
   getAllCampaignAssignments,
@@ -82,6 +85,8 @@ import {
 import { formatOrganizationalPosition, formatScopeType } from "@/lib/organization";
 import { resolveUserNames } from "@/lib/userNames";
 
+import type { ViewerGrant } from "@/lib/campaign-read-scope";
+
 import type {
   AssignmentCompletion,
   OrganizationalPosition,
@@ -100,8 +105,13 @@ const LEVEL_ORDER: ScopeType[] = [
   "polling_unit",
 ];
 
+/*
+ * Every role the filter COULD offer, lowest rank first. The form shows
+ * only the subset `assignableRoles()` allows for the creator's level.
+ */
 const ROLE_FILTERS: { value: OrganizationalPosition | ""; label: string }[] = [
   { value: "", label: "All members in scope" },
+  { value: "campaign_member", label: "Campaign members only" },
   { value: "pu_coordinator", label: "PU coordinators only" },
   { value: "ward_coordinator", label: "Ward coordinators only" },
   { value: "lga_coordinator", label: "LGA coordinators only" },
@@ -210,6 +220,47 @@ export default function CampaignAssignmentsPage() {
   const allowedScopeIds = useMemo(
     () => (isAdmin ? undefined : scopeIdsByLevel(creatableScopes)),
     [creatableScopes, isAdmin],
+  );
+
+  /* ------------------------------------------------------------
+   * ROLE FILTER OPTIONS
+   * ------------------------------------------------------------ */
+
+  /*
+   * The creator's level, derived from the grants the rules themselves
+   * read — never from the position name.
+   */
+  const creatorLevel = useMemo(
+    () => highestGrantedLevel(grants, "create_assignment"),
+    [grants],
+  );
+
+  /*
+   * A role filter may only name a position strictly below the creator's
+   * level, plus "campaign member". Offering a peer or a superior would
+   * resolve to nobody: that was the reported empty-assignment bug.
+   */
+  const roleOptions = useMemo(() => {
+    const allowed = new Set(
+      assignableRoles(isAdmin ? null : creatorLevel, isAdmin),
+    );
+
+    return ROLE_FILTERS.filter(
+      (option) => !option.value || allowed.has(option.value),
+    );
+  }, [creatorLevel, isAdmin]);
+
+  /*
+   * An admin's authority is not grant-based, but the position lookup
+   * still needs a scope it may read. `global` is the shape the rules
+   * short-circuit on for an admin.
+   */
+  const targetGrants = useMemo<ViewerGrant[]>(
+    () =>
+      isAdmin
+        ? [{ permission: "view_members", scope_type: "global", scope_id: "global" }]
+        : grants,
+    [isAdmin, grants],
   );
 
   /* ------------------------------------------------------------
@@ -405,6 +456,30 @@ export default function CampaignAssignmentsPage() {
     try {
       setCreating(true);
 
+      /*
+       * Never create an assignment that lands in nobody's inbox: an
+       * empty scope target is indistinguishable from a permission error
+       * to the person who submitted it.
+       */
+      if (wantsScope && form.scope) {
+        const recipients = await countScopeRecipients(
+          {
+            level: form.scope.level,
+            scope_id: form.scope.scope_id,
+            role_filter: form.roleFilter || null,
+          },
+          targetGrants,
+          wantsUser ? form.targetUserId : null,
+        );
+
+        if (recipients === 0) {
+          notify.error(
+            "No matching members in this scope. Adjust the role filter or scope.",
+          );
+          return;
+        }
+      }
+
       const targetWardId = wantsScope
         ? await targetWardIdForScope(
             form.scope
@@ -437,6 +512,7 @@ export default function CampaignAssignmentsPage() {
             ? { level: authority.level, scope_id: authority.scopeId }
             : null,
         target_ward_id: targetWardId,
+        grants: targetGrants,
       });
 
       setForm(EMPTY_FORM);
@@ -908,7 +984,7 @@ export default function CampaignAssignmentsPage() {
                           }
                           className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"
                         >
-                          {ROLE_FILTERS.map((option) => (
+                          {roleOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>

@@ -135,6 +135,21 @@ Reads are three queries merged by id (`getAssignmentsInScope`):
 - Create form: title, description, due date, priority, target radio
   (individual / scope / both), member picker, `ScopePicker`, optional role
   filter.
+- The role filter offers positions strictly **below** the creator's own
+  level, plus `campaign_member`. The creator's level is derived from their
+  `create_assignment` grants (`highestGrantedLevel()`), not from the position
+  name, and `assignableRoles()` builds the list. A PU coordinator therefore
+  sees `campaign_member` only; an LGA coordinator also sees ward and PU
+  coordinators.
+- Before writing a scope assignment the form resolves its recipients
+  (`countScopeRecipients()`); zero recipients blocks submission with
+  *"No matching members in this scope. Adjust the role filter or scope."* An
+  unprovable position read counts as zero.
+- Role-filtered recipients are resolved with `getMemberPositions()`, which
+  queries only scopes where the caller holds `view_members`. The previous
+  unconstrained `where(assignment.position == role)` query was denied for
+  every coordinator, failing the create *after* the assignment document had
+  already been written.
 - Row expansion: target, per-person completion list with names resolved in one
   batch (`resolveUserNames`), approve/reject per row for the creator, manual
   close/reopen, delete.
