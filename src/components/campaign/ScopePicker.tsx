@@ -66,6 +66,17 @@ export interface ScopePickerProps {
 
   /** Render the resolved id under the picker. Default true. */
   showResolvedId?: boolean;
+
+  /**
+   * Restrict every offered value to these exact ids per level.
+   *
+   * Used where the caller's authority is narrower than the state
+   * (a scoped coordinator creating an assignment or filtering issues):
+   * the pickers then cannot offer a value the rules would reject. The
+   * LGA / ward cascades are limited to the areas that CONTAIN an
+   * allowed value.
+   */
+  scopeIds?: Partial<Record<ScopeType, string[]>>;
 }
 
 const DEFAULT_LEVELS: ScopeType[] = [
@@ -126,11 +137,62 @@ export default function ScopePicker({
   disabled = false,
   idPrefix,
   showResolvedId = true,
+  scopeIds,
 }: ScopePickerProps) {
   const lookup = useElectoralLookup();
   const lgas = lookup.lgas;
 
   const duplicates = useMemo(() => duplicateWardNames(lgas), [lgas]);
+
+  /*
+   * R8 — authority clamp. The cascade dropdowns only list the LGAs and
+   * wards that contain a value the caller is allowed to pick.
+   */
+  const cascadeLgas = useMemo(() => {
+    if (!scopeIds) return lgas;
+
+    const ids = new Set<string>();
+
+    for (const id of scopeIds.lga ?? []) ids.add(id);
+
+    for (const id of scopeIds.ward ?? []) {
+      const lga = lgas.find((item) =>
+        item.wards.some((ward) => ward.id === id),
+      );
+      if (lga) ids.add(lga.id);
+    }
+
+    for (const id of scopeIds.polling_unit ?? []) {
+      for (const lga of lgas) {
+        if (
+          lga.wards.some((ward) =>
+            ward.pollingUnits.some((unit) => unit.id === id),
+          )
+        ) {
+          ids.add(lga.id);
+        }
+      }
+    }
+
+    return ids.size === 0 ? lgas : lgas.filter((lga) => ids.has(lga.id));
+  }, [lgas, scopeIds]);
+
+  const cascadeWardIds = useMemo(() => {
+    if (!scopeIds) return null;
+
+    const ids = new Set(scopeIds.ward ?? []);
+
+    for (const id of scopeIds.polling_unit ?? []) {
+      for (const lga of lgas) {
+        const ward = lga.wards.find((item) =>
+          item.pollingUnits.some((unit) => unit.id === id),
+        );
+        if (ward) ids.add(ward.id);
+      }
+    }
+
+    return ids;
+  }, [lgas, scopeIds]);
 
   const [level, setLevel] = useState<ScopeType | "">(value?.level ?? "");
   const [search, setSearch] = useState("");
@@ -179,63 +241,79 @@ export default function ScopePicker({
    * ------------------------------------------------------------ */
 
   const options = useMemo<Option[]>(() => {
-    switch (level) {
-      case "state":
-      case "campaign":
-        return [{ id: "enugu-state", label: "Enugu State", code: "EN" }];
+    const all: Option[] = (() => {
+      switch (level) {
+        case "state":
+        case "campaign":
+          return [{ id: "enugu-state", label: "Enugu State", code: "EN" }];
 
-      case "senatorial_zone":
-        return ZONE_IDS.map((id) => ({
-          id,
-          label: zoneLabel(id),
-          code: id,
-        }));
+        case "senatorial_zone":
+          return ZONE_IDS.map((id) => ({
+            id,
+            label: zoneLabel(id),
+            code: id,
+          }));
 
-      case "lga":
-        return lgas.map((lga) => ({
-          id: lga.id,
-          label: `${lga.name} LGA`,
-          code: `${lga.code} ${lga.id}`,
-        }));
+        case "lga":
+          return lgas.map((lga) => ({
+            id: lga.id,
+            label: `${lga.name} LGA`,
+            code: `${lga.code} ${lga.id}`,
+          }));
 
-      case "ward": {
-        const source = lgaId ? lgas.filter((lga) => lga.id === lgaId) : lgas;
+        case "ward": {
+          const source = lgaId
+            ? lgas.filter((lga) => lga.id === lgaId)
+            : lgas;
 
-        return source.flatMap((lga) =>
-          lga.wards.map((ward) => {
-            const needsPrefix = duplicates.has(ward.name.trim().toLowerCase());
+          return source.flatMap((lga) =>
+            lga.wards.map((ward) => {
+              const needsPrefix = duplicates.has(
+                ward.name.trim().toLowerCase(),
+              );
 
-            return {
-              id: ward.id,
-              label: needsPrefix
-                ? `${lga.name} — ${ward.name}`
-                : ward.name,
-              code: `${ward.code} ${ward.id}`,
-            };
-          }),
-        );
+              return {
+                id: ward.id,
+                label: needsPrefix
+                  ? `${lga.name} — ${ward.name}`
+                  : ward.name,
+                code: `${ward.code} ${ward.id}`,
+              };
+            }),
+          );
+        }
+
+        case "polling_unit": {
+          const source = lgaId
+            ? lgas.filter((lga) => lga.id === lgaId)
+            : lgas;
+
+          return source.flatMap((lga) =>
+            lga.wards
+              .filter((ward) => !wardId || ward.id === wardId)
+              .flatMap((ward) =>
+                ward.pollingUnits.map((pu) => ({
+                  id: pu.id,
+                  label: `PU ${numberFromCode(pu.code) || pu.code} — ${
+                    pu.name
+                  }`,
+                  code: `${pu.code} ${ward.name} ${lga.name}`,
+                })),
+              ),
+          );
+        }
+
+        default:
+          return [];
       }
+    })();
 
-      case "polling_unit": {
-        const source = lgaId ? lgas.filter((lga) => lga.id === lgaId) : lgas;
+    const allowed = level ? scopeIds?.[level as ScopeType] : undefined;
 
-        return source.flatMap((lga) =>
-          lga.wards
-            .filter((ward) => !wardId || ward.id === wardId)
-            .flatMap((ward) =>
-              ward.pollingUnits.map((pu) => ({
-                id: pu.id,
-                label: `PU ${numberFromCode(pu.code) || pu.code} — ${pu.name}`,
-                code: `${pu.code} ${ward.name} ${lga.name}`,
-              })),
-            ),
-        );
-      }
-
-      default:
-        return [];
-    }
-  }, [duplicates, lgaId, lgas, level, wardId]);
+    return allowed
+      ? all.filter((option) => allowed.includes(option.id))
+      : all;
+  }, [duplicates, lgaId, lgas, level, scopeIds, wardId]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -374,7 +452,7 @@ export default function ScopePicker({
           >
             <option value="">All LGAs</option>
 
-            {lgas.map((lga) => (
+            {cascadeLgas.map((lga) => (
               <option key={lga.id} value={lga.id}>
                 {lga.name}
               </option>
@@ -406,13 +484,20 @@ export default function ScopePicker({
 
             {(lgaId ? lgas.filter((lga) => lga.id === lgaId) : lgas).flatMap(
               (lga) =>
-                lga.wards.map((ward) => (
-                  <option key={ward.id} value={ward.id}>
-                    {duplicates.has(ward.name.trim().toLowerCase())
-                      ? `${lga.name} — ${ward.name}`
-                      : ward.name}
-                  </option>
-                )),
+                lga.wards
+                  .filter(
+                    (ward) =>
+                      !cascadeWardIds ||
+                      cascadeWardIds.size === 0 ||
+                      cascadeWardIds.has(ward.id),
+                  )
+                  .map((ward) => (
+                    <option key={ward.id} value={ward.id}>
+                      {duplicates.has(ward.name.trim().toLowerCase())
+                        ? `${lga.name} — ${ward.name}`
+                        : ward.name}
+                    </option>
+                  )),
             )}
           </select>
         </div>

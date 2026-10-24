@@ -34,6 +34,18 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { logOut } from "@/lib/firebase/auth";
+import {
+  CAMPAIGN_ADMIN_NAV_ENTRY,
+  CAMPAIGN_NAV_ENTRIES,
+  campaignNavItems,
+  showCampaignGroup,
+  type CampaignNavEntry,
+} from "@/lib/campaign-nav";
+import {
+  ELECTION_NAV_ENTRIES,
+  electionNavItems,
+  type ElectionNavEntry,
+} from "@/lib/election-nav";
 import { useElectionMode } from "@/hooks/useElectionEngine";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 
@@ -90,6 +102,49 @@ type ElectoralLocation = {
   lgaName?: string | null;
 };
 
+/*
+ * One icon per campaign destination. The label / href / permission data
+ * lives in `campaign-nav.ts`, which the navigation tests exercise.
+ */
+const CAMPAIGN_ICONS: Record<
+  string,
+  React.ComponentType<{ className?: string }>
+> = {
+  "/portal/dashboard": LayoutDashboard,
+  "/portal/campaign/area": Network,
+  "/portal/campaign/members": Users,
+  "/portal/campaign/assignments": CheckSquare,
+  "/portal/campaign/activities": CalendarDays,
+  "/portal/campaign/reports": FileText,
+  "/portal/campaign/issues": AlertTriangle,
+};
+
+function campaignNavLeaf(entry: CampaignNavEntry): NavLeaf {
+  return {
+    ...entry,
+    icon: CAMPAIGN_ICONS[entry.href] ?? LayoutDashboard,
+  };
+}
+
+const ELECTION_ICONS: Record<
+  string,
+  React.ComponentType<{ className?: string }>
+> = {
+  "/portal/election": LayoutDashboard,
+  "/portal/election/operations": CheckSquare,
+  "/portal/election/pu-reports": FileText,
+  "/portal/election/incidents": AlertTriangle,
+  "/portal/election/results": BarChart3,
+  "/portal/election/upload": Upload,
+};
+
+function electionNavLeaf(entry: ElectionNavEntry): NavLeaf {
+  return {
+    ...entry,
+    icon: ELECTION_ICONS[entry.href] ?? Vote,
+  };
+}
+
 const navigation: NavItem[] = [
   {
     name: "Dashboard",
@@ -128,111 +183,14 @@ const navigation: NavItem[] = [
     icon: BriefcaseBusiness,
     group: "campaign",
 
-    children: [
-      {
-        name: "Campaign Dashboard",
-        href: "/portal/dashboard",
-        icon: LayoutDashboard,
-        permission: "view_dashboard",
-      },
-
-      {
-        name: "My Area",
-        href: "/portal/campaign/area",
-        icon: Network,
-        permission: "view_area",
-      },
-
-      {
-        name: "Members",
-        href: "/portal/campaign/members",
-        icon: Users,
-        permission: "view_members",
-      },
-
-      {
-        name: "Assignments",
-        href: "/portal/campaign/assignments",
-        icon: CheckSquare,
-        permission: "view_assignments",
-      },
-
-      {
-        name: "Activities",
-        href: "/portal/campaign/activities",
-        icon: CalendarDays,
-        permission: "view_activities",
-      },
-
-      {
-        name: "Reports",
-        href: "/portal/campaign/reports",
-        icon: FileText,
-        permission: "submit_field_report",
-      },
-
-      {
-        name: "Issues",
-        href: "/portal/campaign/issues",
-        icon: AlertTriangle,
-        permission: "report_issue",
-      },
-    ],
+    children: CAMPAIGN_NAV_ENTRIES.map(campaignNavLeaf),
   },
 
   {
     name: "Election Operations",
     icon: Vote,
     group: "election",
-
-    children: [
-      {
-        name: "Election Dashboard",
-        href: "/portal/election",
-        icon: LayoutDashboard,
-        adminOnly: true,
-        electionModeRequired: true,
-      },
-
-      {
-        name: "Review Queue",
-        href: "/portal/election/operations",
-        icon: CheckSquare,
-        reviewQueue: true,
-        electionModeRequired: true,
-      },
-
-      {
-        name: "PU Reports",
-        href: "/portal/election/pu-reports",
-        icon: FileText,
-        electionReporting: true,
-        electionModeRequired: true,
-      },
-
-      {
-        name: "Incidents",
-        href: "/portal/election/incidents",
-        icon: AlertTriangle,
-        electionReporting: true,
-        electionModeRequired: true,
-      },
-
-      {
-        name: "Results",
-        href: "/portal/election/results",
-        icon: BarChart3,
-        electionReporting: true,
-      },
-
-      {
-        name: "Result Upload",
-        href: "/portal/election/upload",
-        icon: Upload,
-        electionReporting: true,
-        electionModeRequired: true,
-      },
-    ],
+    children: ELECTION_NAV_ENTRIES.map(electionNavLeaf),
   },
 ];
 
@@ -304,8 +262,7 @@ const adminNavigation = [
   },
 
   {
-    name: "Coordination",
-    href: "/portal/campaign/coordination",
+    ...CAMPAIGN_ADMIN_NAV_ENTRY,
     icon: UsersRound,
   },
 
@@ -451,29 +408,29 @@ export default function PortalLayout({
 
   const showCampaignCouncil = isCampaignMember || isAdmin;
 
+  /*
+   * R8 — the campaign group's visibility policy. Deliberately NOT the
+   * permission matrix: a plain campaign member holds no organizational
+   * assignment, yet every campaign page is theirs to open.
+   */
+  const campaignViewer = {
+    isAdmin,
+    isCampaignMember,
+    isElectionOfficer,
+  };
+
   const renderNav = () => (
     <>
       {navigation.map((item) => {
         if ("group" in item && item.group === "campaign") {
-          if (!showCampaignCouncil) {
+          if (!showCampaignGroup(campaignViewer)) {
             return null;
           }
 
-          const visibleChildren = item.children.filter((child) => {
-            if (child.href === "/portal/dashboard") {
-              return true;
-            }
-
-            if (!child.permission) {
-              return true;
-            }
-
-            if (isAdmin) {
-              return true;
-            }
-
-            return hasPermission(child.permission);
-          });
+          const visibleChildren = campaignNavItems(
+            campaignViewer,
+            hasPermission,
+          ).map(campaignNavLeaf);
 
           if (visibleChildren.length === 0) {
             return null;
@@ -547,21 +504,10 @@ export default function PortalLayout({
         }
 
         if ("group" in item && item.group === "election") {
-          const visibleChildren = item.children.filter((child) => {
-            if ("reviewQueue" in child && child.reviewQueue) {
-              return canViewElectionDashboard;
-            }
-
-            if ("adminOnly" in child && child.adminOnly) {
-              return canViewElectionDashboard;
-            }
-
-            if ("electionReporting" in child && child.electionReporting) {
-              return canAccessElectionSurfaces;
-            }
-
-            return false;
-          });
+          const visibleChildren = electionNavItems({
+            canViewElectionDashboard,
+            canAccessElectionSurfaces,
+          }).map(electionNavLeaf);
 
           if (visibleChildren.length === 0) {
             return null;

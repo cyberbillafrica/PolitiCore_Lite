@@ -156,6 +156,33 @@ service cloud.firestore {
     }
 
     /*
+     * R8 — a user-set DATE must not be in the past.
+     *
+     * Campaign date fields are date-only ("YYYY-MM-DD" in the form) and
+     * are stored as a Firestore timestamp at local midnight: the rules
+     * language cannot parse a date string, so the stored shape is the
+     * only thing the server can compare. The one-day grace keeps a
+     * member in WAT who submits "today" at 11pm inside the window after
+     * the server clock has already rolled over to the next UTC day.
+     */
+    /*
+     * R8 — `get(key, default)` returns a STORED null, not the default.
+     * Every optional campaign field is therefore tested through this
+     * helper instead of `== ""` so an explicit null counts as absent.
+     */
+    function isBlank(value) {
+      return value == null || value == "";
+    }
+
+    function isCurrentOrFutureDate(value) {
+      return value == null
+        || (
+          value is timestamp
+          && value >= request.time - duration.value(1, "d")
+        );
+    }
+
+    /*
      * ============================================================
      * CAMPAIGN BASELINE SELF-PROVISIONING
      * ============================================================
@@ -707,6 +734,17 @@ service cloud.firestore {
 
     match /campaign_activities/{activityId} {
 
+      /* R8 — an update may clear or move the date, never backdate it. */
+      function activityDateChangedValid() {
+        return !request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasAny(["date"])
+          || (
+            request.resource.data.get("date", null) is timestamp
+            && isCurrentOrFutureDate(request.resource.data.get("date", null))
+          );
+      }
+
       allow read: if isAdmin();
 
       allow read: if isSignedIn()
@@ -756,22 +794,30 @@ service cloud.firestore {
           )
         );
 
+      /*
+       * R8 — the scheduled date must be today or later, and is stored as
+       * a timestamp (see `isCurrentOrFutureDate()`).
+       */
       allow create: if isSignedIn()
         && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.get("date", null) is timestamp
+        && isCurrentOrFutureDate(request.resource.data.get("date", null))
         && hasAccess(
           "create_activity",
           request.resource.data.scope_type,
           request.resource.data.scope_id
         );
 
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        && activityDateChangedValid();
 
       allow update: if isSignedIn()
         && hasAccess(
           "manage_activity",
           resource.data.scope_type,
           resource.data.scope_id
-        );
+        )
+        && activityDateChangedValid();
 
       allow delete: if isAdmin();
 
@@ -788,6 +834,105 @@ service cloud.firestore {
     // ============================================================
 
     match /campaign_assignments/{assignmentId} {
+
+      /*
+       * R8 — WHO a coordinator may hand work to.
+       *
+       * The rules cannot walk LGA -> ward -> polling unit, so "at or
+       * below my scope" is answered from the CALLER'S GRANTS: a target
+       * is covered when the caller holds `create_assignment` at the
+       * target's own polling unit, ward or LGA. The campaign projection
+       * writes an LGA assignment's grants at the LGA AND every ward in
+       * it, so this is exactly "the target's home area is inside my
+       * authority" for every position. One `get()` on the target.
+       */
+      function callerCoversUser(userData) {
+        return hasGlobalAccess("create_assignment")
+          || (
+            !isBlank(userData.get("polling_unit_id", null))
+            && hasAccess(
+              "create_assignment",
+              "polling_unit",
+              userData.get("polling_unit_id", null)
+            )
+          )
+          || (
+            !isBlank(userData.get("ward_id", null))
+            && hasAccess(
+              "create_assignment",
+              "ward",
+              userData.get("ward_id", null)
+            )
+          )
+          || (
+            !isBlank(userData.get("lga_id", null))
+            && hasAccess(
+              "create_assignment",
+              "lga",
+              userData.get("lga_id", null)
+            )
+          );
+      }
+
+      function targetUserIsCovered(data) {
+        return isBlank(data.get("assigned_to_user", null))
+          || (
+            data.assigned_to_user is string
+            && data.assigned_to_user.matches("^[A-Za-z0-9_-]{1,128}$")
+            && callerCoversUser(
+              get(
+                /databases/$(database)/documents/users/$(data.assigned_to_user)
+              ).data
+            )
+          );
+      }
+
+      /*
+       * R8 — WHERE a scope-targeted assignment may point.
+       *
+       * An exact `create_assignment` grant at the target scope, or one
+       * at the ward stamped on the row (`target_ward_id` covers ward and
+       * polling-unit targets). The campaign projection writes an LGA or
+       * zone coordinator's grants at every ward inside their area, so a
+       * ward stamp is always provable for work below their own scope.
+       */
+      function scopeGrantCoversTarget(scopeType, scopeId, targetWardId) {
+        return hasAccess("create_assignment", scopeType, scopeId)
+          || (
+            !isBlank(targetWardId)
+            && hasAccess("create_assignment", "ward", targetWardId)
+          );
+      }
+
+      function scopeTargetIsCovered(data) {
+        return data.get("assigned_to_scope", null) == null
+            && isBlank(data.get("scope_type", null))
+          ? true
+          : (
+            data.get("assigned_to_scope", null) is map
+              ? scopeGrantCoversTarget(
+                  data.assigned_to_scope.level,
+                  data.assigned_to_scope.scope_id,
+                  data.get("target_ward_id", null)
+                )
+              : scopeGrantCoversTarget(
+                  data.get("scope_type", null),
+                  data.get("scope_id", null),
+                  data.get("target_ward_id", null)
+                )
+          );
+      }
+
+      /* R8 — an update may move the due date, never backdate it. */
+      function assignmentDateChangedValid() {
+        return !request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasAny(["due_date", "due_at"])
+          || (
+            isCurrentOrFutureDate(request.resource.data.get("due_date", null))
+            && isCurrentOrFutureDate(request.resource.data.get("due_at", null))
+          );
+      }
 
       allow read: if isAdmin()
         || (
@@ -840,24 +985,36 @@ service cloud.firestore {
         );
 
       /*
-       * Creation is checked against the target scope: an admin may
-       * target anything, a coordinator only their own scope or below
-       * (the client also runs assignmentCoversScope before writing).
+       * Creation is checked against the TARGET: an admin may target
+       * anything, a coordinator only work inside their own authority
+       * (individual targets by the target's home area, scope targets by
+       * the target scope or its ward stamp). Due dates must be today or
+       * later. The client also limits the pickers to the same set, so
+       * the two agree rather than one relying on the other.
        */
-      allow create: if isAdmin();
+      allow create: if isAdmin()
+        && isCurrentOrFutureDate(request.resource.data.get("due_date", null))
+        && isCurrentOrFutureDate(request.resource.data.get("due_at", null));
 
       allow create: if isSignedIn()
         && request.resource.data.get("created_by", "") == request.auth.uid
-        && hasAccess(
-          "create_assignment",
-          request.resource.data.scope_type,
-          request.resource.data.scope_id
-        );
+        && (
+          !isBlank(request.resource.data.get("assigned_to_user", null))
+          || request.resource.data.get("assigned_to_scope", null) != null
+        )
+        && targetUserIsCovered(request.resource.data)
+        && scopeTargetIsCovered(request.resource.data)
+        && isCurrentOrFutureDate(request.resource.data.get("due_date", null))
+        && isCurrentOrFutureDate(request.resource.data.get("due_at", null));
 
-      allow update, delete: if isAdmin();
+      allow delete: if isAdmin();
+
+      allow update: if isAdmin()
+        && assignmentDateChangedValid();
 
       allow update: if isSignedIn()
-        && resource.data.get("created_by", "") == request.auth.uid;
+        && resource.data.get("created_by", "") == request.auth.uid
+        && assignmentDateChangedValid();
 
       /*
        * Per-person completion records.

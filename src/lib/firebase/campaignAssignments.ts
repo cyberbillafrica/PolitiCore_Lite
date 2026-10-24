@@ -39,6 +39,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "@/lib/firebase/config";
+import { dateOnlyFromValue, dateOnlyToTimestamp } from "@/lib/campaign-dates";
 import { campaignRead } from "./query-debug";
 import { resolveCampaignScope, type CampaignScope } from "@/lib/campaign-scope";
 import {
@@ -148,12 +149,8 @@ function mapAssignment(
     created_by: createdBy,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    due_at:
-      typeof data.due_at === "string"
-        ? data.due_at
-        : typeof data.due_date === "string"
-          ? data.due_date
-          : null,
+    /* Round 8 stores the date as a timestamp; older rows are strings. */
+    due_at: dateOnlyFromValue(data.due_at) ?? dateOnlyFromValue(data.due_date),
     assigned_to_user: assignedToUser,
     assigned_to_scope: scope,
     assigned_to: assignedToUser ?? "",
@@ -416,6 +413,12 @@ export async function createCampaignAssignment(
   const scope = input.assigned_to_scope ?? null;
   const completionMode = scope ? "per_person" : "individual";
 
+  /*
+   * A date-only due date is stored at local midnight so the create and
+   * update rules can compare it with `request.time`.
+   */
+  const dueDate = dateOnlyToTimestamp(input.due_at);
+
   const document: Record<string, unknown> = {
     title: input.title.trim(),
     created_by: input.created_by,
@@ -426,7 +429,7 @@ export async function createCampaignAssignment(
     completion_mode: completionMode,
 
     priority: input.priority ?? "medium",
-    due_at: input.due_at || null,
+    due_at: dueDate,
 
     assigned_to_user: input.assigned_to_user || null,
     assigned_to_scope: scope,
@@ -436,7 +439,7 @@ export async function createCampaignAssignment(
     assigned_by: input.created_by,
     scope_type: scope?.level ?? "",
     scope_id: scope?.scope_id ?? "",
-    due_date: input.due_at || null,
+    due_date: dueDate,
 
     created_scope: input.created_scope ?? null,
     target_ward_id: input.target_ward_id ?? null,
@@ -474,10 +477,23 @@ export async function updateCampaignAssignment(
     status: CampaignAssignment["status"];
   }>,
 ): Promise<void> {
-  await updateDoc(doc(db, COLLECTION, assignmentId), {
+  const updates: Record<string, unknown> = {
     ...data,
     updated_at: serverTimestamp(),
-  });
+  };
+
+  /*
+   * `due_at` is the date the form edits; keep the paired `due_date`
+   * field in step so the rules validate the same value on both.
+   */
+  if ("due_at" in data) {
+    const dueDate = dateOnlyToTimestamp(data.due_at);
+
+    updates.due_at = dueDate;
+    updates.due_date = dueDate;
+  }
+
+  await updateDoc(doc(db, COLLECTION, assignmentId), updates);
 }
 
 export async function setAssignmentStatus(

@@ -45,6 +45,13 @@ import {
   type CampaignScope,
 } from "@/lib/campaign-scope";
 import { adminScopeGrants } from "@/lib/campaign-read-scope";
+import {
+  scopeContainsTarget,
+  scopeIdsByLevel,
+  scopeLevels,
+  stateWideScope,
+  writableScopes,
+} from "@/lib/campaign-scope-options";
 
 import {
   acknowledgeCampaignIssue,
@@ -114,7 +121,7 @@ export default function CampaignIssuesPage() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [adminFilter, setAdminFilter] = useState<ScopeValue | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<ScopeValue | null>(null);
   const [filterScope, setFilterScope] = useState<CampaignScope | null>(null);
 
   const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
@@ -124,20 +131,20 @@ export default function CampaignIssuesPage() {
   const userId = profile?.id ?? "";
 
   /* ------------------------------------------------------------
-   * ADMIN FILTER → RESOLVED SCOPE
+   * SCOPE FILTER → RESOLVED SCOPE
    * ------------------------------------------------------------ */
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!adminFilter) {
+    if (!scopeFilter) {
       setFilterScope(null);
       return;
     }
 
     resolveCampaignScope(
-      adminFilter.level,
-      adminFilter.scope_id,
+      scopeFilter.level,
+      scopeFilter.scope_id,
       lookup.lgas,
     ).then((resolved) => {
       if (!cancelled) setFilterScope(resolved);
@@ -146,7 +153,34 @@ export default function CampaignIssuesPage() {
     return () => {
       cancelled = true;
     };
-  }, [adminFilter, lookup.lgas]);
+  }, [scopeFilter, lookup.lgas]);
+
+  /*
+   * R8 — the filter is offered to every coordinator, not just an admin,
+   * and never to a plain member. Its options are the scopes where the
+   * caller holds `manage_issue` — the same grants the `issues` read
+   * clauses consult.
+   */
+  const canFilter = isAdmin || isCoordinator;
+
+  const filterOptions = useMemo(
+    () =>
+      isAdmin ? [] : writableScopes(grants, "manage_issue", lookup.lgas),
+    [grants, isAdmin, lookup.lgas],
+  );
+
+  const filterLevels = useMemo(
+    () => (isAdmin ? undefined : scopeLevels(filterOptions)),
+    [filterOptions, isAdmin],
+  );
+
+  const filterScopeIds = useMemo(
+    () => (isAdmin ? undefined : scopeIdsByLevel(filterOptions)),
+    [filterOptions, isAdmin],
+  );
+
+  /* "All" for an admin means the whole state. */
+  const allScope = useMemo(() => stateWideScope(lookup.lgas), [lookup.lgas]);
 
   /* ------------------------------------------------------------
    * LOAD
@@ -162,20 +196,23 @@ export default function CampaignIssuesPage() {
     try {
       const mine = await getMyCampaignIssues(userId);
 
-      const scoped =
-        isAdmin || isCoordinator
-          ? await getIssuesInScope(
-              isAdmin ? filterScope : scope,
-              /*
-               * `isAdmin()` proves every scope pair, so an admin's read
-               * plan is the filtered scope's own geography rather than
-               * a `user_access` grant list (which an admin may not have).
-               */
-              isAdmin
-                ? adminScopeGrants(filterScope, ["manage_issue"])
-                : grants,
-            )
-          : [];
+      /*
+       * R8 — the page loads EVERYTHING the viewer may see once, then
+       * narrows in memory when a scope is picked. An admin's default is
+       * therefore the whole state instead of "nothing until a scope is
+       * chosen": `getIssuesInScope()` returns nothing for a null scope.
+       */
+      const scoped = canFilter
+        ? await getIssuesInScope(
+            isAdmin ? allScope : scope,
+            /*
+             * `isAdmin()` proves every scope pair, so an admin's read
+             * plan is global rather than a `user_access` grant list
+             * (which an admin may not have).
+             */
+            isAdmin ? adminScopeGrants(null, ["manage_issue"]) : grants,
+          )
+        : [];
 
       const merged = mergeIssues(mine, scoped);
 
@@ -198,7 +235,7 @@ export default function CampaignIssuesPage() {
       setDataLoading(false);
       setRefreshing(false);
     }
-  }, [filterScope, grants, isAdmin, isCoordinator, scope, userId]);
+  }, [allScope, canFilter, grants, isAdmin, scope, userId]);
 
   useEffect(() => {
     if (loading) return;
@@ -209,15 +246,29 @@ export default function CampaignIssuesPage() {
    * COUNTS
    * ------------------------------------------------------------ */
 
+  /*
+   * R8 — the picked scope narrows the already-loaded list: an issue is
+   * in view when it was raised at the selected scope or anywhere below
+   * it. Counts and the list both use this set.
+   */
+  const visibleIssues = useMemo(
+    () =>
+      issues.filter((issue) =>
+        scopeContainsTarget(filterScope, issue.scope_level, issue.scope_id),
+      ),
+    [filterScope, issues],
+  );
+
   const counts = useMemo(
     () => ({
-      open: issues.filter((issue) => issue.status === "open").length,
-      acknowledged: issues.filter(
+      open: visibleIssues.filter((issue) => issue.status === "open").length,
+      acknowledged: visibleIssues.filter(
         (issue) => issue.status === "acknowledged",
       ).length,
-      resolved: issues.filter((issue) => issue.status === "resolved").length,
+      resolved: visibleIssues.filter((issue) => issue.status === "resolved")
+        .length,
     }),
-    [issues],
+    [visibleIssues],
   );
 
   /* ------------------------------------------------------------
@@ -320,22 +371,28 @@ export default function CampaignIssuesPage() {
 
             <p className="mt-1 font-semibold text-gray-900">
               {isAdmin
-                ? adminFilter
+                ? scopeFilter
                   ? describeScope(
-                      adminFilter.level,
-                      adminFilter.scope_id,
+                      scopeFilter.level,
+                      scopeFilter.scope_id,
                       lookup.lgas,
                     )
                   : "Enugu State"
-                : scopeLabel}
+                : filterScope
+                  ? describeScope(
+                      filterScope.level,
+                      filterScope.scope_id,
+                      lookup.lgas,
+                    )
+                  : scopeLabel}
             </p>
           </div>
         </div>
       </section>
 
-      {/* ADMIN FILTER */}
+      {/* SCOPE FILTER — admin: every scope; coordinators: their own */}
 
-      {isAdmin && (
+      {canFilter && (
         <Card>
           <CardContent className="p-5">
             <ScopePicker
@@ -343,8 +400,10 @@ export default function CampaignIssuesPage() {
               label="Filter issues by scope"
               allowAll
               allLabel="All scopes"
-              value={adminFilter}
-              onChange={setAdminFilter}
+              value={scopeFilter}
+              onChange={setScopeFilter}
+              levels={filterLevels}
+              scopeIds={filterScopeIds}
               hint="Shows issues raised at the selected scope and everything below it."
             />
           </CardContent>
@@ -449,7 +508,7 @@ export default function CampaignIssuesPage() {
         </CardHeader>
 
         <CardContent>
-          {issues.length === 0 ? (
+          {visibleIssues.length === 0 ? (
             <div className="rounded-xl border border-dashed p-10 text-center">
               <TriangleAlert className="mx-auto h-8 w-8 text-gray-300" />
 
@@ -465,7 +524,7 @@ export default function CampaignIssuesPage() {
             </div>
           ) : (
             <ul className="space-y-4">
-              {issues.map((issue) => {
+              {visibleIssues.map((issue) => {
                 const canAct = isAdmin || isCoordinator;
 
                 return (

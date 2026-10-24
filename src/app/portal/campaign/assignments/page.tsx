@@ -48,6 +48,14 @@ import ScopePicker, { type ScopeValue } from "@/components/campaign/ScopePicker"
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useCampaignAuthority } from "@/hooks/useCampaignAuthority";
+import { useElectoralLookup } from "@/hooks/useElectoralLookup";
+
+import { isTodayOrFuture, todayLocalDate } from "@/lib/campaign-dates";
+import {
+  scopeIdsByLevel,
+  scopeLevels,
+  writableScopes,
+} from "@/lib/campaign-scope-options";
 
 import { notify } from "@/lib/notify";
 
@@ -143,10 +151,11 @@ export default function CampaignAssignmentsPage() {
     scope,
     scopeLabel,
     isCoordinator,
-    positionLevel,
     canCreateAt,
     grants,
   } = useCampaignAuthority();
+
+  const lookup = useElectoralLookup();
 
   const userId = user?.uid ?? profile?.id ?? "";
 
@@ -178,16 +187,30 @@ export default function CampaignAssignmentsPage() {
   const canCreate = isAdmin || (isCoordinator && hasPermission("create_assignment"));
 
   /* ------------------------------------------------------------
-   * LEVELS THE CREATOR MAY TARGET
+   * SCOPES THE CREATOR MAY TARGET
    * ------------------------------------------------------------ */
 
-  const allowedLevels = useMemo<ScopeType[]>(() => {
-    if (isAdmin) return LEVEL_ORDER;
+  /*
+   * Derived from the caller's `create_assignment` GRANTS, expanded to
+   * the scopes those grants cover — never from the position name. The
+   * rules check the same grants, so the picker cannot offer a target
+   * the write would be denied for.
+   */
+  const creatableScopes = useMemo(
+    () =>
+      isAdmin ? [] : writableScopes(grants, "create_assignment", lookup.lgas),
+    [grants, isAdmin, lookup.lgas],
+  );
 
-    const start = positionLevel ? LEVEL_ORDER.indexOf(positionLevel) : -1;
-    if (start < 0) return [];
-    return LEVEL_ORDER.slice(start);
-  }, [isAdmin, positionLevel]);
+  const allowedLevels = useMemo<ScopeType[]>(
+    () => (isAdmin ? LEVEL_ORDER : scopeLevels(creatableScopes)),
+    [creatableScopes, isAdmin],
+  );
+
+  const allowedScopeIds = useMemo(
+    () => (isAdmin ? undefined : scopeIdsByLevel(creatableScopes)),
+    [creatableScopes, isAdmin],
+  );
 
   /* ------------------------------------------------------------
    * LOAD
@@ -370,6 +393,12 @@ export default function CampaignAssignmentsPage() {
       notify.error(
         "That scope is outside your authority. Target your own area or one below it.",
       );
+      return;
+    }
+
+    /* The rules enforce this too; the form refuses it first. */
+    if (form.dueAt && !isTodayOrFuture(form.dueAt)) {
+      notify.error("The due date cannot be in the past.");
       return;
     }
 
@@ -738,6 +767,7 @@ export default function CampaignAssignmentsPage() {
                   </label>
                   <input
                     type="date"
+                    min={todayLocalDate()}
                     value={form.dueAt}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, dueAt: event.target.value }))
@@ -858,6 +888,7 @@ export default function CampaignAssignmentsPage() {
                           setForm((current) => ({ ...current, scope: next }))
                         }
                         levels={allowedLevels}
+                        scopeIds={allowedScopeIds}
                         hint={`You can target ${allowedLevels
                           .map((level) => formatScopeType(level))
                           .join(" or ")} and anything below.`}

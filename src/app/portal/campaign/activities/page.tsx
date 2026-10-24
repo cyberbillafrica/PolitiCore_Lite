@@ -47,6 +47,7 @@ import {
   type CampaignActivityRecord,
 } from "@/lib/firebase/campaignActivities";
 
+import { isTodayOrFuture, todayLocalDate } from "@/lib/campaign-dates";
 import { formatScopeType } from "@/lib/organization";
 import { notify } from "@/lib/notify";
 
@@ -550,6 +551,12 @@ function CreateActivityForm({
       return;
     }
 
+    /* The rules enforce this too; the form refuses it first. */
+    if (!isTodayOrFuture(date)) {
+      notify.error("The activity date cannot be in the past.");
+      return;
+    }
+
     const target = isAdmin ? adminScope : ownScope;
 
     if (!target) {
@@ -663,6 +670,7 @@ function CreateActivityForm({
               <input
                 id="activity-date"
                 type="date"
+                min={todayLocalDate()}
                 value={date}
                 onChange={(event) => setDate(event.target.value)}
                 className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-apc-primary"

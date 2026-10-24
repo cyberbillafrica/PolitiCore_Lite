@@ -41,6 +41,7 @@ import {
 
 import { db } from "./config";
 import { campaignRead } from "./query-debug";
+import { dateOnlyFromValue, dateOnlyToTimestamp } from "@/lib/campaign-dates";
 import {
   resolveCampaignScope,
   zoneIdForLga,
@@ -112,7 +113,8 @@ function mapActivity(
       typeof data.description === "string" ? data.description : undefined,
     activity_type: (data.activity_type as CampaignActivityType) ?? "meeting",
     status: (data.status as CampaignActivityStatus) ?? "scheduled",
-    date: String(data.date ?? ""),
+    /* Round 8 stores the date as a timestamp; older rows are strings. */
+    date: dateOnlyFromValue(data.date) ?? "",
     start_time: typeof data.start_time === "string" ? data.start_time : undefined,
     end_time: typeof data.end_time === "string" ? data.end_time : undefined,
     venue: typeof data.venue === "string" ? data.venue : undefined,
@@ -431,7 +433,8 @@ export async function updateCampaignActivity(
   if (input.activity_type !== undefined)
     updates.activity_type = input.activity_type;
   if (input.status !== undefined) updates.status = input.status;
-  if (input.date !== undefined) updates.date = input.date;
+  if (input.date !== undefined)
+    updates.date = dateOnlyToTimestamp(input.date);
   if (input.start_time !== undefined) updates.start_time = input.start_time;
   if (input.end_time !== undefined) updates.end_time = input.end_time;
   if (input.venue !== undefined) updates.venue = input.venue;
@@ -462,7 +465,7 @@ export async function createCampaignActivity(
   const activityData: Record<string, unknown> = {
     title: input.title,
     activity_type: input.activity_type,
-    date: input.date,
+    date: dateOnlyToTimestamp(input.date),
 
     scope_type: input.scope_type,
     scope_id: input.scope_id,
