@@ -42,6 +42,25 @@ import type { LGA, ScopeType } from "@/types";
 /** Firestore caps an `in` filter at 30 values. */
 export const IN_FILTER_LIMIT = 30;
 
+/**
+ * The largest `in` list a scoped campaign read may send — a RULES budget,
+ * not the Firestore cap.
+ *
+ * Firestore charges a list read for every value in the `in` list before
+ * it can prove the query. Each `hasScopedAccess()` evaluation costs one
+ * `exists()` plus two `get()`s on `user_access`, so a query of N values
+ * spends roughly 4N document accesses. Past ~8 values the per-query
+ * budget is exhausted and the WHOLE query is denied with "Missing or
+ * insufficient permissions" — naming a scope that need not contain a
+ * single document. Measured against the emulator: 8 values passed, 9
+ * failed, for both `issues` and `campaign_activities`.
+ *
+ * Six leaves headroom for the rules that evaluate extra clauses per
+ * document, and turns an LGA coordinator's 14 wards into 3 queries
+ * instead of one denied read.
+ */
+export const RULES_ACCESS_BUDGET_LIMIT = 6;
+
 /** One (scope_type, scope_id) pair an access document can target. */
 export interface ReadScope {
   scope_type: ScopeType | "global";
@@ -78,13 +97,17 @@ export function hasGlobalScope(scopes: ReadScope[]): boolean {
   return scopes.some((scope) => scope.scope_type === "global");
 }
 
-/** Split an id list into Firestore-sized `in` chunks. */
+/**
+ * Split an id list into `in` chunks that stay inside the rules access
+ * budget (see `RULES_ACCESS_BUDGET_LIMIT`). The 30-value Firestore cap
+ * still applies as a hard ceiling, but is never the binding one.
+ */
 export function chunkIds(ids: string[]): string[][] {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   const chunks: string[][] = [];
 
-  for (let index = 0; index < unique.length; index += IN_FILTER_LIMIT) {
-    chunks.push(unique.slice(index, index + IN_FILTER_LIMIT));
+  for (let index = 0; index < unique.length; index += RULES_ACCESS_BUDGET_LIMIT) {
+    chunks.push(unique.slice(index, index + RULES_ACCESS_BUDGET_LIMIT));
   }
 
   return chunks;
