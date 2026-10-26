@@ -831,21 +831,25 @@ export default function CampaignDashboard() {
             <ElectionLink
               title="PU report"
               description="Report election activity at your polling unit."
+              href="/portal/election/pu-reports"
             />
 
             <ElectionLink
               title="Incident"
               description="Raise an election incident."
+              href="/portal/election/incidents"
             />
 
             <ElectionLink
               title="Results"
               description="Upload or review results where authorized."
+              href="/portal/election/results"
             />
 
             <ElectionLink
               title="Election operations"
               description="Open the complete election area."
+              href="/portal/election"
               primary
             />
           </div>
@@ -1016,14 +1020,16 @@ function ElectionLink({
   title,
   description,
   primary = false,
+  href,
 }: {
   title: string;
   description: string;
   primary?: boolean;
+  href: string;
 }) {
   return (
     <Link
-      href="/portal/election"
+      href={href}
       className={`rounded-xl border p-4 transition ${
         primary
           ? "border-apc-primary bg-apc-primary text-white shadow-sm hover:opacity-95"

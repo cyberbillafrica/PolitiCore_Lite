@@ -203,6 +203,57 @@ export function lgasWithinContestScope(
 }
 
 /**
+ * Display label for a ward that keeps the stored id and adds the
+ * human-readable name in brackets:
+ *
+ *   nkanu-west-ward-02 (Owo)
+ *
+ * Falls back to the bare id when the ward is not in the hierarchy —
+ * never `undefined`, never an empty string.
+ */
+export function wardDisplayLabel(
+  lgas: LGA[],
+  wardId?: string | null,
+): string {
+  const id = (wardId ?? "").trim();
+  if (!id) return "—";
+
+  for (const lga of lgas) {
+    const ward = lga.wards.find((item) => item.id === id);
+    if (ward?.name) return `${id} (${ward.name})`;
+  }
+
+  return id;
+}
+
+/**
+ * Same idea for a polling unit:
+ *
+ *   nkanu-west-ward-02-pu-016 (Central School Agbani)
+ */
+export function pollingUnitDisplayLabel(
+  lgas: LGA[],
+  wardId: string | null | undefined,
+  pollingUnitId?: string | null,
+): string {
+  const id = (pollingUnitId ?? "").trim();
+  if (!id) return "—";
+
+  const ward = lgas
+    .flatMap((lga) => lga.wards)
+    .find((item) => item.id === (wardId ?? "").trim());
+
+  const pu =
+    ward?.pollingUnits.find((item) => item.id === id) ??
+    lgas
+      .flatMap((lga) => lga.wards)
+      .flatMap((item) => item.pollingUnits)
+      .find((item) => item.id === id);
+
+  return pu?.name ? `${id} (${pu.name})` : id;
+}
+
+/**
  * Human-readable label for a contest's scope, e.g. "Enugu State",
  * "Nkanu West (LGA)", or "Nkanu East / Nkanu West".
  */

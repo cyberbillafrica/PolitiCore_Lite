@@ -8,6 +8,7 @@ import { CheckCircle2, Loader2, ShieldAlert } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/errors";
+import { electionRead } from "@/lib/firebase/query-debug";
 import {
   getAllElectionResults,
   getElectionResultsByPollingUnit,
@@ -16,6 +17,11 @@ import {
 } from "@/lib/firebase/firestore";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { lgaIdForResult } from "@/lib/election-read-scope";
+import {
+  pollingUnitDisplayLabel,
+  wardDisplayLabel,
+} from "@/lib/election-scope";
+import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
 import { useActiveContest } from "@/hooks/useElectionEngine";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
@@ -77,6 +83,9 @@ export default function ElectionResultsPage() {
   const [error, setError] = useState("");
   const [selectedWard, setSelectedWard] = useState("all");
   const [selectedPu, setSelectedPu] = useState("all");
+  const [userNames, setUserNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
 
   const role = profile?.access_role ?? null;
   const isCampaignMember =
@@ -148,25 +157,55 @@ export default function ElectionResultsPage() {
           if (!profile.ward_id || !profile.polling_unit_id) return;
 
           collected.push(
-            ...(await getElectionResultsByWardAndPollingUnit(
-              profile.ward_id,
-              profile.polling_unit_id,
+            ...(await electionRead(
+              {
+                collection: "election_results",
+                filter: {
+                  ward_id: profile.ward_id,
+                  polling_unit_id: profile.polling_unit_id,
+                },
+              },
+              () =>
+                getElectionResultsByWardAndPollingUnit(
+                  profile.ward_id,
+                  profile.polling_unit_id,
+                ),
             )),
           );
         };
 
         if (role === "admin" || role === "election_officer") {
-          collected.push(...(await getAllElectionResults()));
+          collected.push(
+            ...(await electionRead(
+              { collection: "election_results", filter: { orderBy: "created_at" } },
+              () => getAllElectionResults(),
+            )),
+          );
         } else if (selectedCoordinator) {
           const scopeId = selectedCoordinator.scope_id;
           const scopeType = selectedCoordinator.scope_type;
 
           if (scopeType === "state" || scopeType === "campaign") {
-            collected.push(...(await getAllElectionResults()));
+            collected.push(
+              ...(await electionRead(
+                { collection: "election_results", filter: { orderBy: "created_at" } },
+                () => getAllElectionResults(),
+              )),
+            );
           } else if (scopeType === "ward") {
-            collected.push(...(await getElectionResultsByWard(scopeId)));
+            collected.push(
+              ...(await electionRead(
+                { collection: "election_results", filter: { ward_id: scopeId } },
+                () => getElectionResultsByWard(scopeId),
+              )),
+            );
           } else if (scopeType === "polling_unit") {
-            collected.push(...(await getElectionResultsByPollingUnit(scopeId)));
+            collected.push(
+              ...(await electionRead(
+                { collection: "election_results", filter: { polling_unit_id: scopeId } },
+                () => getElectionResultsByPollingUnit(scopeId),
+              )),
+            );
           } else if (scopeType === "lga") {
             const allLgas = await getAllEnuguLGAs();
             const normalized = scopeId.toLowerCase();
@@ -178,7 +217,12 @@ export default function ElectionResultsPage() {
             );
 
             for (const ward of lga?.wards ?? []) {
-              collected.push(...(await getElectionResultsByWard(ward.id)));
+              collected.push(
+                ...(await electionRead(
+                  { collection: "election_results", filter: { ward_id: ward.id } },
+                  () => getElectionResultsByWard(ward.id),
+                )),
+              );
             }
           }
 
@@ -243,6 +287,42 @@ export default function ElectionResultsPage() {
       allowed.has(lgaIdForResult(lookup.lgas, r.lga_id, r.ward_id).toLowerCase()),
     );
   }, [results, contestLgaIds, lookup.lgas]);
+
+  /*
+   * Party columns come from the active contest, not from a hardcoded
+   * APC/PDP/NDC list: a contest may track four or more parties and each
+   * one must render, with 0 for a party absent from this document.
+   */
+  const partyColumns = useMemo(() => {
+    const configured = (activeContest?.tracked_parties ?? []).filter(Boolean);
+    if (configured.length > 0) return configured;
+
+    const seen = new Set<string>();
+    for (const result of scopedResults) {
+      for (const row of result.results ?? []) {
+        if (row?.party) seen.add(String(row.party));
+      }
+    }
+
+    return Array.from(seen).sort();
+  }, [activeContest, scopedResults]);
+
+  useEffect(() => {
+    const uids = results
+      .map((result) => result.submitted_by)
+      .filter((uid): uid is string => typeof uid === "string" && uid !== "");
+
+    if (uids.length === 0) return;
+
+    let cancelled = false;
+    resolveUserNames(uids).then((resolved) => {
+      if (!cancelled) setUserNames(resolved);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [results]);
 
   const wardOptions = useMemo(
     () => Array.from(new Set(scopedResults.map((result) => result.ward_id))),
@@ -339,7 +419,7 @@ export default function ElectionResultsPage() {
               <option value="all">All wards</option>
               {wardOptions.map((wardId) => (
                 <option key={wardId} value={wardId}>
-                  {lookup.wardLabel(wardId)}
+                  {wardDisplayLabel(lookup.lgas, wardId)}
                 </option>
               ))}
             </select>
@@ -357,7 +437,15 @@ export default function ElectionResultsPage() {
               <option value="all">All polling units</option>
               {pollingUnitOptions.map((pollingUnitId) => (
                 <option key={pollingUnitId} value={pollingUnitId}>
-                  {pollingUnitId}
+                  {pollingUnitDisplayLabel(
+                    lookup.lgas,
+                    selectedWard !== "all"
+                      ? selectedWard
+                      : scopedResults.find(
+                          (result) => result.polling_unit_id === pollingUnitId,
+                        )?.ward_id,
+                    pollingUnitId,
+                  )}
                 </option>
               ))}
             </select>
@@ -375,15 +463,14 @@ export default function ElectionResultsPage() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                 Polling Unit
               </th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                APC
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                PDP
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                NDC
-              </th>
+              {partyColumns.map((party) => (
+                <th
+                  key={party}
+                  className="px-4 py-3 text-right text-sm font-semibold text-gray-700 uppercase"
+                >
+                  {party}
+                </th>
+              ))}
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                 Total
               </th>
@@ -402,7 +489,7 @@ export default function ElectionResultsPage() {
             {visibleResults.length === 0 ? (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={6 + partyColumns.length}
                   className="px-4 py-12 text-center text-sm text-gray-500"
                 >
                   No election results match the current scope.
@@ -410,17 +497,14 @@ export default function ElectionResultsPage() {
               </tr>
             ) : (
               visibleResults.map((result) => {
-                const partyTotals = {
-                  APC:
-                    result.results.find((row) => row.party === "APC")?.votes ??
-                    0,
-                  PDP:
-                    result.results.find((row) => row.party === "PDP")?.votes ??
-                    0,
-                  NDC:
-                    result.results.find((row) => row.party === "NDC")?.votes ??
-                    0,
-                };
+                const partyTotals = partyColumns.map((party) => ({
+                  party,
+                  votes:
+                    (result.results ?? []).find(
+                      (row) =>
+                        String(row.party).toLowerCase() === party.toLowerCase(),
+                    )?.votes ?? 0,
+                }));
 
                 return (
                   <tr
@@ -430,20 +514,23 @@ export default function ElectionResultsPage() {
                     className="border-b hover:bg-gray-50"
                   >
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      {lookup.wardLabel(result.ward_id)}
+                      {wardDisplayLabel(lookup.lgas, result.ward_id)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {result.polling_unit_id}
+                      {pollingUnitDisplayLabel(
+                        lookup.lgas,
+                        result.ward_id,
+                        result.polling_unit_id,
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-right text-sm text-gray-700">
-                      {partyTotals.APC.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-gray-700">
-                      {partyTotals.PDP.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-gray-700">
-                      {partyTotals.NDC.toLocaleString()}
-                    </td>
+                    {partyTotals.map((entry) => (
+                      <td
+                        key={entry.party}
+                        className="px-4 py-3 text-right text-sm text-gray-700"
+                      >
+                        {Number(entry.votes).toLocaleString()}
+                      </td>
+                    ))}
                     <td className="px-4 py-3 text-right text-sm font-semibold text-gray-900">
                       {totalVotes(result).toLocaleString()}
                     </td>
@@ -460,7 +547,7 @@ export default function ElectionResultsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
-                      {result.submitted_by}
+                      {userNames.get(result.submitted_by) ?? UNKNOWN_MEMBER_NAME}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">
                       {formatDate(result.created_at)}

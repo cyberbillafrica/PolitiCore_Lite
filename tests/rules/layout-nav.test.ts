@@ -184,7 +184,13 @@ describe("election operations navigation", () => {
           canAccessElectionSurfaces: true,
         }),
       ),
-    ).toEqual(["PU Reports", "Incidents", "Results", "Result Upload"]);
+    ).toEqual([
+      "Election Dashboard",
+      "PU Reports",
+      "Incidents",
+      "Results",
+      "Result Upload",
+    ]);
   });
 
   it("stays hidden for a social-only member", () => {

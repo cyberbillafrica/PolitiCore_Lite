@@ -281,6 +281,48 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "election_results",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ward_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "election_results",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "polling_unit_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "election_results",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lga_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -55,6 +55,19 @@ export const STATE_SCOPE_ID = "enugu-state";
 export const ELECTION_RESULTS_PERMISSION = "view_election_results";
 
 /**
+ * Round 10 write grant, also owned by the election projection.
+ *
+ * A coordinator may submit a result for any polling unit inside their
+ * assignment. The grant is written by
+ * `syncElectionResultAccessForAssignment()` at the assignment's scope
+ * (ward / LGA + wards / zone + LGAs + wards / global), NOT by the
+ * campaign projection: keeping it out of `computeExpectedCampaignAccess`
+ * preserves the campaign read-grant count (the LGA coordinator's 187)
+ * while the create rule still finds the grant.
+ */
+export const ELECTION_UPLOAD_PERMISSION = "upload_election_result";
+
+/**
  * Permission → position matrix for the CAMPAIGN projection.
  *
  * This mirrors the campaign-relevant subset of
@@ -585,7 +598,8 @@ export function diffCampaignAccess(
     toDelete: Array.from(recorded).filter(
       (id) =>
         !expectedIds.has(id) &&
-        permissionFromAccessDocId(id) !== ELECTION_RESULTS_PERMISSION,
+        permissionFromAccessDocId(id) !== ELECTION_RESULTS_PERMISSION &&
+        permissionFromAccessDocId(id) !== ELECTION_UPLOAD_PERMISSION,
     ),
     expected,
   };
@@ -597,5 +611,9 @@ export function diffCampaignAccess(
  */
 export function isCampaignProjectedAccessId(docId: string): boolean {
   const permission = permissionFromAccessDocId(docId);
-  return Boolean(permission) && permission !== ELECTION_RESULTS_PERMISSION;
+  return (
+    Boolean(permission) &&
+    permission !== ELECTION_RESULTS_PERMISSION &&
+    permission !== ELECTION_UPLOAD_PERMISSION
+  );
 }

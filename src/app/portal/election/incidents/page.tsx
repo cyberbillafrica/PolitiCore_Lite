@@ -11,7 +11,7 @@ import {
 } from "@/lib/firebase/election";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversWard, describeContestScope } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversWard, describeContestScope, pollingUnitDisplayLabel, wardDisplayLabel } from "@/lib/election-scope";
 import { buildElectionReadScope, registeredPollingUnitConstraint } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
@@ -681,9 +681,13 @@ export default function IncidentsPage() {
                     </div>
 
                     <span className="text-xs text-gray-400">
-                      Ward: {inc.ward_id}{" "}
+                      Ward: {wardDisplayLabel(lgas, inc.ward_id)}{" "}
                       {inc.polling_unit_id
-                        ? `· PU: ${inc.polling_unit_id}`
+                        ? `· PU: ${pollingUnitDisplayLabel(
+                            lgas,
+                            inc.ward_id,
+                            inc.polling_unit_id,
+                          )}`
                         : ""}
                     </span>
                   </div>

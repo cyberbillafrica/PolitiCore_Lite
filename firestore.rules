@@ -1303,6 +1303,20 @@ service cloud.firestore {
               request.resource.data.ward_id,
               request.resource.data.polling_unit_id
             )
+          /*
+           * Round 10: a coordinator may submit for any polling unit in
+           * their assignment scope. The `upload_election_result`
+           * projection carries a ward grant for every ward the
+           * assignment covers, plus a global grant for a state /
+           * campaign assignment. The active-contest clauses ABOVE are
+           * unchanged and still bound every role.
+           */
+          || hasGlobalAccess("upload_election_result")
+          || hasScopedAccess(
+              "upload_election_result",
+              "ward",
+              request.resource.data.ward_id
+            )
         );
 
       // Officer review (approve / reject / clarify / reopen).

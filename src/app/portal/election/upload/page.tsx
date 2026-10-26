@@ -4,11 +4,16 @@
 import { notify } from "@/lib/notify";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   submitElectionResultWithEvidence,
   getPoliticalParties,
 } from "@/lib/firebase/election";
+import { getElectionResultsByWardAndPollingUnit } from "@/lib/firebase/firestore";
+import { electionRead } from "@/lib/firebase/query-debug";
+import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
+import { assignmentCoversScope } from "@/lib/permissions";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import {
@@ -16,13 +21,61 @@ import {
   deriveLgaIdFromWard,
   describeContestScope,
   lgasWithinContestScope,
+  pollingUnitDisplayLabel,
+  wardDisplayLabel,
 } from "@/lib/election-scope";
 import {
   useElectionMode,
   useActiveContest,
 } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
-import type { LGA, PoliticalParty } from "@/types";
+import type { ElectionResultRecord, LGA, PoliticalParty } from "@/types";
+
+/** The stored result adds contest/status fields the record type omits. */
+type ExistingResult = ElectionResultRecord & {
+  contest_id?: string;
+  status?: string;
+};
+
+const COORDINATOR_POSITIONS = [
+  "ward_coordinator",
+  "lga_coordinator",
+  "zone_coordinator",
+  "state_coordinator",
+  "campaign_manager",
+  "council_chairman",
+] as const;
+
+function statusLabel(status?: string): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    case "clarification_required":
+      return "Clarification required";
+    case "reopened":
+      return "Reopened";
+    default:
+      return "Pending review";
+  }
+}
+
+function formatSubmittedAt(value: unknown): string {
+  if (!value) return "—";
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  }
+  if (typeof value === "object" && "toDate" in (value as object)) {
+    try {
+      return (value as { toDate: () => Date }).toDate().toLocaleString();
+    } catch {
+      return "—";
+    }
+  }
+  return "—";
+}
 import {
   Upload,
   Loader2,
@@ -30,12 +83,13 @@ import {
   AlertCircle,
   FileText,
   Vote,
+  Eye,
   ShieldAlert,
 } from "lucide-react";
 
 export default function ElectionUploadPage() {
   const router = useRouter();
-  const { profile, loading: authLoading } = useAuth();
+  const { profile, assignments, loading: authLoading } = useAuth();
   const { electionMode, loading: electionModeLoading } = useElectionMode();
 
   useEffect(() => {
@@ -99,6 +153,18 @@ export default function ElectionUploadPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(true);
+
+  /*
+   * Duplicate-submission gate. The rules refuse a second create for the
+   * same contest + polling unit, but only after the member has filled
+   * the form and uploaded the EC8 photo. The card below is shown
+   * INSTEAD of the form as soon as an existing result is found.
+   */
+  const [existingResult, setExistingResult] = useState<ExistingResult | null>(
+    null,
+  );
+  const [checkingExisting, setCheckingExisting] = useState(false);
+  const [submitterName, setSubmitterName] = useState("");
 
   // Load LGAs & parties
   useEffect(() => {
@@ -215,6 +281,204 @@ export default function ElectionUploadPage() {
   const selectedWard = wards.find((ward) => ward.id === form.ward_id);
   const pollingUnits = selectedWard?.pollingUnits ?? [];
 
+  /*
+   * Coordinator upload scope. A ward/LGA/zone/state coordinator may
+   * choose any polling unit inside BOTH their assignment and the
+   * active contest. Plain members and PU coordinators keep the fixed
+   * registered-PU display.
+   */
+  const coordinatorAssignments = useMemo(
+    () =>
+      assignments.filter(
+        (assignment) =>
+          assignment.status === "active" &&
+          (COORDINATOR_POSITIONS as readonly string[]).includes(
+            assignment.position,
+          ),
+      ),
+    [assignments],
+  );
+
+  const canSelectPollingUnit = coordinatorAssignments.length > 0;
+
+  const allowedUnits = useMemo(() => {
+    const units: Array<{
+      lgaId: string;
+      wardId: string;
+      pollingUnitId: string;
+    }> = [];
+
+    if (!activeContest) return units;
+
+    for (const lga of lgasWithinContestScope(activeContest, lgas)) {
+      for (const ward of lga.wards) {
+        for (const pollingUnit of ward.pollingUnits) {
+          if (
+            !contestCoversPollingUnit(
+              activeContest,
+              lga.id,
+              ward.id,
+              pollingUnit.id,
+              lgas,
+            )
+          ) {
+            continue;
+          }
+
+          if (
+            !isAdminOrElectionOfficer &&
+            !coordinatorAssignments.some((assignment) =>
+              assignmentCoversScope(
+                assignment,
+                { scope_type: "ward", scope_id: ward.id },
+                lgas,
+              ),
+            )
+          ) {
+            continue;
+          }
+
+          units.push({
+            lgaId: lga.id,
+            wardId: ward.id,
+            pollingUnitId: pollingUnit.id,
+          });
+        }
+      }
+    }
+
+    return units;
+  }, [
+    activeContest,
+    coordinatorAssignments,
+    isAdminOrElectionOfficer,
+    lgas,
+  ]);
+
+  /*
+   * A coordinator's registered home PU may sit outside their assigned
+   * area. Clear it so the selector starts empty instead of carrying a
+   * value that is not in the list (and whose duplicate check the rules
+   * would deny).
+   */
+  useEffect(() => {
+    if (!canSelectPollingUnit) return;
+    if (!form.polling_unit_id) return;
+
+    if (
+      allowedUnits.some(
+        (unit) => unit.pollingUnitId === form.polling_unit_id,
+      )
+    ) {
+      return;
+    }
+
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setForm((prev) =>
+      prev.polling_unit_id
+        ? { ...prev, lga_id: "", ward_id: "", polling_unit_id: "" }
+        : prev,
+    );
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [allowedUnits, canSelectPollingUnit, form.polling_unit_id]);
+
+  /*
+   * The duplicate check runs before the form is shown. A query on
+   * ward + polling unit is provable by the read rule for the member's
+   * own PU and for a coordinator's ward; a `getDoc` on a missing
+   * deterministic id would itself be denied.
+   */
+  useEffect(() => {
+    if (!activeContest?.id || !form.ward_id || !form.polling_unit_id) {
+      setExistingResult(null);
+      setCheckingExisting(false);
+      return;
+    }
+
+    /*
+     * A coordinator's home PU is cleared by the effect above; do not
+     * run (or flash) a check for a unit outside the selector.
+     */
+    if (
+      canSelectPollingUnit &&
+      !allowedUnits.some(
+        (unit) => unit.pollingUnitId === form.polling_unit_id,
+      )
+    ) {
+      setExistingResult(null);
+      setCheckingExisting(false);
+      return;
+    }
+
+    let cancelled = false;
+    const contestId = activeContest.id;
+    setCheckingExisting(true);
+
+    electionRead(
+      {
+        collection: "election_results",
+        filter: {
+          ward_id: form.ward_id,
+          polling_unit_id: form.polling_unit_id,
+        },
+      },
+      () =>
+        getElectionResultsByWardAndPollingUnit(
+          form.ward_id,
+          form.polling_unit_id,
+        ),
+    )
+      .then((rows) => {
+        if (cancelled) return;
+
+        const match =
+          (rows as ExistingResult[]).find(
+            (row) => !row.contest_id || row.contest_id === contestId,
+          ) ?? null;
+
+        setExistingResult(match);
+      })
+      .catch(() => {
+        /*
+         * A failed check must not block a legitimate first submission;
+         * the create rule remains the final guard.
+         */
+        if (!cancelled) setExistingResult(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingExisting(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeContest?.id,
+    allowedUnits,
+    canSelectPollingUnit,
+    form.ward_id,
+    form.polling_unit_id,
+  ]);
+
+  useEffect(() => {
+    if (!existingResult?.submitted_by) {
+      setSubmitterName("");
+      return;
+    }
+
+    let cancelled = false;
+    resolveUserNames([existingResult.submitted_by]).then((names) => {
+      if (cancelled) return;
+      setSubmitterName(
+        names.get(existingResult.submitted_by) ?? UNKNOWN_MEMBER_NAME,
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [existingResult]);
+
   // Resolved names for member reporting area
   const memberLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
   const memberLga = lgas.find((lga) => lga.id === memberLgaId);
@@ -259,9 +523,26 @@ export default function ElectionUploadPage() {
       return;
     }
 
-    // Non-privileged users can only submit for their own registered ward/PU
+    /*
+     * Coordinators may submit for any PU inside their assignment (the
+     * selector only lists those); everyone else is pinned to their own
+     * registered ward + polling unit. The rules enforce the same bound.
+     */
     if (!isAdminOrElectionOfficer) {
-      if (
+      if (canSelectPollingUnit) {
+        const allowed = allowedUnits.some(
+          (unit) =>
+            unit.wardId === form.ward_id &&
+            unit.pollingUnitId === form.polling_unit_id,
+        );
+
+        if (!allowed) {
+          notify.error(
+            "Choose a polling unit inside your assigned area and the active contest.",
+          );
+          return;
+        }
+      } else if (
         form.ward_id !== profile?.ward_id ||
         form.polling_unit_id !== profile?.polling_unit_id
       ) {
@@ -357,7 +638,7 @@ export default function ElectionUploadPage() {
     }
   };
 
-  if (loadingConfig || contestLoading) {
+  if (loadingConfig || contestLoading || checkingExisting) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
         <Loader2 className="h-8 w-8 animate-spin text-apc-primary" />
@@ -439,7 +720,7 @@ export default function ElectionUploadPage() {
         </p>
       </div>
 
-      {!isAdminOrElectionOfficer && (
+      {!isAdminOrElectionOfficer && !canSelectPollingUnit && (
         <div className="p-4 bg-apc-light text-apc-primary rounded-xl border border-apc-primary/20 text-xs space-y-1">
           <p className="font-bold text-sm">Your Registered Polling Unit Scope</p>
           <p>
@@ -455,6 +736,71 @@ export default function ElectionUploadPage() {
         </div>
       )}
 
+      {existingResult ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-amber-200 p-6 sm:p-8 space-y-5">
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">
+                Result already submitted for this polling unit
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                A result already exists for this polling unit in the active
+                contest, so this form is closed.
+              </p>
+            </div>
+          </div>
+
+          <dl className="grid gap-3 sm:grid-cols-3 text-sm">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Submitted by
+              </dt>
+              <dd className="mt-1 font-semibold text-gray-900">
+                {submitterName || UNKNOWN_MEMBER_NAME}
+              </dd>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Submitted on
+              </dt>
+              <dd className="mt-1 font-semibold text-gray-900">
+                {formatSubmittedAt(existingResult.created_at)}
+              </dd>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Status
+              </dt>
+              <dd className="mt-1 font-semibold text-gray-900">
+                {statusLabel(existingResult.status)}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/portal/election/results"
+              className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark"
+            >
+              <Eye className="w-4 h-4" /> View Result
+            </Link>
+            <Link
+              href="/portal/campaign/issues"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <AlertCircle className="w-4 h-4" /> Raise an Issue
+            </Link>
+          </div>
+
+          <p className="text-xs text-gray-500">
+            If the submitted result contains errors, raise an issue so your
+            ward coordinator can review it.
+          </p>
+        </div>
+      ) : (
       <form
         onSubmit={handleSubmit}
         className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6"
@@ -543,6 +889,57 @@ export default function ElectionUploadPage() {
               </select>
             </div>
           </div>
+        ) : canSelectPollingUnit ? (
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+              Polling Unit *
+            </label>
+            <select
+              value={form.polling_unit_id}
+              onChange={(e) => {
+                const unit = allowedUnits.find(
+                  (item) => item.pollingUnitId === e.target.value,
+                );
+                setForm({
+                  ...form,
+                  lga_id: unit?.lgaId ?? "",
+                  ward_id: unit?.wardId ?? "",
+                  polling_unit_id: e.target.value,
+                });
+              }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary text-xs"
+              required
+            >
+              <option value="">Select a polling unit in your area</option>
+              {Array.from(new Set(allowedUnits.map((unit) => unit.wardId))).map(
+                (wardId) => (
+                  <optgroup
+                    key={wardId}
+                    label={wardDisplayLabel(lgas, wardId)}
+                  >
+                    {allowedUnits
+                      .filter((unit) => unit.wardId === wardId)
+                      .map((unit) => (
+                        <option
+                          key={unit.pollingUnitId}
+                          value={unit.pollingUnitId}
+                        >
+                          {pollingUnitDisplayLabel(
+                            lgas,
+                            unit.wardId,
+                            unit.pollingUnitId,
+                          )}
+                        </option>
+                      ))}
+                  </optgroup>
+                ),
+              )}
+            </select>
+            <p className="text-[11px] text-gray-500">
+              Only polling units inside your assignment scope and the active
+              contest are listed.
+            </p>
+          </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
             <div>
@@ -552,7 +949,11 @@ export default function ElectionUploadPage() {
               <input
                 type="text"
                 readOnly
-                value={memberWard ? `${memberWard.code} — ${memberWard.name}` : form.ward_id}
+                value={
+                  memberWard
+                    ? `${form.ward_id} (${memberWard.name})`
+                    : form.ward_id
+                }
                 className="w-full px-3 py-2 border bg-gray-50 rounded-lg text-xs font-medium"
               />
             </div>
@@ -563,7 +964,11 @@ export default function ElectionUploadPage() {
               <input
                 type="text"
                 readOnly
-                value={memberPollingUnit ? `${memberPollingUnit.code} — ${memberPollingUnit.name}` : form.polling_unit_id}
+                value={
+                  memberPollingUnit
+                    ? `${form.polling_unit_id} (${memberPollingUnit.name})`
+                    : form.polling_unit_id
+                }
                 className="w-full px-3 py-2 border bg-gray-50 rounded-lg text-xs font-medium"
               />
             </div>
@@ -675,6 +1080,7 @@ export default function ElectionUploadPage() {
           )}
         </button>
       </form>
+      )}
     </div>
   );
 }

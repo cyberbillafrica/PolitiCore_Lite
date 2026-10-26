@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type Firestore,
 } from "firebase/firestore";
 
 import { db } from "./config";
@@ -801,9 +802,12 @@ export function deriveLgaIdFromWardId(wardId: string): string {
   return match ? match[1] : wardId;
 }
 
-export async function getAllElectionResults(): Promise<ElectionResultRecord[]> {
+export async function getAllElectionResults(
+  overrideDb?: Firestore,
+): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
   const q = query(
-    collection(db, "election_results"),
+    collection(store, "election_results"),
     orderBy("created_at", "desc"),
   );
 
@@ -813,40 +817,78 @@ export async function getAllElectionResults(): Promise<ElectionResultRecord[]> {
     id: docSnap.id,
     ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
   }));
+}
+
+/*
+ * A scoped election-result read is an equality filter, and adding
+ * `orderBy("created_at")` to it requires a composite index per scope
+ * field. Production never had those indexes, so every ward / PU / LGA
+ * read failed with FAILED_PRECONDITION (rendered to the member as
+ * "This action can't be completed right now") while the admin read
+ * worked. Ordering is a presentation concern: fetch the rows and sort
+ * them here, which needs no index and no deploy.
+ */
+function createdAtMillis(value: unknown): number {
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof value === "object" && "toDate" in (value as object)) {
+    try {
+      return (value as { toDate: () => Date }).toDate().getTime();
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+function newestFirst(results: ElectionResultRecord[]): ElectionResultRecord[] {
+  return [...results].sort(
+    (a, b) => createdAtMillis(b.created_at) - createdAtMillis(a.created_at),
+  );
 }
 
 export async function getElectionResultsByPollingUnit(
   pollingUnitId: string,
+  overrideDb?: Firestore,
 ): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
   const q = query(
-    collection(db, "election_results"),
+    collection(store, "election_results"),
     where("polling_unit_id", "==", pollingUnitId),
-    orderBy("created_at", "desc"),
   );
 
   const snap = await getDocs(q);
 
-  return snap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
-  }));
+  return newestFirst(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+    })),
+  );
 }
 
 export async function getElectionResultsByWard(
   wardId: string,
+  overrideDb?: Firestore,
 ): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
   const q = query(
-    collection(db, "election_results"),
+    collection(store, "election_results"),
     where("ward_id", "==", wardId),
-    orderBy("created_at", "desc"),
   );
 
   const snap = await getDocs(q);
 
-  return snap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
-  }));
+  return newestFirst(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+    })),
+  );
 }
 
 /**
@@ -865,9 +907,11 @@ export async function getElectionResultsByWard(
 export async function getElectionResultsByWardAndPollingUnit(
   wardId: string,
   pollingUnitId: string,
+  overrideDb?: Firestore,
 ): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
   const q = query(
-    collection(db, "election_results"),
+    collection(store, "election_results"),
     where("ward_id", "==", wardId),
     where("polling_unit_id", "==", pollingUnitId),
   );
@@ -882,19 +926,22 @@ export async function getElectionResultsByWardAndPollingUnit(
 
 export async function getElectionResultsByLga(
   lgaId: string,
+  overrideDb?: Firestore,
 ): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
   const q = query(
-    collection(db, "election_results"),
+    collection(store, "election_results"),
     where("lga_id", "==", lgaId),
-    orderBy("created_at", "desc"),
   );
 
   const snap = await getDocs(q);
 
-  return snap.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
-  }));
+  return newestFirst(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+    })),
+  );
 }
 
 /**

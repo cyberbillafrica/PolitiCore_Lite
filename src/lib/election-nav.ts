@@ -31,9 +31,15 @@ export interface ElectionNavEntry {
 
 export const ELECTION_NAV_ENTRIES: ElectionNavEntry[] = [
   {
+    /*
+     * Round 10: the contest dashboard is a reporting surface like
+     * Results — every campaign member may open it (it is scoped to
+     * their own assignment / registered area on the page). The review
+     * queue below stays admin + election-officer only.
+     */
     name: "Election Dashboard",
     href: "/portal/election",
-    adminOnly: true,
+    electionReporting: true,
     electionModeRequired: true,
   },
   {

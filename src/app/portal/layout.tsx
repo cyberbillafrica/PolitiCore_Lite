@@ -273,6 +273,12 @@ const adminNavigation = [
   },
 
   {
+    name: "Election Audit Log",
+    href: "/portal/admin/audit",
+    icon: FileText,
+  },
+
+  {
     name: "Settings",
     href: "/portal/admin/settings",
     icon: Settings,

@@ -156,10 +156,15 @@ export default function ElectionOperationsPage() {
       if (wardName) break;
     }
 
+    /*
+     * Keep the stored id and put the human-readable name in brackets —
+     * the operator reads and cross-checks the id against Form EC8, but
+     * needs the name to know the place.
+     */
     return {
       lga: lgaName || lgaId || "Enugu State",
-      ward: wardName || wardId,
-      pu: puName || puId,
+      ward: wardName ? `${wardId} (${wardName})` : wardId,
+      pu: puName ? `${puId} (${puName})` : puId,
     };
   };
 

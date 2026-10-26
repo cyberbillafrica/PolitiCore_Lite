@@ -16,6 +16,7 @@ import { getAllEnuguLGAs } from "./electoral";
 import {
   CAMPAIGN_PROJECTED_PERMISSIONS,
   ELECTION_RESULTS_PERMISSION,
+  ELECTION_UPLOAD_PERMISSION,
   buildCampaignAccessDocId,
   buildBaselineAccessDocs,
   computeExpectedCampaignAccess,
@@ -646,9 +647,16 @@ export async function removeBaselineCampaignProjection(
  * ELECTION RESULT PROJECTION
  * ============================================================
  *
- * Unchanged in behaviour: it writes and revokes exactly one permission
- * (`view_election_results`) and enumerates polling units, because
- * election reads have no ward stamp to fall back on.
+ * Writes and revokes the election permissions an assignment owns:
+ *
+ *   view_election_results   read scope; enumerates polling units for an
+ *                           LGA because result docs have no ward stamp
+ *                           the query can rely on
+ *   upload_election_result  create scope; ward / LGA + wards / zone +
+ *                           LGAs + wards / global (round 10)
+ *
+ * Both are excluded from the campaign projection's delete half, so a
+ * campaign recompute can never wipe them.
  */
 
 const SCOPE_GRANTING_POSITIONS: OrganizationalPosition[] = [
@@ -661,16 +669,45 @@ const SCOPE_GRANTING_POSITIONS: OrganizationalPosition[] = [
   "council_chairman",
 ];
 
-async function electionResultDocIds(
+/*
+ * Round 10: coordinators may submit a result for any polling unit in
+ * their assignment. The grant is projected at the assignment scope
+ * (ward / LGA + wards / zone + LGAs + wards / global) — never at a
+ * polling unit, so an LGA assignment costs 15 documents, not 200.
+ */
+const UPLOAD_SCOPE_POSITIONS: OrganizationalPosition[] = [
+  "ward_coordinator",
+  "lga_coordinator",
+  "zone_coordinator",
+  "state_coordinator",
+  "campaign_manager",
+  "council_chairman",
+];
+
+interface ElectionAccessDoc {
+  id: string;
+  permission: string;
+  scope_type: string;
+  scope_id: string;
+}
+
+/**
+ * Every projection document an assignment owns: the read grants
+ * (polling units included for an LGA) plus the upload grant for the
+ * coordinator levels that may submit outside their own PU.
+ */
+async function electionAccessDocs(
   userId: string,
   position: OrganizationalPosition,
   scopeType: ScopeType,
   scopeId: string,
-): Promise<string[]> {
+): Promise<ElectionAccessDoc[]> {
   if (!userId || !SCOPE_GRANTING_POSITIONS.includes(position)) return [];
 
   const lgas = await getAllEnuguLGAs();
-  const targets = resolveScopeTargets(scopeType, scopeId, lgas).flatMap(
+  const docs: ElectionAccessDoc[] = [];
+
+  const readTargets = resolveScopeTargets(scopeType, scopeId, lgas).flatMap(
     (target) => {
       if (target.scope_type === "global") return [target];
 
@@ -692,14 +729,37 @@ async function electionResultDocIds(
     },
   );
 
-  return targets.map((target) =>
-    buildCampaignAccessDocId(
-      userId,
-      ELECTION_RESULTS_PERMISSION,
-      target.scope_type,
-      target.scope_id,
-    ),
-  );
+  for (const target of readTargets) {
+    docs.push({
+      id: buildCampaignAccessDocId(
+        userId,
+        ELECTION_RESULTS_PERMISSION,
+        target.scope_type,
+        target.scope_id,
+      ),
+      permission: ELECTION_RESULTS_PERMISSION,
+      scope_type: target.scope_type,
+      scope_id: target.scope_id,
+    });
+  }
+
+  if (UPLOAD_SCOPE_POSITIONS.includes(position)) {
+    for (const target of resolveScopeTargets(scopeType, scopeId, lgas)) {
+      docs.push({
+        id: buildCampaignAccessDocId(
+          userId,
+          ELECTION_UPLOAD_PERMISSION,
+          target.scope_type,
+          target.scope_id,
+        ),
+        permission: ELECTION_UPLOAD_PERMISSION,
+        scope_type: target.scope_type,
+        scope_id: target.scope_id,
+      });
+    }
+  }
+
+  return docs;
 }
 
 /*
@@ -714,32 +774,26 @@ export async function syncElectionResultAccessForAssignment(
   scopeId: string,
 ): Promise<void> {
   try {
-    const ids = await electionResultDocIds(
+    const docs = await electionAccessDocs(
       userId,
       position,
       scopeType,
       scopeId,
     );
 
-    for (let index = 0; index < ids.length; index += WRITE_CHUNK) {
-      const chunk = ids.slice(index, index + WRITE_CHUNK);
+    for (let index = 0; index < docs.length; index += WRITE_CHUNK) {
+      const chunk = docs.slice(index, index + WRITE_CHUNK);
       const batch = writeBatch(db);
 
-      for (const id of chunk) {
-        const scopeTypeFromId = id.split("__")[2];
-        const scopeIdFromId =
-          scopeTypeFromId === "global"
-            ? ""
-            : id.split("__").slice(3).join("__");
-
+      for (const entry of chunk) {
         batch.set(
-          doc(db, "user_access", id),
+          doc(db, "user_access", entry.id),
           {
             user_id: userId,
-            permission: ELECTION_RESULTS_PERMISSION,
+            permission: entry.permission,
             allowed: true,
-            scope_type: scopeTypeFromId,
-            scope_id: scopeIdFromId,
+            scope_type: entry.scope_type,
+            scope_id: entry.scope_id,
             updated_at: serverTimestamp(),
           },
           { merge: true },
@@ -766,19 +820,19 @@ export async function revokeElectionResultAccessForAssignment(
   scopeId: string,
 ): Promise<void> {
   try {
-    const ids = await electionResultDocIds(
+    const docs = await electionAccessDocs(
       userId,
       position,
       scopeType,
       scopeId,
     );
 
-    for (let index = 0; index < ids.length; index += WRITE_CHUNK) {
-      const chunk = ids.slice(index, index + WRITE_CHUNK);
+    for (let index = 0; index < docs.length; index += WRITE_CHUNK) {
+      const chunk = docs.slice(index, index + WRITE_CHUNK);
       const batch = writeBatch(db);
 
-      for (const id of chunk) {
-        batch.delete(doc(db, "user_access", id));
+      for (const entry of chunk) {
+        batch.delete(doc(db, "user_access", entry.id));
       }
 
       await batch.commit();

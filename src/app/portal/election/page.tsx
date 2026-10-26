@@ -38,6 +38,7 @@ import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { assignmentCoversScope } from "@/lib/permissions";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import {
+  deriveLgaIdFromWard,
   lgasWithinContestScope,
   describeContestScope,
 } from "@/lib/election-scope";
@@ -464,14 +465,141 @@ export default function ElectionDashboard() {
    * contest is state-wide (in which case `contestLgaIds` is null and
    * lgas === allLgas).
    */
-  const scopedLgas = useMemo(
+  /*
+   * ============================================================
+   * VIEWER GEOGRAPHIC SCOPE
+   * ============================================================
+   *
+   * The contest sets the MAXIMUM area; the signed-in member's
+   * assignment (or, without one, their registered area) narrows it.
+   * A ward coordinator must never see another ward's options or
+   * numbers just because the contest spans two LGAs.
+   */
+  type ViewerGeographicScope = {
+    unrestricted: boolean;
+    lgaIds: Set<string> | null;
+    wardIds: Set<string> | null;
+    pollingUnitIds: Set<string> | null;
+  };
+
+  const viewerScope = useMemo<ViewerGeographicScope>(() => {
+    const all: ViewerGeographicScope = {
+      unrestricted: true,
+      lgaIds: null,
+      wardIds: null,
+      pollingUnitIds: null,
+    };
+
+    if (isAdmin || profile?.access_role === "election_officer") return all;
+
+    const activeAssignments = assignments.filter(
+      (assignment) => assignment.status === "active",
+    );
+
+    const coordinatorAssignments = activeAssignments.filter((assignment) =>
+      [
+        "ward_coordinator",
+        "lga_coordinator",
+        "zone_coordinator",
+        "state_coordinator",
+        "campaign_manager",
+        "council_chairman",
+      ].includes(assignment.position),
+    );
+
+    if (
+      coordinatorAssignments.some(
+        (assignment) =>
+          assignment.scope_type === "state" ||
+          assignment.scope_type === "campaign",
+      )
+    ) {
+      return all;
+    }
+
+    const lgaIds = new Set<string>();
+    const wardIds = new Set<string>();
+    const pollingUnitIds = new Set<string>();
+
+    const addWard = (wardId: string) => {
+      wardIds.add(wardId);
+      const lgaId = deriveLgaIdFromWard(lgas, wardId);
+      if (lgaId) lgaIds.add(lgaId.toLowerCase());
+    };
+
+    for (const assignment of coordinatorAssignments) {
+      const scopeId = assignment.scope_id ?? "";
+      if (!scopeId) continue;
+
+      if (assignment.scope_type === "ward") {
+        addWard(scopeId);
+      } else if (assignment.scope_type === "lga") {
+        lgaIds.add(scopeId.toLowerCase());
+      } else if (assignment.scope_type === "senatorial_zone") {
+        for (const lga of lgas) {
+          if (
+            assignmentCoversScope(
+              assignment,
+              { scope_type: "lga", scope_id: lga.id },
+              lgas,
+            )
+          ) {
+            lgaIds.add(lga.id.toLowerCase());
+          }
+        }
+      } else if (assignment.scope_type === "polling_unit") {
+        pollingUnitIds.add(scopeId);
+        const ward = lgas
+          .flatMap((lga) => lga.wards)
+          .find((item) =>
+            item.pollingUnits.some((pu) => pu.id === scopeId),
+          );
+        if (ward) addWard(ward.id);
+      }
+    }
+
+    /*
+     * No assignment: a plain member is scoped to their registered
+     * polling unit (or ward when no PU is set).
+     */
+    if (coordinatorAssignments.length === 0) {
+      if (profile?.ward_id) addWard(profile.ward_id);
+      if (profile?.polling_unit_id) {
+        pollingUnitIds.add(profile.polling_unit_id);
+      }
+    }
+
+    return {
+      unrestricted: false,
+      lgaIds,
+      wardIds,
+      pollingUnitIds,
+    };
+  }, [isAdmin, profile, assignments, lgas]);
+
+  const contestScopedLgas = useMemo(
     () => lgasWithinContestScope(activeContest, lgas),
     [activeContest, lgas],
   );
 
-  // A contest confined to exactly one LGA locks the LGA selector.
-  const lgaFilterLocked =
-    contestLgaIds !== null && contestLgaIds.length === 1;
+  const scopedLgas = useMemo(() => {
+    if (viewerScope.unrestricted) return contestScopedLgas;
+
+    if (!viewerScope.lgaIds || viewerScope.lgaIds.size === 0) return [];
+
+    return contestScopedLgas.filter((lga) =>
+      viewerScope.lgaIds!.has(lga.id.toLowerCase()),
+    );
+  }, [contestScopedLgas, viewerScope]);
+
+  // A single in-scope LGA locks the LGA selector.
+  const lgaFilterLocked = scopedLgas.length === 1;
+
+  // A single in-scope ward locks the ward selector.
+  const lockedWardId =
+    !viewerScope.unrestricted && viewerScope.wardIds?.size === 1
+      ? Array.from(viewerScope.wardIds)[0]
+      : null;
 
   /*
    * Results outside the contest's geographic scope must never feed
@@ -487,25 +615,69 @@ export default function ElectionDashboard() {
     );
   }, [coveredResults, contestLgaIds, lgas]);
 
-  // Keep the selected LGA valid if the contest scope changes.
+  /*
+   * The viewer's own scope narrows the contest set a second time. The
+   * listener already only opens readable constraints; this keeps the
+   * AGGREGATES honest when a wider grant (admin) is not in play.
+   */
+  const viewerScopedResults = useMemo(() => {
+    if (viewerScope.unrestricted) return contestScopedResults;
+
+    if (viewerScope.pollingUnitIds && viewerScope.pollingUnitIds.size > 0) {
+      return contestScopedResults.filter((result) =>
+        viewerScope.pollingUnitIds!.has(result.polling_unit_id),
+      );
+    }
+
+    if (viewerScope.wardIds && viewerScope.wardIds.size > 0) {
+      return contestScopedResults.filter((result) =>
+        viewerScope.wardIds!.has(result.ward_id),
+      );
+    }
+
+    if (viewerScope.lgaIds && viewerScope.lgaIds.size > 0) {
+      return contestScopedResults.filter((result) =>
+        viewerScope.lgaIds!.has(
+          lgaIdForResult(lgas, result.lga_id, result.ward_id).toLowerCase(),
+        ),
+      );
+    }
+
+    return [];
+  }, [contestScopedResults, viewerScope, lgas]);
+
+  // Keep the selectors inside the contest AND the viewer's scope.
   useEffect(() => {
-    if (contestLgaIds === null) return;
-
-    if (!lgaFilterLocked) return;
-
     /* eslint-disable react-hooks/set-state-in-effect */
-    setSelectedLgaId(contestLgaIds[0]);
-    setSelectedWardId("all");
+    if (scopedLgas.length === 1) {
+      setSelectedLgaId(scopedLgas[0].id);
+    } else if (
+      selectedLgaId !== "all" &&
+      !scopedLgas.some((lga) => lga.id === selectedLgaId)
+    ) {
+      setSelectedLgaId("all");
+    }
+
+    if (lockedWardId) {
+      setSelectedWardId(lockedWardId);
+    } else if (
+      selectedWardId !== "all" &&
+      !scopedLgas.some((lga) =>
+        lga.wards.some((ward) => ward.id === selectedWardId),
+      )
+    ) {
+      setSelectedWardId("all");
+    }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [contestLgaIds, lgaFilterLocked]);
+  }, [scopedLgas, lockedWardId, selectedLgaId, selectedWardId]);
 
   // Operational Submissions vs Official Results
   const officialApprovedResults = useMemo(() => {
-    return contestScopedResults.filter((r) => r.status === "approved");
-  }, [contestScopedResults]);
+    return viewerScopedResults.filter((r) => r.status === "approved");
+  }, [viewerScopedResults]);
 
   const operationalSubmissions = useMemo(() => {
-    return contestScopedResults.filter((r) => {
+    return viewerScopedResults.filter((r) => {
       if (
         selectedContestId !== "all" &&
         r.contest_id &&
@@ -526,7 +698,7 @@ export default function ElectionDashboard() {
       return true;
     });
   }, [
-    contestScopedResults,
+    viewerScopedResults,
     selectedContestId,
     selectedLgaId,
     selectedWardId,
@@ -601,7 +773,18 @@ export default function ElectionDashboard() {
     ).length;
 
     let totalPUsInScope = 0;
-    if (selectedWardId !== "all") {
+
+    /*
+     * A member locked to their own polling unit has exactly one PU in
+     * scope, even though their ward has many.
+     */
+    if (
+      !viewerScope.unrestricted &&
+      viewerScope.pollingUnitIds &&
+      viewerScope.pollingUnitIds.size > 0
+    ) {
+      totalPUsInScope = viewerScope.pollingUnitIds.size;
+    } else if (selectedWardId !== "all") {
       for (const l of scopedLgas) {
         const w = l.wards.find((item) => item.id === selectedWardId);
         if (w) {
@@ -659,6 +842,7 @@ export default function ElectionDashboard() {
     comparePartyA,
     comparePartyB,
     scopedLgas,
+    viewerScope,
   ]);
 
   /*
@@ -998,14 +1182,17 @@ export default function ElectionDashboard() {
           <select
             value={selectedWardId}
             onChange={(e) => setSelectedWardId(e.target.value)}
-            disabled={selectedLgaId === "all"}
+            disabled={selectedLgaId === "all" || Boolean(lockedWardId)}
             className="px-3 py-1.5 border rounded-lg text-xs font-semibold bg-gray-50 disabled:bg-gray-100 max-w-[150px] sm:max-w-[220px] truncate"
           >
             <option value="all">All Wards</option>
             {selectedLgaId !== "all" &&
               scopedLgas
                 .find((l) => l.id === selectedLgaId)
-                ?.wards.map((w) => (
+                ?.wards.filter(
+                  (ward) => !lockedWardId || ward.id === lockedWardId,
+                )
+                .map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.code} — {w.name}
                   </option>

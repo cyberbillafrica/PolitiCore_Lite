@@ -13,7 +13,7 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import {
   getAllEnuguLGAs,
 } from "@/lib/firebase/electoral";
-import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversPollingUnit, describeContestScope } from "@/lib/election-scope";
+import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversPollingUnit, describeContestScope, pollingUnitDisplayLabel, wardDisplayLabel } from "@/lib/election-scope";
 import { buildElectionReadScope, registeredPollingUnitConstraint } from "@/lib/election-read-scope";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
@@ -682,7 +682,8 @@ export default function PUReportsPage() {
                     </div>
 
                     <span className="text-xs text-gray-400">
-                      PU: {r.polling_unit_id} · Ward: {r.ward_id}
+                      PU: {pollingUnitDisplayLabel(lgas, r.ward_id, r.polling_unit_id)}{" "}
+                      · Ward: {wardDisplayLabel(lgas, r.ward_id)}
                     </span>
                   </div>
 
