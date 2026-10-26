@@ -11,6 +11,8 @@
  * ============================================================
  */
 
+import { BRANDING } from "@/config/branding";
+
 export type HelpRole =
   | "all"
   | "admin"
@@ -94,12 +96,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
    * ---------------------------------------------------------- */
   {
     id: "what-is-the-portal",
-    title: "What is the PolitiCore Portal?",
+    title: `What is the ${BRANDING.shortName} Portal?`,
     category: "getting-started",
     roles: ["all"],
     keywords: ["introduction", "start", "about"],
     body: [
-      "The PolitiCore Portal is the campaign headquarters app for the Ifeanyi 2027 campaign. It brings the campaign's day-to-day work into one place: connecting with supporters, running social media tasks, organising activities on the ground, reporting from polling units, and managing election results.",
+      `The ${BRANDING.shortName} Portal is the campaign headquarters app for the ${BRANDING.appName} campaign. It brings the campaign's day-to-day work into one place: connecting with supporters, running social media tasks, organising activities on the ground, reporting from polling units, and managing election results.`,
       "What you can do inside the portal depends on your membership and role. Some people use it mainly for social engagement, others coordinate campaign work across the State, Zone, LGA, Ward and Polling Unit levels, and a small group administers the whole system.",
       "Use the menu on the left to move around. If a menu item isn't shown for you, it usually means it belongs to a part of the campaign you don't work in.",
     ],
@@ -349,7 +351,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["campaign_member", "election_officer", "admin"],
     keywords: ["cycle", "contest", "presidential", "governorship", "senatorial"],
     body: [
-      "An election in PolitiCore is not one single event — it's a set of contests that happen together. An Election Cycle is the overall period (for example, the 2027 general elections) and holds the individual contests inside it.",
+      `An election in ${BRANDING.shortName} is not one single event — it's a set of contests that happen together. An Election Cycle is the overall period (for example, the ${BRANDING.electionYear} general elections) and holds the individual contests inside it.`,
       "Each contest is a specific race: Presidential, Governorship, Senatorial, House of Representatives, or State House of Assembly. A contest also has a geographic scope — national, state, senatorial zone, federal constituency or state constituency — which decides which polling units it covers.",
       "Cycles and contests are prepared in advance by administrators and move through statuses: a cycle can be draft, scheduled, active, paused, closed or archived; a contest can be draft, open, paused or closed. You submit and read results for contests that are open within the active cycle.",
       "Election settings control how collation behaves during the period. Members don't configure anything here — this page just helps you understand what you're looking at.",
@@ -758,7 +760,7 @@ export const PUBLIC_INTRO: {
   text: string;
   articles: string[];
 } = {
-  heading: "Welcome to PolitiCore",
+  heading: `Welcome to ${BRANDING.shortName}`,
   text: "Browse the guide before you sign in — it explains what the portal does and how to join. Signed-in members see role-specific starting points here.",
   articles: [
     "what-is-the-portal",

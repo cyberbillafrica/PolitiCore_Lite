@@ -8,15 +8,15 @@ import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { MaintenanceGuard } from "@/components/providers/MaintenanceGuard";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import ContextualHelp from "@/components/help/ContextualHelp";
+import { BRANDING } from "@/config/branding";
 
 const inter = Inter({
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "PolitiCore — Political Operations & Campaign Intelligence Platform",
-  description:
-    "PolitiCore — Centralizing political organization, field operations, stakeholder coordination, and campaign intelligence into one coherent platform.",
+  title: `${BRANDING.shortName} — ${BRANDING.tagline}`,
+  description: `${BRANDING.shortName} — Centralizing political organization, field operations, stakeholder coordination, and campaign intelligence into one coherent platform.`,
 };
 
 export default function RootLayout({

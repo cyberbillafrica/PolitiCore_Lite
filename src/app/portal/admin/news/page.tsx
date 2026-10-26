@@ -34,7 +34,7 @@ import {
   deleteNewsArticle,
   generateSlug,
 } from "@/lib/firebase/firestore";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import type { NewsArticle, NewsStatus } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -144,7 +144,7 @@ export default function AdminNewsCMSPage() {
     try {
       setUploadingImage(true);
 
-      const downloadUrl = await uploadToCloudinary(file, "ifeanyi-2027/news");
+      const downloadUrl = await uploadToCloudinary(file, cloudinaryFolder("news"));
       setFormFeaturedImage(downloadUrl);
       notify.success("Image uploaded successfully to Cloudinary.");
     } catch (err: any) {

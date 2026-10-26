@@ -14,9 +14,12 @@ import {
   FolderTree,
 } from "lucide-react";
 
+import { BRANDING } from "@/config/branding";
+import { cloudinaryFolder } from "@/lib/cloudinary";
+
 export const metadata = {
-  title: "User Manual & Documentation | Ifeanyichukwu 2027",
-  description: "Comprehensive user manual for campaign administrators and technical documentation for the Ifeanyi 2027 News System.",
+  title: `User Manual & Documentation | ${BRANDING.candidateLegalName} ${BRANDING.electionYear}`,
+  description: `Comprehensive user manual for campaign administrators and technical documentation for the ${BRANDING.appName} News System.`,
 };
 
 export default function DocumentationPage() {
@@ -118,7 +121,7 @@ export default function DocumentationPage() {
                   When you select an image file and click <strong>Upload</strong>, the file is automatically uploaded to the campaign Cloudinary storage under the folder path:
                 </p>
                 <code className="block bg-gray-100 p-2 rounded text-xs text-apc-primary font-mono mb-2">
-                  ifeanyi-2027/news/
+                  {`${cloudinaryFolder("news")}/`}
                 </code>
                 <p>
                   An immediate image preview appears in the editor. Alternatively, you can paste any public HTTPS image URL into the URL field. Both methods populate the same <code>featured_image</code> field in Firestore.
@@ -205,10 +208,10 @@ export default function DocumentationPage() {
                     <FolderTree className="h-4 w-4 text-apc-primary" /> Cloudinary Folder Architecture:
                   </p>
                   <ul className="space-y-1 text-gray-700">
-                    <li>ifeanyi-2027/news</li>
-                    <li>ifeanyi-2027/gallery</li>
-                    <li>ifeanyi-2027/candidate</li>
-                    <li>ifeanyi-2027/campaign-members</li>
+                    <li>{cloudinaryFolder("news")}</li>
+                    <li>{cloudinaryFolder("gallery")}</li>
+                    <li>{cloudinaryFolder("candidate")}</li>
+                    <li>{cloudinaryFolder("campaign-members")}</li>
                   </ul>
                 </div>
 

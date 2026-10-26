@@ -21,15 +21,16 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getBiography, updateBiography } from "@/lib/firebase/biography";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
+import { BRANDING } from "@/config/branding";
 import type { BiographyData } from "@/types";
 
 const DEFAULT_ABOUT: Omit<
   BiographyData,
   "created_at" | "updated_at"
 > = {
-  full_name: "PolitiCore Operations Secretariat",
-  title: "Political Operations & Campaign Intelligence Platform",
+  full_name: BRANDING.secretariatName,
+  title: BRANDING.tagline,
   about: "",
   image_url: null,
   stats: {
@@ -109,8 +110,8 @@ export default function AdminAboutPage() {
     try {
       await updateBiography({
         ...aboutData,
-        full_name: aboutData.full_name || "PolitiCore Operations Secretariat",
-        title: aboutData.title || "Political Operations & Campaign Intelligence Platform",
+        full_name: aboutData.full_name || BRANDING.secretariatName,
+        title: aboutData.title || BRANDING.tagline,
         status,
       });
       notify.success(
@@ -134,7 +135,7 @@ export default function AdminAboutPage() {
     setUploadingImage(true);
 
     try {
-      const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
+      const url = await uploadToCloudinary(file, cloudinaryFolder("candidate"));
       setAboutData((prev) => {
         if (!prev) return prev;
         return { ...prev, image_url: url };

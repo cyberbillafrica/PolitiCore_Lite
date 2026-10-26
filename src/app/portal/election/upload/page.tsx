@@ -14,7 +14,7 @@ import { getElectionResultsByWardAndPollingUnit } from "@/lib/firebase/firestore
 import { electionRead } from "@/lib/firebase/query-debug";
 import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
 import { assignmentCoversScope } from "@/lib/permissions";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import {
   contestCoversPollingUnit,
@@ -586,12 +586,12 @@ export default function ElectionUploadPage() {
 
     setSubmitting(true);
     try {
-      // 1. Upload Form EC8 image to Cloudinary (folder: "ifeanyi-2027/election-results")
+      // 1. Upload Form EC8 image to the per-client election-results folder
       let cloudinaryUrl: string | null = null;
       try {
         cloudinaryUrl = await uploadToCloudinary(
           evidenceFile,
-          "ifeanyi-2027/election-results"
+          cloudinaryFolder("election-results")
         );
       } catch (uploadErr: unknown) {
         const err = uploadErr as Error;

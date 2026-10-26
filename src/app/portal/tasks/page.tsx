@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BRANDING } from "@/config/branding";
 import { useAuth } from "@/contexts/AuthContext";
 import { isTaskExpired } from "@/lib/date-utils";
 import { requiresProof } from "@/lib/social-config";
@@ -528,7 +529,7 @@ export default function TasksPage() {
   const referralCode = profile?.referral_code || profile?.id?.slice(0, 8).toUpperCase() || "";
   const referralLink = typeof window !== "undefined"
     ? `${window.location.origin}/login?ref=${referralCode}`
-    : `https://politicore.org/login?ref=${referralCode}`;
+    : `${BRANDING.siteUrl}/login?ref=${referralCode}`;
 
   const handleCopyReferral = () => {
     if (navigator.clipboard) {
@@ -541,8 +542,8 @@ export default function TasksPage() {
   const handleShareReferral = () => {
     if (navigator.share) {
       navigator.share({
-        title: "Join PolitiCore Campaign",
-        text: "Join me on PolitiCore to support our campaign and earn social points!",
+        title: `Join ${BRANDING.shortName} Campaign`,
+        text: `Join me on ${BRANDING.shortName} to support our campaign and earn social points!`,
         url: referralLink,
       }).catch(() => handleCopyReferral());
     } else {

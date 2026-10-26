@@ -21,7 +21,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/errors";
 import { getBiography, updateBiography } from "@/lib/firebase/biography";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
+import { BRANDING } from "@/config/branding";
 import type { BiographyData } from "@/types";
 
 const DEFAULT_BIOGRAPHY: Omit<
@@ -133,7 +134,7 @@ export default function AdminBiographyPage() {
     setUploadingImage(true);
 
     try {
-      const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
+      const url = await uploadToCloudinary(file, cloudinaryFolder("candidate"));
       setBio((prev) => {
         if (!prev) return prev;
         return { ...prev, image_url: url };
@@ -273,7 +274,7 @@ export default function AdminBiographyPage() {
           <input
             value={bio.full_name}
             onChange={(e) => setBio({ ...bio, full_name: e.target.value })}
-            placeholder="e.g. Ifeanyi Barth"
+            placeholder={`e.g. ${BRANDING.candidateFullName}`}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary focus:border-transparent"
           />
         </div>

@@ -21,7 +21,8 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getManifesto, updateManifesto } from "@/lib/firebase/manifesto";
-import { uploadPDFToCloudinary } from "@/lib/cloudinary";
+import { uploadPDFToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
+import { BRANDING } from "@/config/branding";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm";
 import { getErrorMessage } from "@/lib/errors";
@@ -255,7 +256,7 @@ export default function AdminManifestoPage() {
     try {
       const url = await uploadPDFToCloudinary(
         file,
-        "ifeanyi-2027/candidate/manifestos",
+        cloudinaryFolder("candidate/manifestos"),
       );
 
       setManifesto((prev) => {
@@ -447,7 +448,7 @@ export default function AdminManifestoPage() {
                 onChange={(e) =>
                   setManifesto({ ...manifesto, candidate_name: e.target.value })
                 }
-                placeholder="e.g. Ifeanyi Barth"
+                placeholder={`e.g. ${BRANDING.candidateFullName}`}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary focus:border-transparent"
               />
             </div>

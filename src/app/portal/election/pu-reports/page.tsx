@@ -9,7 +9,7 @@ import {
   subscribeToPUReports,
   type PUReportDoc,
 } from "@/lib/firebase/election";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import {
   getAllEnuguLGAs,
 } from "@/lib/firebase/electoral";
@@ -311,7 +311,7 @@ export default function PUReportsPage() {
         try {
           cloudinaryUrl = await uploadToCloudinary(
             evidenceFile,
-            "ifeanyi-2027/pu-reports",
+            cloudinaryFolder("pu-reports"),
           );
         } catch (uploadErr) {
           console.warn("Cloudinary evidence upload fallback:", uploadErr);

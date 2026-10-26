@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Calendar } from "lucide-react";
+import { BRANDING } from "@/config/branding";
 
-// State House of Assembly / Governorship Election
-// Saturday, 6 February 2027 at 00:00 Nigeria time (WAT, UTC+1)
-// Equivalent to 5 February 2027 at 23:00 UTC.
-const ELECTION_DATE = new Date("2027-02-05T23:00:00.000Z").getTime();
+// Election day comes from NEXT_PUBLIC_BRAND_ELECTION_DATE (ISO, UTC)
+// and NEXT_PUBLIC_BRAND_ELECTION_DATE_LABEL (display text).
+const ELECTION_DATE = new Date(BRANDING.electionDateISO).getTime();
 
 type Countdown = {
   days: number;
@@ -143,7 +143,7 @@ export default function ElectionCountdown() {
             </p>
 
             <p className="text-xs font-bold text-shadow-green-300 sm:text-sm">
-              Saturday, 6 February 2027
+              {BRANDING.electionDateLabel}
             </p>
           </div>
         </div>

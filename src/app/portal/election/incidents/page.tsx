@@ -9,7 +9,7 @@ import {
   subscribeToElectionIncidents,
   type ElectionIncidentDoc,
 } from "@/lib/firebase/election";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { deriveLgaIdFromWard, lgasWithinContestScope, contestCoversWard, describeContestScope, pollingUnitDisplayLabel, wardDisplayLabel } from "@/lib/election-scope";
 import { buildElectionReadScope, registeredPollingUnitConstraint } from "@/lib/election-read-scope";
@@ -300,7 +300,7 @@ export default function IncidentsPage() {
         try {
           cloudinaryUrl = await uploadToCloudinary(
             evidenceFile,
-            "ifeanyi-2027/incidents",
+            cloudinaryFolder("incidents"),
           );
         } catch (uploadErr) {
           console.warn("Cloudinary evidence upload fallback:", uploadErr);

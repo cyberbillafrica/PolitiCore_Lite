@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { X, Phone, Mail, MapPin, Building2, Layers, ShieldCheck, Maximize2 } from "lucide-react";
 import { StructureMember } from "@/lib/firebase/structure";
+import { BRANDING } from "@/config/branding";
 
 interface StructureMemberModalProps {
   member: StructureMember | null;
@@ -118,7 +119,7 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
                   {initials}
                 </div>
                 <span className="text-xs font-bold uppercase tracking-widest text-emerald-300/80">
-                  PolitiCore Secretariat
+                  {BRANDING.shortName} Secretariat
                 </span>
               </div>
             )}
@@ -215,7 +216,7 @@ export default function StructureMemberModal({ member, onClose }: StructureMembe
           {/* Footer Actions */}
           <div className="p-4 sm:px-8 bg-gray-50 border-t border-gray-100 flex items-center justify-between shrink-0">
             <span className="text-xs text-gray-400 font-medium hidden sm:inline">
-              PolitiCore Political Operations Platform
+              {`${BRANDING.shortName} Political Operations Platform`}
             </span>
             <button
               onClick={onClose}

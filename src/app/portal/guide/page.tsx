@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BRANDING } from "@/config/branding";
 import {
   BookOpen,
   Building2,
@@ -164,14 +165,14 @@ export default function UserGuidePage() {
         <div className="pointer-events-none absolute -right-8 -top-8 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
         <div className="relative z-10 max-w-2xl">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide">
-            <BookOpen className="h-4 w-4 text-emerald-200" /> PolitiCore
+            <BookOpen className="h-4 w-4 text-emerald-200" /> {BRANDING.shortName}
             Platform Manual
           </div>
           <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl">
             System User Guide & Operations Manual
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-emerald-100/90 sm:text-base">
-            The complete manual for PolitiCore (Political Operations & Campaign
+            The complete manual for {BRANDING.shortName} (Political Operations & Campaign
             Intelligence Platform). Every section below describes what a feature
             does, who can use it, and how to use it. Stuck on a specific page?
             The <strong>?</strong> button at the bottom-right of every page
@@ -283,7 +284,7 @@ export default function UserGuidePage() {
                   Core Contact Functions
                 </h3>
                 <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-                  PolitiCore focuses on identifying who to engage (community
+                  {BRANDING.shortName} focuses on identifying who to engage (community
                   leaders, professional groups, youth/women organizations) and
                   maintaining constructive long-term relationships across wards
                   and LGAs.

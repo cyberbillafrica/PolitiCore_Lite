@@ -8,6 +8,7 @@ import {
   InecOfficer,
 } from "@/lib/firebase/inec-officers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BRANDING } from "@/config/branding";
 import {
   Download,
   Printer,
@@ -169,7 +170,7 @@ export default function AdminInecOfficersPage() {
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `PolitiCore_INEC_Officers_${new Date().toISOString().slice(0, 10)}.csv`
+      `${BRANDING.shortName}_INEC_Officers_${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -186,7 +187,7 @@ export default function AdminInecOfficersPage() {
       {/* Print-Only Header */}
       <div className="hidden print:block mb-8 text-center border-b-2 border-emerald-800 pb-4">
         <h1 className="text-2xl font-black text-gray-900">
-          POLITICORE — POLITICAL OPERATIONS PLATFORM
+          {BRANDING.brandName} — {BRANDING.brandTagline}
         </h1>
         <p className="text-sm font-bold text-emerald-800">
           INEC AD-HOC OFFICERS APPLICANT ROSTER
@@ -532,7 +533,7 @@ export default function AdminInecOfficersPage() {
 
             {/* Modal Footer */}
             <div className="bg-gray-100 px-6 py-4 flex items-center justify-between">
-              <span className="text-xs text-gray-500 font-medium">PolitiCore Admin Verification Portal</span>
+              <span className="text-xs text-gray-500 font-medium">{`${BRANDING.shortName} Admin Verification Portal`}</span>
               <button
                 onClick={() => setSelectedOfficerModal(null)}
                 className="px-5 py-2 rounded-xl bg-gray-800 hover:bg-gray-900 text-white text-xs font-bold transition-colors"

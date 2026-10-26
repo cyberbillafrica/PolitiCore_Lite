@@ -23,6 +23,7 @@ import {
 } from "@/lib/firebase/election";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import { describeContestScope } from "@/lib/election-scope";
+import { BRANDING } from "@/config/branding";
 import { lookupConstituency } from "@/data/constituencies";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import type {
@@ -91,7 +92,7 @@ export default function AdminElectionManagementPage() {
   const [cycleForm, setCycleForm] = useState({
     id: "",
     name: "",
-    year: 2027,
+    year: Number(BRANDING.electionYear),
     description: "",
     status: "ACTIVE" as ElectionCycle["status"],
     start_date: "2027-02-20",
@@ -808,7 +809,7 @@ export default function AdminElectionManagementPage() {
             setCycleForm({
               id: `general-election-${Date.now()}`,
               name: "",
-              year: 2027,
+              year: Number(BRANDING.electionYear),
               description: "",
               status: "ACTIVE",
               start_date: "2027-02-20",
@@ -1332,7 +1333,7 @@ export default function AdminElectionManagementPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 2027 General Elections"
+                  placeholder={`e.g. ${BRANDING.electionYear} General Elections`}
                   value={cycleForm.name}
                   onChange={(e) =>
                     setCycleForm({ ...cycleForm, name: e.target.value })
@@ -1352,7 +1353,9 @@ export default function AdminElectionManagementPage() {
                     onChange={(e) =>
                       setCycleForm({
                         ...cycleForm,
-                        year: parseInt(e.target.value) || 2027,
+                        year:
+                          parseInt(e.target.value) ||
+                          Number(BRANDING.electionYear),
                       })
                     }
                     className="w-full px-3 py-2 border rounded-lg text-xs"
@@ -1453,7 +1456,7 @@ export default function AdminElectionManagementPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 2027 Enugu Governorship Election"
+                  placeholder={`e.g. ${BRANDING.electionYear} Enugu Governorship Election`}
                   value={contestForm.name}
                   onChange={(e) =>
                     setContestForm({ ...contestForm, name: e.target.value })
@@ -1812,7 +1815,7 @@ export default function AdminElectionManagementPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Dr. Ifeanyi Nkanu"
+                  placeholder={`e.g. ${BRANDING.candidateFullName}`}
                   value={candidateForm.candidate_name}
                   onChange={(e) =>
                     setCandidateForm({

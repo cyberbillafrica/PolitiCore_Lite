@@ -34,7 +34,7 @@ import {
   deleteStructureMember,
   StructureMember,
 } from "@/lib/firebase/structure";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 
 export default function AdminStructurePage() {
   const { profile, loading: authLoading } = useAuth();
@@ -121,7 +121,7 @@ export default function AdminStructurePage() {
 
     setUploadingImage(true);
     try {
-      const url = await uploadToCloudinary(file, "ifeanyi-2027/candidate");
+      const url = await uploadToCloudinary(file, cloudinaryFolder("candidate"));
       setFormMember((prev) => ({ ...prev, image_url: url }));
     } catch (err) {
       console.error("Image upload failed:", err);

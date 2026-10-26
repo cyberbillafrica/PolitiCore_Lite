@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
+import { BRANDING } from "@/config/branding";
 
 /* ============================================================
  * HOMEPAGE SECTION CONFIGURATION
@@ -232,16 +233,16 @@ export const DEFAULT_DONATION_SETTINGS: DonationSettings = {
 };
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  organizationName: "PolitiCore Operations Platform",
-  organizationShortName: "PolitiCore",
+  organizationName: `${BRANDING.shortName} Operations Platform`,
+  organizationShortName: BRANDING.shortName,
   organizationDescription: "Centralizing political organization, stakeholders, grassroots outreach, field operations, communications, events, and operational reporting.",
   organizationType: "Political Campaign & Operations",
   country: "Nigeria",
   stateRegion: "Enugu State",
 
   heroShow: true,
-  heroTitle: "POLITICORE LITE",
-  heroTagline: "Political Operations & Campaign Intelligence Platform",
+  heroTitle: `${BRANDING.brandName} LITE`,
+  heroTagline: BRANDING.tagline,
   heroDescription:
     "Bringing political organization, stakeholders, grassroots outreach, field operations, communications, events, reporting, and organizational coordination into one coherent system.",
   heroCtaText: "Explore Platform Features",
@@ -257,18 +258,18 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   campaignCtas: DEFAULT_CAMPAIGN_CTAS,
   donation: DEFAULT_DONATION_SETTINGS,
 
-  brandName: "POLITICORE",
-  brandTagline: "POLITICAL OPERATIONS PLATFORM",
+  brandName: BRANDING.brandName,
+  brandTagline: BRANDING.brandTagline,
   logoUrl: "",
-  primaryColor: "#008751",
-  secondaryColor: "#f59e0b",
+  primaryColor: BRANDING.primaryColor,
+  secondaryColor: BRANDING.secondaryColor,
 
   headerNotice: "Powering Modern Political Operations & Field Campaigns",
 
-  footerAddress: "PolitiCore Operations Center, Headquarters",
-  footerPhone: "+234 800 765 4842",
-  footerEmail: "contact@politicore.org",
-  copyrightText: "© 2026 PolitiCore Platform. CyberBill Africa. All rights reserved.",
+  footerAddress: BRANDING.footerAddress,
+  footerPhone: BRANDING.footerPhone,
+  footerEmail: BRANDING.supportEmail,
+  copyrightText: `© 2026 ${BRANDING.shortName} Platform. ${BRANDING.developerName}. All rights reserved.`,
 
   senatorialZones: [
     "Enugu East Senatorial Zone",

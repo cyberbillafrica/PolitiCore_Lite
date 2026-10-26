@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { BRANDING } from "@/config/branding";
 import {
   HELP_ARTICLES,
   HELP_CATEGORIES,
@@ -371,7 +372,7 @@ export default function ContextualHelp() {
               ))}
 
               <p className="pb-6 pt-2 text-center text-xs text-gray-400">
-                PolitiCore Portal Guidance — describing the portal as it
+                {BRANDING.shortName} Portal Guidance — describing the portal as it
                 actually works. Can't find an answer? Ask a campaign
                 administrator.
               </p>

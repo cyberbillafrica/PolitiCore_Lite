@@ -1,5 +1,6 @@
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./config";
+import { BRANDING } from "@/config/branding";
 
 /**
  * Single-campaign application identity.
@@ -30,5 +31,5 @@ export async function getAppName(): Promise<string> {
     console.error("Error fetching app config:", error);
   }
 
-  return "PolitiCore Operations Platform";
+  return `${BRANDING.shortName} Operations Platform`;
 }

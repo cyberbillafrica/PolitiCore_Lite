@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { BRANDING } from "@/config/branding";
 import {
   LayoutDashboard,
   Users,
@@ -747,11 +748,11 @@ export default function PortalLayout({
               onClick={() => setSidebarOpen(false)}
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                PC
+                {BRANDING.monogram}
               </div>
 
               <span className="text-lg font-bold text-emerald-800">
-                POLITICORE
+                {BRANDING.brandName}
               </span>
             </Link>
 
@@ -790,11 +791,11 @@ export default function PortalLayout({
           <div className="flex h-16 shrink-0 items-center border-b px-6">
             <Link href="/" className="flex items-center space-x-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                PC
+                {BRANDING.monogram}
               </div>
 
               <span className="text-lg font-bold text-emerald-800">
-                POLITICORE
+                {BRANDING.brandName}
               </span>
             </Link>
           </div>
@@ -834,15 +835,15 @@ export default function PortalLayout({
 
             <Link href="/" className="flex items-center space-x-2 lg:hidden">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                PC
+                {BRANDING.monogram}
               </div>
               <span className="font-bold text-emerald-800 dark:text-emerald-400">
-                POLITICORE
+                {BRANDING.brandName}
               </span>
             </Link>
 
             <h2 className="hidden lg:block text-sm font-extrabold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
-              PolitiCore Operations Portal
+              {`${BRANDING.shortName} Operations Portal`}
             </h2>
           </div>
 

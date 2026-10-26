@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { logOut } from "@/lib/firebase/auth";
 import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
+import { BRANDING } from "@/config/branding";
 
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
@@ -45,7 +46,7 @@ export default function Header() {
                 </div>
               ) : (
                 <div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-emerald-700 text-white font-extrabold shadow-sm transition-all duration-300 group-hover:shadow-md text-sm sm:text-base">
-                  PC
+                  {BRANDING.monogram}
                 </div>
               )}
 

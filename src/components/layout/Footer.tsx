@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Mail, Phone, MapPin, ArrowUpRight, Heart } from "lucide-react";
 import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
+import { BRANDING } from "@/config/branding";
 
 export default function Footer() {
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
@@ -33,7 +34,7 @@ export default function Footer() {
                 </div>
               ) : (
                 <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#008751] text-white text-xl font-extrabold shadow-lg">
-                  PC
+                  {BRANDING.monogram}
                 </div>
               )}
 
@@ -138,7 +139,7 @@ export default function Footer() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-white/35">
-                    PolitiCore Operations Center
+                    {BRANDING.officeName}
                   </p>
                   <p className="mt-1 text-sm leading-5 text-white/65">
                     {settings.footerAddress}
@@ -191,12 +192,12 @@ export default function Footer() {
               <Heart className="h-3.5 w-3.5 fill-[#d71920] text-[#d71920]" />
               by{" "}
               <a
-                href="https://cyberbillafrica.com"
+                href={BRANDING.developerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-semibold text-[#39b978] transition-colors hover:text-white"
               >
-                CyberBill Africa
+                {BRANDING.developerName}
               </a>
             </p>
           </div>

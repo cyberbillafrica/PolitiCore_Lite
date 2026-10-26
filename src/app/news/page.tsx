@@ -2,6 +2,7 @@
 
 
 import { notify } from "@/lib/notify";
+import { BRANDING } from "@/config/branding";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -102,7 +103,7 @@ export default function NewsPage() {
                   </div>
                 ) : (
                   <div className="relative aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-apc-primary/10 to-apc-secondary/10 flex items-center justify-center">
-                    <span className="text-3xl font-bold text-apc-primary/20">Ifeanyi 2027</span>
+                    <span className="text-3xl font-bold text-apc-primary/20">{BRANDING.appName}</span>
                   </div>
                 )}
 

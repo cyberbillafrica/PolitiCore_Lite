@@ -20,6 +20,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { calculateEstimatedReach } from "@/lib/social-config";
+import { BRANDING } from "@/config/branding";
 import type { TaskAction, TaskPlatform } from "@/types";
 
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
@@ -321,7 +322,10 @@ export default function AdminAnalyticsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `politicore_volunteers_${period}.csv`);
+    link.setAttribute(
+      "download",
+      `${BRANDING.shortName.toLowerCase()}_volunteers_${period}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -339,7 +343,10 @@ export default function AdminAnalyticsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `politicore_tasks_performance_${period}.csv`);
+    link.setAttribute(
+      "download",
+      `${BRANDING.shortName.toLowerCase()}_tasks_performance_${period}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

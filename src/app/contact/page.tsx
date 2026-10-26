@@ -1,6 +1,7 @@
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Mail, Phone, MapPin, Send } from "lucide-react";
+import { BRANDING } from "@/config/branding";
 
 export default function ContactPage() {
   return (
@@ -13,9 +14,9 @@ export default function ContactPage() {
             <div className="flex items-start space-x-4">
               <MapPin className="h-6 w-6 text-apc-primary mt-1" />
               <div>
-                <h3 className="font-semibold text-gray-900">PolitiCore Operations Center</h3>
+                <h3 className="font-semibold text-gray-900">{BRANDING.officeName}</h3>
                 <p className="text-gray-600">
-                  PolitiCore Platform Headquarters & Operations Secretariat
+                  {`${BRANDING.shortName} Platform Headquarters & Operations Secretariat`}
                 </p>
               </div>
             </div>
@@ -23,14 +24,14 @@ export default function ContactPage() {
               <Phone className="h-6 w-6 text-apc-primary mt-1" />
               <div>
                 <h3 className="font-semibold text-gray-900">Phone</h3>
-                <p className="text-gray-600">+234 800 765 4842</p>
+                <p className="text-gray-600">{BRANDING.footerPhone}</p>
               </div>
             </div>
             <div className="flex items-start space-x-4">
               <Mail className="h-6 w-6 text-apc-primary mt-1" />
               <div>
                 <h3 className="font-semibold text-gray-900">Email</h3>
-                <p className="text-gray-600">contact@politicore.org</p>
+                <p className="text-gray-600">{BRANDING.supportEmail}</p>
               </div>
             </div>
           </div>

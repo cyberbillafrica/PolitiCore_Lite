@@ -2,6 +2,7 @@
 
 
 import { notify } from "@/lib/notify";
+import { BRANDING } from "@/config/branding";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -634,7 +635,7 @@ export default function VolunteerPage() {
                   nameField="facebook_name"
                   urlField="facebook_profile_url"
                   nameLabel="Facebook Display Name"
-                  namePlaceholder="e.g. Ifeanyi Barth"
+                  namePlaceholder={`e.g. ${BRANDING.candidateFullName}`}
                   urlPlaceholder="https://facebook.com/your-profile"
                   required={isSocialMember}
                   register={register}
@@ -649,7 +650,7 @@ export default function VolunteerPage() {
                   nameField="x_name"
                   urlField="x_profile_url"
                   nameLabel="X Display Name"
-                  namePlaceholder="e.g. Ifeanyi Barth"
+                  namePlaceholder={`e.g. ${BRANDING.candidateFullName}`}
                   urlPlaceholder="https://x.com/your-profile"
                   required={isSocialMember}
                   register={register}
@@ -664,7 +665,7 @@ export default function VolunteerPage() {
                   nameField="instagram_name"
                   urlField="instagram_profile_url"
                   nameLabel="Instagram Display Name"
-                  namePlaceholder="e.g. Ifeanyi Barth"
+                  namePlaceholder={`e.g. ${BRANDING.candidateFullName}`}
                   urlPlaceholder="https://instagram.com/your-profile"
                   required={false}
                   register={register}
@@ -679,7 +680,7 @@ export default function VolunteerPage() {
                   nameField="tiktok_name"
                   urlField="tiktok_profile_url"
                   nameLabel="TikTok Display Name"
-                  namePlaceholder="e.g. Ifeanyi Barth"
+                  namePlaceholder={`e.g. ${BRANDING.candidateFullName}`}
                   urlPlaceholder="https://tiktok.com/@your-profile"
                   required={false}
                   register={register}

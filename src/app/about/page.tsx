@@ -9,6 +9,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getBiography } from "@/lib/firebase/biography";
 import ShareButtons from "@/components/ShareButtons";
+import { BRANDING } from "@/config/branding";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -16,19 +17,21 @@ export async function generateMetadata(): Promise<Metadata> {
 
     if (!aboutData || aboutData.status !== "published") {
       return {
-        title: "About Us | PolitiCore — Political Operations Platform",
-        description: "Learn about PolitiCore, our core capabilities, stakeholder management, field operations, and campaign coordination platform.",
+        title: `About Us | ${BRANDING.shortName} — Political Operations Platform`,
+        description: `Learn about ${BRANDING.shortName}, our core capabilities, stakeholder management, field operations, and campaign coordination platform.`,
       };
     }
 
     return {
-      title: `About Us | PolitiCore`,
-      description: aboutData.about?.slice(0, 160) || "PolitiCore Political Operations & Campaign Platform",
+      title: `About Us | ${BRANDING.shortName}`,
+      description:
+        aboutData.about?.slice(0, 160) ||
+        `${BRANDING.shortName} Political Operations & Campaign Platform`,
     };
   } catch (error) {
     return {
-      title: "About Us | PolitiCore — Political Operations Platform",
-      description: "Learn about PolitiCore, our core capabilities, stakeholder management, field operations, and campaign coordination platform.",
+      title: `About Us | ${BRANDING.shortName} — Political Operations Platform`,
+      description: `Learn about ${BRANDING.shortName}, our core capabilities, stakeholder management, field operations, and campaign coordination platform.`,
     };
   }
 }

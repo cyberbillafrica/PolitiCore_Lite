@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
+import { BRANDING } from "@/config/branding";
 import { Wrench } from "lucide-react";
 
 export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
@@ -57,7 +58,7 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
               </div>
             ) : (
               <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-black flex items-center justify-center text-2xl shadow-lg">
-                PC
+                {BRANDING.monogram}
               </div>
             )}
           </div>
@@ -68,7 +69,7 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
               <Wrench className="h-3.5 w-3.5 animate-pulse" /> Maintenance Mode Active
             </span>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              {settings.brandName || "POLITICORE"}
+              {settings.brandName || BRANDING.brandName}
             </h1>
           </div>
 

@@ -2,6 +2,7 @@
 
 
 import { notify } from "@/lib/notify";
+import { BRANDING } from "@/config/branding";
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -148,7 +149,7 @@ export default function RegisterInecOfficerPage() {
             Register as an INEC Officer
           </h1>
           <p className="mt-2 text-base text-gray-600 max-w-xl mx-auto">
-            PolitiCore registration portal for Electoral & Ad-hoc Field Officers across all organizational Local Government Areas and Districts.
+            {`${BRANDING.shortName} registration portal for Electoral & Ad-hoc Field Officers across all organizational Local Government Areas and Districts.`}
           </p>
         </div>
 

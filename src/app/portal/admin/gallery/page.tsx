@@ -35,7 +35,7 @@ import {
   addGalleryImage,
   removeGalleryImage,
 } from "@/lib/firebase/gallery";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import type { GalleryImage } from "@/types";
 
 export default function AdminGalleryPage() {
@@ -94,7 +94,7 @@ export default function AdminGalleryPage() {
     setUploading(true);
 
     try {
-      const url = await uploadToCloudinary(file, "ifeanyi-2027/gallery");
+      const url = await uploadToCloudinary(file, cloudinaryFolder("gallery"));
 
       setPendingUploadUrl(url);
       setImageTitle("");

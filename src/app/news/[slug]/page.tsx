@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getNewsArticleBySlug } from "@/lib/firebase/firestore";
+import { BRANDING } from "@/config/branding";
 
 interface PageProps {
   params: Promise<{
@@ -20,8 +21,7 @@ interface PageProps {
   }>;
 }
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://politicore.org";
+const SITE_URL = BRANDING.siteUrl;
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -118,7 +118,7 @@ export async function generateMetadata({
       title: article.title,
       description,
       url: articleUrl,
-      siteName: "PolitiCore News",
+      siteName: `${BRANDING.shortName} News`,
       type: "article",
 
       ...(imageUrl && {

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { MapPin, ShieldCheck, Layers, Building2, ExternalLink } from "lucide-react";
 import { StructureMember } from "@/lib/firebase/structure";
 import StructureMemberModal from "./StructureMemberModal";
+import { BRANDING } from "@/config/branding";
 
 interface StructureListProps {
   stateMembers: StructureMember[];
@@ -142,7 +143,7 @@ function MemberCard({
                 {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
               </div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300/60">
-                PolitiCore Secretariat
+                {BRANDING.shortName} Secretariat
               </span>
             </div>
           )}
@@ -204,7 +205,7 @@ function EmptyStateLevel({ levelName }: { levelName: string }) {
         No {levelName} currently published in this category.
       </p>
       <p className="text-xs text-gray-400 mt-1">
-        Coordinators are regularly added by the PolitiCore operations secretariat.
+        Coordinators are regularly added by the {BRANDING.shortName} operations secretariat.
       </p>
     </div>
   );

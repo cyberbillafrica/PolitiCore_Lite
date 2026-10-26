@@ -1,13 +1,20 @@
 /**
- * Cloudinary Upload Utility for Ifeanyi 2027 Campaign Application
+ * Cloudinary Upload Utility
  *
- * Folder structure conventions:
- * - News: "ifeanyi-2027/news"
- * - Gallery: "ifeanyi-2027/gallery"
- * - Candidate: "ifeanyi-2027/candidate"
- * - Campaign Members: "ifeanyi-2027/campaign-members"
- * - Manifestos: "ifeanyi-2027/candidate/manifestos" (inside candidate)
+ * The folder root is per-client and comes from
+ * NEXT_PUBLIC_CLOUDINARY_FOLDER_PREFIX (see src/config/branding.ts).
+ * Always build folders with `cloudinaryFolder("news")` rather than
+ * concatenating strings, so the prefix is applied exactly once.
+ *
+ * Conventions:
+ * - News: cloudinaryFolder("news")
+ * - Gallery: cloudinaryFolder("gallery")
+ * - Candidate: cloudinaryFolder("candidate")
+ * - Campaign Members: cloudinaryFolder("campaign-members")
+ * - Manifestos: cloudinaryFolder("candidate/manifestos")
  */
+
+import { BRANDING } from "@/config/branding";
 if (typeof window !== "undefined") {
   console.log(
     "Cloudinary debug:",
@@ -24,14 +31,28 @@ export const CLOUDINARY_CLOUD_NAME =
 export const CLOUDINARY_UPLOAD_PRESET =
   process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "";
 
-export type CloudinaryFolder =
-  | "ifeanyi-2027/news"
-  | "ifeanyi-2027/gallery"
-  | "ifeanyi-2027/candidate"
-  | "ifeanyi-2027/campaign-members"
-  | "ifeanyi-2027/election-results"
-  | "ifeanyi-2027/pu-reports"
-  | "ifeanyi-2027/incidents";
+/** Folder root, normalised so it never produces `//` in a path. */
+export const CLOUDINARY_FOLDER_PREFIX = BRANDING.cloudinaryFolderPrefix
+  .replace(/^\/+/, "")
+  .replace(/\/+$/, "");
+
+/**
+ * Build a Cloudinary folder for this deployment, e.g.
+ * `cloudinaryFolder("news")` -> `"<prefix>/news"`.
+ *
+ * Widen from the old literal union to `string`: the folder names are
+ * a runtime concern now, and the prefix is validated by
+ * scripts/verify-clone.ts.
+ */
+export type CloudinaryFolder = string;
+
+export function cloudinaryFolder(subfolder: string): string {
+  const clean = subfolder
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+
+  return [CLOUDINARY_FOLDER_PREFIX, clean].filter(Boolean).join("/");
+}
 
 // ─────────────────────────────────────────────
 // IMAGE UPLOAD (existing)
@@ -39,7 +60,7 @@ export type CloudinaryFolder =
 
 export async function uploadToCloudinary(
   file: File,
-  folder: CloudinaryFolder = "ifeanyi-2027/news",
+  folder: CloudinaryFolder = cloudinaryFolder("news"),
 ): Promise<string> {
   const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
   if (!allowedTypes.includes(file.type)) {
@@ -87,11 +108,12 @@ export async function uploadToCloudinary(
 
 /**
  * Upload a PDF file to Cloudinary.
- * Default folder: "ifeanyi-2027/candidate" – you can pass a subfolder like "ifeanyi-2027/candidate/manifestos"
+ * Default folder: cloudinaryFolder("candidate") – pass a subfolder like
+ * cloudinaryFolder("candidate/manifestos") for manifestos.
  */
 export async function uploadPDFToCloudinary(
   file: File,
-  folder: string = "ifeanyi-2027/candidate",
+  folder: string = cloudinaryFolder("candidate"),
 ): Promise<string> {
   // Validate file type
   if (file.type !== "application/pdf") {

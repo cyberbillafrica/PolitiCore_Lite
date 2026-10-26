@@ -6,12 +6,13 @@ import Link from "next/link";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ShareButtons from "@/components/ShareButtons";
+import { BRANDING } from "@/config/branding";
 import StructureList from "@/components/StructureList";
 import { getStructureMembers, StructureMember } from "@/lib/firebase/structure";
 
 export const metadata: Metadata = {
-  title: "Organization Structure | PolitiCore Operations Platform",
-  description: "Explore the organizational structure and officers of PolitiCore across Executive, Regional, Zonal, District, and Local Area levels.",
+  title: `Organization Structure | ${BRANDING.shortName} Operations Platform`,
+  description: `Explore the organizational structure and officers of ${BRANDING.shortName} across Executive, Regional, Zonal, District, and Local Area levels.`,
 };
 
 export default async function OurStructurePage() {
@@ -48,7 +49,7 @@ export default async function OurStructurePage() {
             Our Organizational Structure
           </h1>
           <p className="mt-3 text-lg text-emerald-700 font-medium">
-            PolitiCore Organization Officers
+            {BRANDING.shortName} Organization Officers
           </p>
           <p className="mt-2 max-w-2xl mx-auto text-gray-600">
             Coordinating grassroots mobilization, stakeholder engagement, and campaign intelligence across Executive, Zonal, District, and Local Area levels.

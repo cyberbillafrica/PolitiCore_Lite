@@ -20,6 +20,7 @@ import {
   type EventsSectionConfig,
   type DonationSettings,
 } from "@/lib/firebase/site-settings";
+import { BRANDING } from "@/config/branding";
 import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1094,7 +1095,7 @@ export default function AdminSettingsPage() {
                     </div>
                   ) : (
                     <div className="h-16 w-16 rounded-2xl bg-emerald-700 text-white font-extrabold flex items-center justify-center text-xl shadow-md">
-                      PC
+                      {BRANDING.monogram}
                     </div>
                   )}
 
@@ -1596,7 +1597,7 @@ export default function AdminSettingsPage() {
                       <h4 className="font-extrabold text-sm">Maintenance Page</h4>
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                      Polished, centered card featuring the PolitiCore logo, app name, and a clear &quot;We&apos;ll be back soon&quot; message.
+                      Polished, centered card featuring the {BRANDING.shortName} logo, app name, and a clear &quot;We&apos;ll be back soon&quot; message.
                     </p>
                   </div>
 

@@ -44,6 +44,7 @@ import {
   filterAnnouncementsForProfile,
   subscribeToAnnouncements,
 } from "@/lib/firebase/portal-content";
+import { BRANDING } from "@/config/branding";
 
 import type {
   Announcement,
@@ -377,7 +378,7 @@ export function NotificationBell({ profile }: { profile: UserProfile | null }) {
 
           <div className="border-t border-gray-100 bg-gray-50 p-3 text-center dark:border-gray-800 dark:bg-gray-800/40">
             <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">
-              PolitiCore Central Broadcast System
+              {`${BRANDING.shortName} Central Broadcast System`}
             </span>
           </div>
         </div>
