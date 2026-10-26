@@ -11,6 +11,7 @@
     "bootstrap:verify": "tsx scripts/verify-bootstrap.ts",
     "cleanup:grants": "tsx scripts/cleanup-stale-grants.ts",
     "project:campaign-access": "tsx scripts/project-campaign-access.ts",
+    "backfill:election-upload": "tsx scripts/backfill-election-upload-grants.ts",
     "verify:campaign-access": "tsx scripts/verify-campaign-access.ts",
     "check:campaign-projection": "tsx scripts/check-campaign-projection.ts",
     "diagnose:campaign-read": "tsx scripts/diagnose-campaign-read.ts",

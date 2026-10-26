@@ -41,6 +41,8 @@ import {
   deriveLgaIdFromWard,
   lgasWithinContestScope,
   describeContestScope,
+  pollingUnitDisplayLabel,
+  wardDisplayLabel,
 } from "@/lib/election-scope";
 import { lgaIdForResult } from "@/lib/election-read-scope";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
@@ -1525,10 +1527,14 @@ export default function ElectionDashboard() {
                       <tr key={r.id} className="hover:bg-gray-50/80">
                         <td className="py-3 px-4">
                           <p className="font-semibold text-gray-900">
-                            {r.polling_unit_id}
+                            {pollingUnitDisplayLabel(
+                              lgas,
+                              r.ward_id,
+                              r.polling_unit_id,
+                            )}
                           </p>
                           <p className="text-xs text-gray-500">
-                            Ward: {r.ward_id}
+                            Ward: {wardDisplayLabel(lgas, r.ward_id)}
                           </p>
                         </td>
                         <td className="py-3 px-4">
@@ -1620,8 +1626,13 @@ export default function ElectionDashboard() {
               <div>
                 <h2 className="font-bold text-lg">Form EC8 Result Evidence</h2>
                 <p className="text-xs text-white/80">
-                  PU: {inspectResult.polling_unit_id} · Ward:{" "}
-                  {inspectResult.ward_id}
+                  PU:{" "}
+                  {pollingUnitDisplayLabel(
+                    lgas,
+                    inspectResult.ward_id,
+                    inspectResult.polling_unit_id,
+                  )}{" "}
+                  · Ward: {wardDisplayLabel(lgas, inspectResult.ward_id)}
                 </p>
               </div>
               <button
@@ -1703,7 +1714,12 @@ export default function ElectionDashboard() {
               <div>
                 <h2 className="font-bold text-lg">Correct Election Result</h2>
                 <p className="text-xs text-white/80">
-                  PU: {editingResult.polling_unit_id}
+                  PU:{" "}
+                  {pollingUnitDisplayLabel(
+                    lgas,
+                    editingResult.ward_id,
+                    editingResult.polling_unit_id,
+                  )}
                 </p>
               </div>
               <button
