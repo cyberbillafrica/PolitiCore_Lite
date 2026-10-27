@@ -3,13 +3,23 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Mail, Phone, MapPin, ArrowUpRight, Heart } from "lucide-react";
-import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
+import {
+  getSiteSettings,
+  readCachedSiteSettings,
+  SiteSettings,
+  DEFAULT_SITE_SETTINGS,
+} from "@/lib/firebase/site-settings";
 import { BRANDING } from "@/config/branding";
 
 export default function Footer() {
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
 
   useEffect(() => {
+    // Seed from the cached copy first so contact details and the brand
+    // block are right on the first client render; Firestore overwrites it.
+    const cached = readCachedSiteSettings();
+    if (cached) setSettings(cached);
+
     getSiteSettings().then(setSettings).catch(() => {});
   }, []);
 

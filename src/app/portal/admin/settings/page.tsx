@@ -682,7 +682,7 @@ export default function AdminSettingsPage() {
                       Biography Teaser
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      Body text and portrait fall back to the published biography doc when empty.
+                      Body text always comes from the published biography document (Admin &rarr; Biography). The portrait falls back to it when the field above is empty.
                     </p>
                   </div>
                   <button
@@ -723,18 +723,6 @@ export default function AdminSettingsPage() {
                       className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
-                    Teaser Body (2–3 paragraphs; blank lines separate paragraphs)
-                  </label>
-                  <textarea
-                    rows={5}
-                    value={bioTeaser.body}
-                    onChange={(e) => setBioTeaser({ body: e.target.value })}
-                    className="w-full p-4 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
-                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

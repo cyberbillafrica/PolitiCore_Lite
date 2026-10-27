@@ -9,11 +9,19 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { getBiography } from "@/lib/firebase/biography";
 import ShareButtons from "@/components/ShareButtons";
+import { hasText, isPublished } from "@/lib/public-content";
+
+/*
+ * The biography is edited from the admin portal, so this page must
+ * read Firestore on every request instead of being frozen into static
+ * HTML at build time.
+ */
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const bio = await getBiography();
 
-  if (!bio || bio.status !== "published") {
+  if (!isPublished(bio)) {
     return {
       title: "Biography | Campaign",
       description: "Learn about our candidate and their vision for progress.",
@@ -29,7 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function BiographyPage() {
   const bio = await getBiography();
 
-  if (!bio || bio.status !== "published") {
+  if (!isPublished(bio)) {
     return <BiographyComingSoon />;
   }
 
@@ -42,11 +50,13 @@ export default async function BiographyPage() {
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-12 sm:px-6 lg:px-8">
         {/* ─── HERO ─── */}
         <section className="text-center mb-12">
-          <p className="text-sm font-semibold uppercase tracking-wider text-apc-primary">
-            {title}
-          </p>
+          {hasText(title) && (
+            <p className="text-sm font-semibold uppercase tracking-wider text-apc-primary">
+              {title}
+            </p>
+          )}
           <h1 className="mt-3 text-4xl sm:text-5xl font-bold text-gray-900">
-            {full_name}
+            {hasText(full_name) ? full_name : "Candidate"}
           </h1>
         </section>
 
@@ -74,9 +84,15 @@ export default async function BiographyPage() {
           {/* About */}
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-apc-primary">About</h2>
-            <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {about}
-            </div>
+            {hasText(about) ? (
+              <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                {about}
+              </div>
+            ) : (
+              <p className="text-gray-500 leading-relaxed">
+                The candidate&apos;s biography will be published here soon.
+              </p>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200">

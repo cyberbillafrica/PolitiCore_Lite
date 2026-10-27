@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./config";
 import { BRANDING } from "@/config/branding";
+import { parseCachedSettings } from "@/lib/settings-cache";
 
 /* ============================================================
  * HOMEPAGE SECTION CONFIGURATION
@@ -31,8 +32,12 @@ export interface CampaignCta {
 export interface BiographyTeaserConfig {
   show: boolean;
   heading: string;
-  /** Teaser body (2-3 paragraphs). Empty = falls back to the published biography's `about`. */
-  body: string;
+  /**
+   * The teaser body is ALWAYS the published biography's `about`
+   * (biographies/main) — the single source of truth — with the first
+   * paragraphs shown on the homepage. There is deliberately no separate
+   * teaser body field.
+   */
   /** Portrait image URL. Empty = falls back to the biography document's `image_url`. */
   imageUrl: string;
   buttonLabel: string;
@@ -166,7 +171,6 @@ export interface SiteSettings {
 export const DEFAULT_BIO_TEASER: BiographyTeaserConfig = {
   show: true,
   heading: "The Candidate",
-  body: "",
   imageUrl: "",
   buttonLabel: "Read Full Biography",
   buttonLink: "/biography",
@@ -341,21 +345,40 @@ function withHomepageDefaults(settings: SiteSettings): SiteSettings {
   };
 }
 
-export async function getSiteSettings(): Promise<SiteSettings> {
-  if (typeof window !== "undefined") {
-    try {
-      const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (cached) {
-        return withHomepageDefaults({
-          ...DEFAULT_SITE_SETTINGS,
-          ...JSON.parse(cached),
-        });
-      }
-    } catch {
-      // Ignore local storage parse error
-    }
-  }
+/*
+ * Synchronous read of the last cached settings (browser only).
+ *
+ * Callers seed their state from this before awaiting Firestore so a
+ * returning visitor's saved toggles apply on the first client render
+ * instead of flashing the defaults while the network responds. It is a
+ * seed only: `getSiteSettings()` overwrites it as soon as it resolves.
+ */
+export function readCachedSiteSettings(): SiteSettings | null {
+  if (typeof window === "undefined") return null;
 
+  try {
+    const cached = parseCachedSettings(localStorage.getItem(LOCAL_STORAGE_KEY));
+    if (!cached) return null;
+
+    return withHomepageDefaults({
+      ...DEFAULT_SITE_SETTINGS,
+      ...cached,
+    } as SiteSettings);
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Read the live settings document.
+ *
+ * Firestore is the source of truth: the localStorage copy is written
+ * on every successful read and is ONLY consulted as a fallback when
+ * the read fails or times out (offline, cold network, quota). A saved
+ * toggle therefore reaches returning visitors on their next load
+ * instead of being masked by a stale cached copy.
+ */
+export async function getSiteSettings(): Promise<SiteSettings> {
   try {
     const docRef = doc(db, COLLECTION_NAME, DOC_ID);
     const fetchPromise = getDoc(docRef);
@@ -371,13 +394,35 @@ export async function getSiteSettings(): Promise<SiteSettings> {
         ...DEFAULT_SITE_SETTINGS,
         ...data,
       });
+
       if (typeof window !== "undefined") {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(merged));
+        } catch {
+          // Ignore local storage write errors (private mode, quota)
+        }
       }
+
       return merged;
     }
   } catch (err) {
     console.warn("Firestore fetch error/fallback for site settings:", err);
+  }
+
+  // Firestore was unreachable, timed out, or the document is missing:
+  // fall back to the last successfully cached copy.
+  if (typeof window !== "undefined") {
+    try {
+      const cached = parseCachedSettings(localStorage.getItem(LOCAL_STORAGE_KEY));
+      if (cached) {
+        return withHomepageDefaults({
+          ...DEFAULT_SITE_SETTINGS,
+          ...cached,
+        } as SiteSettings);
+      }
+    } catch {
+      // Ignore local storage read errors
+    }
   }
 
   return DEFAULT_SITE_SETTINGS;

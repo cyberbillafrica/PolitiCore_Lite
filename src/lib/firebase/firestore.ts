@@ -548,6 +548,23 @@ export function generateSlug(title: string): string {
  * Normalizes Firestore news document data into a consistent NewsArticle interface.
  * Handles legacy documents that use `published: boolean`.
  */
+/**
+ * Up to two extra gallery images. Articles written before the field
+ * existed simply have none, so this always returns an array.
+ */
+function normalizeAdditionalImages(
+  images?: (string | null)[] | null,
+): string[] {
+  if (!Array.isArray(images)) return [];
+
+  return images
+    .filter(
+      (image): image is string =>
+        typeof image === "string" && image.trim().length > 0,
+    )
+    .slice(0, 2);
+}
+
 export function normalizeNewsArticle(
   id: string,
   data: Record<string, unknown>,
@@ -562,6 +579,9 @@ export function normalizeNewsArticle(
     excerpt: (data.excerpt as string) || "",
     content: (data.content as string) || "",
     featured_image: (data.featured_image as string) ?? null,
+    additional_images: normalizeAdditionalImages(
+      data.additional_images as (string | null)[] | undefined,
+    ),
     category: (data.category as string) ?? null,
     status,
     published: status === "published",
@@ -673,6 +693,7 @@ export async function createNewsArticle(
     excerpt: articleData.excerpt || "",
     content: articleData.content || "",
     featured_image: articleData.featured_image || null,
+    additional_images: normalizeAdditionalImages(articleData.additional_images),
     category: articleData.category || null,
     status: articleData.status || "draft",
     published: articleData.status === "published",
@@ -708,6 +729,10 @@ export async function updateNewsArticle(
     updateData.content = articleData.content;
   if (articleData.featured_image !== undefined)
     updateData.featured_image = articleData.featured_image;
+  if (articleData.additional_images !== undefined)
+    updateData.additional_images = normalizeAdditionalImages(
+      articleData.additional_images,
+    );
   if (articleData.category !== undefined)
     updateData.category = articleData.category;
   if (articleData.author !== undefined) updateData.author = articleData.author;

@@ -540,12 +540,18 @@ service cloud.firestore {
     }
 
     // ============================================================
-    // LEGACY EVENTS
+    // HOMEPAGE EVENTS (public read when published)
     // ============================================================
 
     match /events/{eventId} {
 
-      allow read: if true;
+      /*
+       * The public homepage lists published, upcoming events. Drafts
+       * stay admin-only, so the read gate mirrors /manifestos.
+       */
+      allow read: if
+        resource.data.status == "published"
+        || isAdmin();
 
       allow create, update, delete: if isAdmin();
     }

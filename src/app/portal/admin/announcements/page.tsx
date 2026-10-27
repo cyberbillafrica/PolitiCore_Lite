@@ -28,17 +28,21 @@ import { useConfirm } from "@/components/ui/confirm";
 
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  getPortalContent,
-  savePortalContent,
+  getAnnouncements,
   addAnnouncement,
   updateAnnouncement,
   deleteAnnouncement,
-  addEvent,
-  updateEvent,
-  deleteEvent,
 } from "@/lib/firebase/portal-content";
-import { nkanuWestElectoralData } from "@/data/electoral";
-import type { Announcement, AnnouncementScope, EventData } from "@/types";
+import {
+  createEvent,
+  deleteEvent,
+  eventDateToInputValue,
+  getAllEvents,
+  updateEvent,
+  type CampaignEventInput,
+} from "@/lib/firebase/events";
+import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
+import type { Announcement, AnnouncementScope, CampaignEvent, LGA } from "@/types";
 
 // ─── DEFAULTS ───
 
@@ -48,13 +52,14 @@ const DEFAULT_ANNOUNCEMENT: Omit<Announcement, "id" | "type" | "created_at" | "u
   scope: "general",
 };
 
-const DEFAULT_EVENT: Omit<EventData, "id" | "type" | "created_at" | "updated_at"> = {
+const DEFAULT_EVENT: CampaignEventInput = {
   title: "",
   description: "",
   date: new Date().toISOString().split("T")[0],
   time: "10:00",
   venue: "",
-  ward: "",
+  lga_id: "",
+  ward_id: "",
   status: "draft",
 };
 
@@ -84,7 +89,9 @@ export default function AdminAnnouncementsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [items, setItems] = useState<(Announcement | EventData)[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [events, setEvents] = useState<CampaignEvent[]>([]);
+  const [lgas, setLgas] = useState<LGA[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("announcements");
@@ -95,7 +102,7 @@ export default function AdminAnnouncementsPage() {
   const confirmDialog = useConfirm();
   const [formType, setFormType] = useState<"announcement" | "event">("announcement");
   const [announcementForm, setAnnouncementForm] = useState(DEFAULT_ANNOUNCEMENT);
-  const [eventForm, setEventForm] = useState(DEFAULT_EVENT);
+  const [eventForm, setEventForm] = useState<CampaignEventInput>(DEFAULT_EVENT);
 
   // ─── AUTH GUARD ───
 
@@ -112,8 +119,13 @@ export default function AdminAnnouncementsPage() {
     try {
       setLoading(true);
 
-      const data = await getPortalContent();
-      setItems(data);
+      const [announcementData, eventData] = await Promise.all([
+        getAnnouncements(),
+        getAllEvents(),
+      ]);
+
+      setAnnouncements(announcementData);
+      setEvents(eventData);
     } catch (err) {
       console.error("Failed to load content:", err);
       notify.error("Unable to load content. Please refresh and try again.");
@@ -128,10 +140,20 @@ export default function AdminAnnouncementsPage() {
     }
   }, [authLoading, profile, loadContent]);
 
-  // ─── FILTERS ───
+  /*
+   * Statewide electoral data for the event venue selector. Prefers the
+   * seeded `electoral_data/enugu-state` document (all 17 LGAs) and falls
+   * back to the bundled dataset — never a single-LGA list.
+   */
+  useEffect(() => {
+    if (authLoading || profile?.access_role !== "admin") return;
 
-  const announcements = items.filter((item): item is Announcement => item.type === "announcement");
-  const events = items.filter((item): item is EventData => item.type === "event");
+    getAllEnuguLGAs()
+      .then(setLgas)
+      .catch((err) => {
+        console.error("Failed to load the statewide LGA list:", err);
+      });
+  }, [authLoading, profile]);
 
   // ─── FORM HANDLERS ───
 
@@ -153,15 +175,16 @@ export default function AdminAnnouncementsPage() {
     setEditingId(item.id);
   };
 
-  const startEditEvent = (item: EventData) => {
+  const startEditEvent = (item: CampaignEvent) => {
     setFormType("event");
     setEventForm({
       title: item.title,
       description: item.description || "",
-      date: item.date,
-      time: item.time,
-      venue: item.venue,
-      ward: item.ward,
+      date: eventDateToInputValue(item.date),
+      time: item.time || "10:00",
+      venue: item.venue || "",
+      lga_id: item.lga_id || "",
+      ward_id: item.ward_id || "",
       status: item.status,
     });
     setIsEditing(true);
@@ -208,11 +231,19 @@ export default function AdminAnnouncementsPage() {
       notify.error("Event title is required.");
       return;
     }
+    if (!eventForm.date) {
+      notify.error("Event date is required.");
+      return;
+    }
     if (!eventForm.venue.trim()) {
       notify.error("Venue is required.");
       return;
     }
-    if (!eventForm.ward) {
+    if (!eventForm.lga_id) {
+      notify.error("LGA is required.");
+      return;
+    }
+    if (!eventForm.ward_id) {
       notify.error("Ward is required.");
       return;
     }
@@ -224,7 +255,7 @@ export default function AdminAnnouncementsPage() {
         await updateEvent(editingId, eventForm);
         notify.success("Event updated successfully!");
       } else {
-        await addEvent(eventForm);
+        await createEvent(eventForm, profile?.id);
         notify.success("Event added successfully!");
       }
       resetForms();
@@ -245,11 +276,10 @@ export default function AdminAnnouncementsPage() {
     });
     if (!confirmed) return;
     try {
-      // Check if it's an announcement or event
-      const item = items.find((i) => i.id === id);
-      if (!item) return;
+      // Announcements live in portal_content; events in their own collection.
+      const isAnnouncement = announcements.some((item) => item.id === id);
 
-      if (item.type === "announcement") {
+      if (isAnnouncement) {
         await deleteAnnouncement(id);
       } else {
         await deleteEvent(id);
@@ -277,10 +307,8 @@ export default function AdminAnnouncementsPage() {
     return null;
   }
 
-  const wardOptions = nkanuWestElectoralData.map((ward) => ({
-    value: ward.id,
-    label: `${ward.code} — ${ward.name}`,
-  }));
+  const selectedLga = lgas.find((lga) => lga.id === eventForm.lga_id);
+  const wardOptions = selectedLga?.wards ?? [];
 
   const showAnnouncementForm = isEditing && formType === "announcement";
   const showEventForm = isEditing && formType === "event";
@@ -473,23 +501,54 @@ export default function AdminAnnouncementsPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ward *
-              </label>
-              <select
-                value={eventForm.ward}
-                onChange={(e) => setEventForm({ ...eventForm, ward: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                required
-              >
-                <option value="">Select ward</option>
-                {wardOptions.map((ward) => (
-                  <option key={ward.value} value={ward.value}>
-                    {ward.label}
+            {/* Statewide location: every LGA in the state, then its wards. */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  LGA *
+                </label>
+                <select
+                  value={eventForm.lga_id}
+                  onChange={(e) =>
+                    setEventForm({
+                      ...eventForm,
+                      lga_id: e.target.value,
+                      ward_id: "",
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                >
+                  <option value="">Select LGA</option>
+                  {lgas.map((lga) => (
+                    <option key={lga.id} value={lga.id}>
+                      {lga.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ward *
+                </label>
+                <select
+                  value={eventForm.ward_id}
+                  onChange={(e) => setEventForm({ ...eventForm, ward_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  disabled={!eventForm.lga_id}
+                  required
+                >
+                  <option value="">
+                    {eventForm.lga_id ? "Select ward" : "Select an LGA first"}
                   </option>
-                ))}
-              </select>
+                  {wardOptions.map((ward) => (
+                    <option key={ward.id} value={ward.id}>
+                      {ward.code} — {ward.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
@@ -655,8 +714,16 @@ export default function AdminAnnouncementsPage() {
   );
 }
 
-function formatDate(dateStr: string) {
-  const date = new Date(dateStr);
+function formatDate(rawDate: unknown) {
+  if (!rawDate) return "Date TBD";
+
+  const date =
+    typeof rawDate === "object" && rawDate !== null && "seconds" in rawDate
+      ? new Date((rawDate as { seconds: number }).seconds * 1000)
+      : new Date(String(rawDate));
+
+  if (Number.isNaN(date.getTime())) return "Date TBD";
+
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",

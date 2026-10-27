@@ -24,16 +24,23 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
 import { getPublishedNews } from "@/lib/firebase/firestore";
-import { getPublishedEvents } from "@/lib/firebase/portal-content";
+import { getPublishedUpcomingEvents } from "@/lib/firebase/events";
 import { getBiography } from "@/lib/firebase/biography";
 import { getManifesto } from "@/lib/firebase/manifesto";
 import {
   getSiteSettings,
+  readCachedSiteSettings,
   SiteSettings,
   DEFAULT_SITE_SETTINGS,
+  DEFAULT_EVENTS_SECTION,
 } from "@/lib/firebase/site-settings";
+import {
+  hasText,
+  previewParagraphs,
+  sectionVisible,
+} from "@/lib/public-content";
 
-import type { NewsArticle, EventData } from "@/types";
+import type { NewsArticle, CampaignEvent } from "@/types";
 
 /* ============================================================
  * Homepage composition is FIXED and settings-driven:
@@ -49,9 +56,10 @@ import type { NewsArticle, EventData } from "@/types";
 
 export default function HomePage() {
   const [latestNews, setLatestNews] = useState<NewsArticle[]>([]);
-  const [events, setEvents] = useState<EventData[]>([]);
+  const [events, setEvents] = useState<CampaignEvent[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [bio, setBio] = useState<{
     about: string;
     fullName: string;
@@ -68,13 +76,25 @@ export default function HomePage() {
       try {
         setNewsLoading(true);
 
+        /*
+         * Seed from the last cached copy first: a returning visitor's
+         * saved toggles apply on this commit instead of flashing the
+         * defaults, and the Firestore read below overwrites the seed as
+         * soon as it resolves.
+         */
+        const cached = readCachedSiteSettings();
+        if (cached) setSettings(cached);
+        setSettingsReady(true);
+
         const siteData = await getSiteSettings();
         setSettings(siteData);
 
         const newsData = await getPublishedNews(
           Math.max(1, siteData.newsSection?.count ?? 3),
         );
-        const eventsData = await getPublishedEvents();
+        const eventsData = await getPublishedUpcomingEvents(
+          Math.max(1, siteData.eventsSection?.count ?? 3),
+        );
 
         setLatestNews(newsData);
         setEvents(eventsData);
@@ -129,14 +149,6 @@ export default function HomePage() {
     });
   }
 
-  function splitParagraphs(text: string): string[] {
-    if (!text) return [];
-    return text
-      .split(/\n\s*\n|\n/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-  }
-
   async function copyCta(url?: string) {
     if (url) {
       try {
@@ -156,8 +168,14 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 max-w-full overflow-x-hidden text-gray-900 dark:text-gray-100 transition-colors duration-200">
       <Header />
 
+      {/* Placeholder for the single render between hydration and the
+          cached-settings seed. Without it the server HTML would paint the
+          default toggles before a returning visitor's saved settings
+          apply. */}
+      {!settingsReady && <HomeSectionsSkeleton />}
+
       {/* ═════════════ SECTION 1 — HERO (toggle: heroShow) ═════════════ */}
-      {settings.heroShow !== false && (
+      {settingsReady && settings.heroShow !== false && (
         <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full">
           <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
@@ -268,6 +286,8 @@ export default function HomePage() {
 
       {/* ═════════════ SECTION 2 — CTAs (Volunteer / Donate / Contact / Share) ═════════════ */}
       {(() => {
+        if (!settingsReady) return null;
+
         const donationEnabled = settings.donation?.donateEnabled ?? false;
         const ctas = (settings.campaignCtas ?? []).filter(
           (cta) =>
@@ -346,7 +366,7 @@ export default function HomePage() {
       })()}
 
       {/* ═════════════ SECTION 3 — BIOGRAPHY TEASER ═════════════ */}
-      {settings.bioTeaser?.show !== false && (
+      {settingsReady && sectionVisible(settings.bioTeaser) && (
         <section className="bg-gray-50 dark:bg-gray-950 py-16">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-12 max-w-3xl">
@@ -393,9 +413,10 @@ export default function HomePage() {
               {/* Teaser body */}
               <div className="md:col-span-8">
                 {(() => {
-                  const body =
-                    settings.bioTeaser?.body || bio?.about || "";
-                  const paragraphs = splitParagraphs(body).slice(0, 3);
+                  // The teaser body is always the published biography's
+                  // `about` (biographies/main) — one source of truth.
+                  const body = bio?.about || "";
+                  const paragraphs = previewParagraphs(body);
 
                   if (paragraphs.length === 0) {
                     return (
@@ -436,7 +457,7 @@ export default function HomePage() {
       )}
 
       {/* ═════════════ SECTION 4 — MANIFESTO TEASER ═════════════ */}
-      {settings.manifestoTeaser?.show !== false && (
+      {settingsReady && sectionVisible(settings.manifestoTeaser) && (
         <section className="bg-gradient-to-br from-emerald-950 to-green-950 py-16 text-white max-w-full">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10">
@@ -453,7 +474,7 @@ export default function HomePage() {
                 settings.manifestoTeaser?.body ||
                 manifestoInfo?.introduction ||
                 "";
-              const paragraphs = splitParagraphs(body).slice(0, 3);
+              const paragraphs = previewParagraphs(body);
 
               if (paragraphs.length === 0) {
                 return (
@@ -492,7 +513,7 @@ export default function HomePage() {
       )}
 
       {/* ═════════════ SECTION 5 — NEWS (existing; count + heading configurable) ═════════════ */}
-      {settings.newsSection?.show !== false && (
+      {settingsReady && sectionVisible(settings.newsSection) && (
         <section className="bg-gray-50 dark:bg-gray-950 py-16">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-12 flex items-center justify-between">
@@ -567,15 +588,12 @@ export default function HomePage() {
 
       {/* ═════════════ SECTION 6 — EVENTS (upcoming; heading/count configurable) ═════════════ */}
       {(() => {
-        const eventsCfg = settings.eventsSection;
-        if (!eventsCfg || eventsCfg.show === false) return null;
+        if (!settingsReady) return null;
 
-        const now = Date.now();
-        const upcoming = events
-          .filter((e) => new Date(e.date).getTime() >= now - 24 * 60 * 60 * 1000)
-          .slice(0, Math.max(1, eventsCfg.count ?? 3));
+        const eventsCfg = settings.eventsSection ?? DEFAULT_EVENTS_SECTION;
+        if (!sectionVisible(eventsCfg)) return null;
 
-        if (upcoming.length === 0) return null; // hidden, no empty placeholder
+        if (events.length === 0) return null; // hidden, no empty placeholder
 
         return (
           <section className="bg-white dark:bg-gray-900 py-16">
@@ -587,7 +605,7 @@ export default function HomePage() {
               </div>
 
               <div className="grid gap-6 md:grid-cols-3">
-                {upcoming.map((event) => (
+                {events.map((event) => (
                   <div
                     key={event.id}
                     className="flex flex-col rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 p-6 shadow-sm hover:shadow-md transition-shadow"
@@ -608,10 +626,10 @@ export default function HomePage() {
                       </p>
                     )}
 
-                    {(event.venue || event.ward) && (
+                    {hasText(event.venue) && (
                       <div className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
                         <MapPin className="h-4 w-4 text-emerald-700" />
-                        {[event.venue, event.ward].filter(Boolean).join(" · ")}
+                        {event.venue}
                       </div>
                     )}
                   </div>
@@ -707,6 +725,40 @@ export default function HomePage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/*
+ * Neutral placeholder while the settings seed resolves (one commit on
+ * hydration). It mirrors the hero + CTA + teaser heights so the content
+ * swap does not shift the page.
+ */
+function HomeSectionsSkeleton() {
+  return (
+    <div aria-hidden="true" className="animate-pulse">
+      <div className="h-72 bg-gray-200 dark:bg-gray-900 sm:h-96" />
+
+      <div className="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap justify-center gap-4">
+          <div className="h-14 w-56 rounded-xl bg-gray-200 dark:bg-gray-800" />
+          <div className="h-14 w-40 rounded-xl bg-gray-200 dark:bg-gray-800" />
+          <div className="h-14 w-40 rounded-xl bg-gray-200 dark:bg-gray-800" />
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
+        <div className="h-8 w-64 rounded bg-gray-200 dark:bg-gray-800" />
+        <div className="mt-8 grid gap-10 md:grid-cols-12">
+          <div className="h-80 rounded-3xl bg-gray-200 dark:bg-gray-800 md:col-span-4" />
+          <div className="space-y-3 md:col-span-8">
+            <div className="h-4 w-full rounded bg-gray-200 dark:bg-gray-800" />
+            <div className="h-4 w-11/12 rounded bg-gray-200 dark:bg-gray-800" />
+            <div className="h-4 w-10/12 rounded bg-gray-200 dark:bg-gray-800" />
+            <div className="h-4 w-9/12 rounded bg-gray-200 dark:bg-gray-800" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

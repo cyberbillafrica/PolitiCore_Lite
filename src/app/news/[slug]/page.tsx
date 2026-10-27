@@ -160,6 +160,7 @@ export default async function NewsArticleDetailPage({ params }: PageProps) {
 
   const articleUrl = getArticleUrl(article.slug);
   const shareText = `${article.title}\n\nRead the full article:`;
+  const additionalImages = article.additional_images ?? [];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -232,6 +233,33 @@ export default async function NewsArticleDetailPage({ params }: PageProps) {
           <div className="prose prose-lg max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap">
             {article.content}
           </div>
+
+          {/* Additional Images Gallery (only when the article has any) */}
+          {additionalImages.length > 0 && (
+            <section className="mt-12 border-t border-gray-200 pt-8">
+              <h2 className="text-xl font-bold text-gray-900">
+                More from this story
+              </h2>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {additionalImages.map((image, index) => (
+                  <div
+                    key={index}
+                    className="relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-gray-100"
+                  >
+                    <Image
+                      src={image}
+                      alt={`${article.title} — additional image ${index + 1}`}
+                      fill
+                      unoptimized
+                      className="object-cover"
+                      sizes="(max-width: 1024px) 100vw, 400px"
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Share Section */}
           <div className="mt-12 border-t border-gray-200 pt-8">

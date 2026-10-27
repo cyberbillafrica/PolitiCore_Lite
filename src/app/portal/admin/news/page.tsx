@@ -77,6 +77,10 @@ export default function AdminNewsCMSPage() {
   const [formStatus, setFormStatus] = useState<NewsStatus>("draft");
   const [formScheduledAt, setFormScheduledAt] = useState("");
   const [formFeaturedImage, setFormFeaturedImage] = useState("");
+  const [formAdditionalImages, setFormAdditionalImages] = useState<string[]>([
+    "",
+    "",
+  ]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -110,6 +114,7 @@ export default function AdminNewsCMSPage() {
     setFormStatus("draft");
     setFormScheduledAt("");
     setFormFeaturedImage("");
+    setFormAdditionalImages(["", ""]);
     setIsEditorOpen(true);
   }
 
@@ -127,6 +132,13 @@ export default function AdminNewsCMSPage() {
       article.scheduled_at ? String(article.scheduled_at) : "",
     );
     setFormFeaturedImage(article.featured_image || "");
+
+    const existingAdditional = article.additional_images ?? [];
+    setFormAdditionalImages([
+      existingAdditional[0] ?? "",
+      existingAdditional[1] ?? "",
+    ]);
+
     setIsEditorOpen(true);
   }
 
@@ -156,6 +168,38 @@ export default function AdminNewsCMSPage() {
     } finally {
       setUploadingImage(false);
     }
+  }
+
+  async function handleAdditionalImageUpload(
+    e: React.ChangeEvent<HTMLInputElement>,
+    index: number,
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingImage(true);
+
+      const downloadUrl = await uploadToCloudinary(file, cloudinaryFolder("news"));
+      setAdditionalImage(index, downloadUrl);
+      notify.success("Additional image uploaded successfully to Cloudinary.");
+    } catch (err: any) {
+      console.error("Failed to upload image to Cloudinary:", err);
+      notify.error(
+        err.message ||
+          "Image upload failed. You can also paste an external image URL directly.",
+      );
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  function setAdditionalImage(index: number, value: string) {
+    setFormAdditionalImages((prev) => {
+      const next = [prev[0] ?? "", prev[1] ?? ""];
+      next[index] = value;
+      return next;
+    });
   }
 
   async function handleSaveArticle(e: React.FormEvent) {
@@ -196,6 +240,9 @@ export default function AdminNewsCMSPage() {
           status: formStatus,
           scheduled_at: formScheduledAt.trim() || null,
           featured_image: formFeaturedImage.trim() || null,
+          additional_images: formAdditionalImages
+            .map((image) => image.trim())
+            .filter(Boolean),
           updated_by: profile?.id || "admin",
         });
         notify.success(`Article "${formTitle}" updated successfully.`);
@@ -210,6 +257,9 @@ export default function AdminNewsCMSPage() {
           status: formStatus,
           scheduled_at: formScheduledAt.trim() || null,
           featured_image: formFeaturedImage.trim() || null,
+          additional_images: formAdditionalImages
+            .map((image) => image.trim())
+            .filter(Boolean),
           created_by: profile?.id || "admin",
         });
         notify.success(`Article "${formTitle}" created successfully.`);
@@ -771,6 +821,75 @@ export default function AdminNewsCMSPage() {
                       </button>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Additional Images (optional gallery, max 2) */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+                  Additional Images (optional)
+                </label>
+                <p className="text-xs text-gray-500 mb-3">
+                  The featured image stays the card image and the top image on
+                  the article page. These appear as a gallery below the article
+                  body.
+                </p>
+
+                <div className="space-y-4">
+                  {[0, 1].map((index) => (
+                    <div key={index} className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Additional Image {index + 1} (optional)
+                      </label>
+
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={formAdditionalImages[index] ?? ""}
+                          onChange={(e) =>
+                            setAdditionalImage(index, e.target.value)
+                          }
+                          placeholder="https://example.com/image.jpg"
+                          className="w-full rounded-lg border border-gray-300 px-3.5 py-2 text-sm focus:border-apc-primary focus:outline-none focus:ring-1 focus:ring-apc-primary"
+                        />
+                        <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors shrink-0">
+                          <Upload className="h-4 w-4" />
+                          <span>Upload</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(e) =>
+                              handleAdditionalImageUpload(e, index)
+                            }
+                            disabled={uploadingImage}
+                            className="hidden"
+                          />
+                        </label>
+                        {(formAdditionalImages[index] ?? "") !== "" && (
+                          <button
+                            type="button"
+                            onClick={() => setAdditionalImage(index, "")}
+                            title="Remove image"
+                            className="shrink-0 rounded-lg border border-gray-300 px-2.5 text-gray-500 hover:bg-gray-50"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {formAdditionalImages[index] ? (
+                        <div className="relative aspect-[16/9] w-40 overflow-hidden rounded-lg border bg-gray-100">
+                          <Image
+                            src={formAdditionalImages[index]}
+                            alt={`Additional image ${index + 1} preview`}
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </div>
 

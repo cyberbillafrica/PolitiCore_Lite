@@ -6,7 +6,12 @@ import { Menu, X, User, Bell, LogOut, ArrowUpRight, Sun, Moon } from "lucide-rea
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { logOut } from "@/lib/firebase/auth";
-import { getSiteSettings, SiteSettings, DEFAULT_SITE_SETTINGS } from "@/lib/firebase/site-settings";
+import {
+  getSiteSettings,
+  readCachedSiteSettings,
+  SiteSettings,
+  DEFAULT_SITE_SETTINGS,
+} from "@/lib/firebase/site-settings";
 import { BRANDING } from "@/config/branding";
 
 export default function Header() {
@@ -16,6 +21,11 @@ export default function Header() {
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
+    // Seed from the cached copy first so branding and module links are
+    // right on the first client render; Firestore overwrites it.
+    const cached = readCachedSiteSettings();
+    if (cached) setSettings(cached);
+
     getSiteSettings().then(setSettings).catch(() => {});
   }, []);
 

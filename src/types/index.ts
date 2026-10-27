@@ -113,6 +113,9 @@ export interface NewsArticle {
 
   featured_image?: string | null;
 
+  /** Up to two extra images, rendered as a gallery on the article page. */
+  additional_images?: string[];
+
   category?: string | null;
 
   status: NewsStatus;
@@ -554,6 +557,36 @@ export interface EventData {
   type: "event"; // Discriminator
   status: "draft" | "published";
   created_at?: string;
+  updated_at?: unknown;
+}
+
+// ============================================================
+// HOMEPAGE EVENTS
+// ============================================================
+//
+// Homepage events live in their own collection (`events/{eventId}`),
+// separate from the portal_content announcements document they used
+// to share.
+
+export interface CampaignEvent {
+  id: string;
+
+  title: string;
+  description: string;
+
+  /** Firestore Timestamp for the event day (local noon). */
+  date?: unknown;
+  time: string;
+
+  venue: string;
+
+  lga_id: string;
+  ward_id: string;
+
+  status: "draft" | "published";
+
+  created_by?: string | null;
+  created_at?: unknown;
   updated_at?: unknown;
 }
 
