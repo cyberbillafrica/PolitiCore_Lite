@@ -47,6 +47,70 @@ export interface HelpCategory {
   description: string;
 }
 
+/* --------------------------------------------------------------
+ * ROLE VISIBILITY
+ *
+ * `roles` on an article describes who the article is FOR. The two
+ * functions below turn that metadata into an actual gate: the
+ * panel and the guide must never show an article to someone whose
+ * role is not listed on it.
+ *
+ * The viewer is the signed-in profile (or null when nobody is
+ * signed in). Admin sees everything; an election officer sees the
+ * officer library plus their own memberships; a member sees the
+ * library for their memberships; anonymous visitors only see
+ * articles marked "all".
+ * -------------------------------------------------------------- */
+
+export interface HelpViewer {
+  access_role?: string | null;
+  membership_types?: string[] | null;
+}
+
+/** Every help role the viewer is entitled to see, always including "all". */
+export function helpRolesFor(
+  viewer: HelpViewer | null | undefined,
+): Set<HelpRole> {
+  const roles = new Set<HelpRole>(["all"]);
+  if (!viewer) return roles;
+
+  if (viewer.access_role === "admin") {
+    roles.add("admin");
+    roles.add("election_officer");
+    roles.add("campaign_member");
+    roles.add("social_member");
+    return roles;
+  }
+
+  if (viewer.access_role === "election_officer") {
+    roles.add("election_officer");
+  }
+
+  for (const membership of viewer.membership_types ?? []) {
+    if (membership === "campaign_member") roles.add("campaign_member");
+    if (membership === "social_member") roles.add("social_member");
+  }
+
+  return roles;
+}
+
+/** Whether this viewer may read this article. */
+export function helpVisibleTo(
+  article: HelpArticle,
+  viewer: HelpViewer | null | undefined,
+): boolean {
+  const roles = helpRolesFor(viewer);
+  return article.roles.some((role) => roles.has(role));
+}
+
+/** The subset of `articles` this viewer may read, order preserved. */
+export function filterHelpArticles(
+  articles: readonly HelpArticle[],
+  viewer: HelpViewer | null | undefined,
+): HelpArticle[] {
+  return articles.filter((article) => helpVisibleTo(article, viewer));
+}
+
 export const HELP_CATEGORIES: HelpCategory[] = [
   {
     id: "getting-started",
@@ -101,7 +165,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["all"],
     keywords: ["introduction", "start", "about"],
     body: [
-      `The ${BRANDING.shortName} Portal is the campaign headquarters app for the ${BRANDING.appName} campaign. It brings the campaign's day-to-day work into one place: connecting with supporters, running social media tasks, organising activities on the ground, reporting from polling units, and managing election results.`,
+      `The ${BRANDING.shortName} Portal is the campaign headquarters app for this campaign. It brings the campaign's day-to-day work into one place: connecting with supporters, running social media tasks, organising activities on the ground, reporting from polling units, and managing election results.`,
       "What you can do inside the portal depends on your membership and role. Some people use it mainly for social engagement, others coordinate campaign work across the State, Zone, LGA, Ward and Polling Unit levels, and a small group administers the whole system.",
       "Use the menu on the left to move around. If a menu item isn't shown for you, it usually means it belongs to a part of the campaign you don't work in.",
     ],
@@ -351,7 +415,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["campaign_member", "election_officer", "admin"],
     keywords: ["cycle", "contest", "presidential", "governorship", "senatorial"],
     body: [
-      `An election in ${BRANDING.shortName} is not one single event — it's a set of contests that happen together. An Election Cycle is the overall period (for example, the ${BRANDING.electionYear} general elections) and holds the individual contests inside it.`,
+      `An election in ${BRANDING.shortName} is not one single event — it's a set of contests that happen together. An Election Cycle is the overall period (for example, the upcoming general elections) and holds the individual contests inside it.`,
       "Each contest is a specific race: Presidential, Governorship, Senatorial, House of Representatives, or State House of Assembly. A contest also has a geographic scope — national, state, senatorial zone, federal constituency or state constituency — which decides which polling units it covers.",
       "Cycles and contests are prepared in advance by administrators and move through statuses: a cycle can be draft, scheduled, active, paused, closed or archived; a contest can be draft, open, paused or closed. You submit and read results for contests that are open within the active cycle.",
       "Election settings control how collation behaves during the period. Members don't configure anything here — this page just helps you understand what you're looking at.",
@@ -704,6 +768,83 @@ export const HELP_ARTICLES: HelpArticle[] = [
     related: [{ label: "Go to the sign-in page", href: "/login" }],
   },
   {
+    id: "about-the-public-site",
+    title: "What the public site shows",
+    category: "getting-started",
+    roles: ["all"],
+    keywords: [
+      "public",
+      "website",
+      "homepage",
+      "news",
+      "biography",
+      "manifesto",
+      "gallery",
+      "contact",
+    ],
+    body: [
+      "The public part of the site is what anyone can read before signing in. It introduces the campaign: the homepage, the candidate's biography and manifesto, campaign news, the photo gallery, the organisational structure, and the volunteer, INEC officer and contact forms.",
+      "Each homepage section is switched on or off by an administrator in Admin → Settings. A section that is missing from the homepage — news, upcoming events, the biography teaser, the manifesto teaser, or a call-to-action button — is a publishing choice, not a fault. The full biography and manifesto pages show the complete published document even when the homepage teaser is switched off.",
+      "The Volunteer page is how supporters register to take part. An administrator reviews each registration, and the supporter can sign in once it is approved. The Contact page is a message form: messages arrive in Admin → Contact Messages and are answered outside the portal.",
+      "Nothing on the public site exposes internal campaign data. Member lists, field reports, assignments and election records stay inside the portal and are visible only to the people whose role covers them.",
+    ],
+    related: [
+      { label: "Open the Volunteer registration form", href: "/volunteer" },
+      { label: "Open the Contact page", href: "/contact" },
+    ],
+  },
+  {
+    id: "duplicate-result-submission",
+    title: "Duplicate result submissions",
+    category: "election",
+    roles: ["campaign_member", "election_officer"],
+    keywords: [
+      "duplicate",
+      "already submitted",
+      "second submission",
+      "existing result",
+      "correction",
+    ],
+    body: [
+      "Only one result can exist for a polling unit in a contest. Before the upload form opens, the portal checks whether a result has already been submitted for your unit in the active contest. When one exists, the form is replaced by a card showing who submitted it and when.",
+      "This is a deliberate lock, not a fault. A second submission would double-count the unit, and the rules refuse the duplicate as well, so retrying the form will not get past the check.",
+      "If the existing result is wrong, it has to be corrected rather than replaced. Report it to an Election Officer, who can reject or reopen the result so a corrected submission can be made, or to an administrator, who can correct an approved result from the election administration page.",
+      "The check is per contest. If the unit looks locked but you are working on a different race, confirm that you selected the right contest before assuming the result is blocked for every contest.",
+    ],
+  },
+  {
+    id: "events-admin",
+    title: "Events: publishing upcoming events",
+    category: "administration",
+    roles: ["admin"],
+    keywords: ["events", "upcoming", "venue", "lga", "ward", "homepage"],
+    body: [
+      "Events live in their own collection, separate from announcements. Administrators create and edit them under Admin → Announcements & Events, in the Events tab.",
+      "Each event records a title, description, date, start time, venue, the LGA and ward where it happens, and a status. Choose the LGA first: the ward list then narrows to the wards inside that LGA, using the same statewide location data as the volunteer form.",
+      "Status decides visibility. A published event appears in the homepage “Upcoming Events” section while its date is today or later; a draft event never appears publicly. The homepage shows the next three published events in date order, so later events wait their turn.",
+      "Events are independent of announcements. Announcements still deliver messages to chosen audiences through the Notification Center; editing one does not affect the other.",
+    ],
+  },
+  {
+    id: "news-images",
+    title: "News images: feature image and gallery",
+    category: "administration",
+    roles: ["admin"],
+    keywords: [
+      "news",
+      "image",
+      "gallery",
+      "additional images",
+      "cloudinary",
+    ],
+    body: [
+      "A news article carries one feature image plus up to two optional additional images. All three upload to the same Cloudinary news folder and are stored as URLs on the article.",
+      "The feature image is the one used wherever the article is summarised: the homepage news cards and the news list. Additional images never appear on those cards.",
+      "On the article page the feature image sits at the top as before, and any additional images appear below the body in a gallery titled “More from this story”. If neither optional upload is used, the gallery is simply absent, and articles written before this feature continue to render exactly as they did.",
+      "Adding images later does not change an article's slug, status or publish date, so shared links keep working.",
+    ],
+  },
+  {
     id: "inec-officer-registration",
     title: "INEC officer registration & roster",
     category: "administration",
@@ -726,6 +867,157 @@ export const HELP_ARTICLES: HelpArticle[] = [
 /* --------------------------------------------------------------
  * Role-aware "start here" picks, shown at the top of the guide.
  * -------------------------------------------------------------- */
+/* --------------------------------------------------------------
+ * THE WRITTEN MANUAL (guide page sections)
+ *
+ * The guide groups articles into six sections and shows a section
+ * only when the reader can see at least one of its articles, so a
+ * member never sees an empty (or admin-only) chapter in the table
+ * of contents.
+ * -------------------------------------------------------------- */
+
+export type GuideSectionId =
+  | "getting-started"
+  | "campaign"
+  | "coordinator"
+  | "election"
+  | "administration"
+  | "help";
+
+export interface GuideSection {
+  id: GuideSectionId;
+  title: string;
+  blurb: string;
+  /** Optional line shown above the articles, explaining who they apply to. */
+  note?: string;
+}
+
+export interface VisibleGuideSection extends GuideSection {
+  articles: HelpArticle[];
+}
+
+export const GUIDE_TITLE = `${BRANDING.shortName} — Campaign Operations Guide`;
+
+/** Small print at the foot of the guide. */
+export const GUIDE_ATTRIBUTION = `${BRANDING.shortName} — a product of ${BRANDING.developerName}`;
+
+/** One-line credit at the foot of the floating help panel. */
+export const HELP_ATTRIBUTION = `${BRANDING.shortName} by ${BRANDING.developerName}`;
+
+export const GUIDE_SECTIONS: GuideSection[] = [
+  {
+    id: "getting-started",
+    title: "Getting Started",
+    blurb: "What the portal is, how to join, your account, and how to move around.",
+  },
+  {
+    id: "campaign",
+    title: "Campaign Operations",
+    blurb: "Ground work: activities, field reports and issues in your area.",
+  },
+  {
+    id: "coordinator",
+    title: "Coordinator Operations",
+    blurb: "Your area, the member directory, and the assignments you manage.",
+    note: "If you hold a coordinator position (ward, LGA, or above), the following operations apply to you.",
+  },
+  {
+    id: "election",
+    title: "Election Operations",
+    blurb: "Cycles, contests, results, review, polling-unit reports and incidents.",
+  },
+  {
+    id: "administration",
+    title: "Administration",
+    blurb: "Managing members, content, events, settings and the election engine.",
+  },
+  {
+    id: "help",
+    title: "Help & Troubleshooting",
+    blurb: "How to get help, and answers to the most common problems.",
+  },
+];
+
+export const GUIDE_SECTION_ARTICLES: Record<GuideSectionId, string[]> = {
+  "getting-started": [
+    "what-is-the-portal",
+    "about-the-public-site",
+    "registering-as-a-volunteer",
+    "inec-officer-registration",
+    "signing-in-and-out",
+    "resetting-your-password",
+    "understanding-the-dashboard",
+    "navigation-and-menus",
+    "membership-types",
+    "your-profile",
+    "roles-explained",
+    "organizational-scope",
+    "notification-center-vs-popups",
+    "social-tasks",
+    "leaderboard",
+  ],
+  campaign: [
+    "campaign-council-overview",
+    "activities",
+    "field-reports",
+    "issues",
+  ],
+  coordinator: ["my-area", "member-directory", "assignments"],
+  election: [
+    "election-concepts",
+    "election-dashboard",
+    "result-upload",
+    "duplicate-result-submission",
+    "result-statuses",
+    "officer-review",
+    "result-corrections",
+    "pu-reports",
+    "election-incidents",
+    "election-administration",
+  ],
+  administration: [
+    "admin-overview",
+    "manage-members",
+    "coordination",
+    "task-management",
+    "public-content",
+    "events-admin",
+    "news-images",
+    "contact-messages",
+    "campaign-analytics",
+  ],
+  help: [
+    "access-denied",
+    "why-no-election-menu",
+    "why-cannot-perform-action",
+    "why-not-another-ward",
+    "result-status-changed",
+    "cannot-edit-verified-result",
+    "cannot-access-admin",
+    "data-not-showing",
+    "when-something-fails",
+    "account-suspended",
+  ],
+};
+
+/**
+ * The guide sections this viewer can read, each with its visible
+ * articles. Sections with nothing visible disappear entirely.
+ */
+export function guideSectionsFor(
+  viewer: HelpViewer | null | undefined,
+): VisibleGuideSection[] {
+  return GUIDE_SECTIONS.map((section) => ({
+    ...section,
+    articles: filterHelpArticles(
+      GUIDE_SECTION_ARTICLES[section.id]
+        .map((id) => HELP_ARTICLES.find((article) => article.id === id))
+        .filter((article): article is HelpArticle => Boolean(article)),
+      viewer,
+    ),
+  })).filter((section) => section.articles.length > 0);
+}
+
 export const ROLE_INTRO: Record<
   "admin" | "election_officer" | "campaign_member" | "social_member",
   { heading: string; text: string; articles: string[] }
@@ -788,12 +1080,12 @@ export const HELP_ROUTE_MAP: Record<string, string[]> = {
   "/volunteer": ["registering-as-a-volunteer", "membership-types"],
   "/register-inec-officer": ["inec-officer-registration"],
   "/about": ["what-is-the-portal"],
-  "/news": ["public-content"],
-  "/biography": ["public-content"],
-  "/manifesto": ["public-content"],
-  "/gallery": ["public-content"],
+  "/news": ["about-the-public-site"],
+  "/biography": ["about-the-public-site"],
+  "/manifesto": ["about-the-public-site"],
+  "/gallery": ["about-the-public-site"],
   "/structure": ["organizational-scope"],
-  "/contact": ["contact-messages"],
+  "/contact": ["about-the-public-site"],
 
   /* Portal */
   "/portal/dashboard": ["understanding-the-dashboard"],
@@ -814,7 +1106,7 @@ export const HELP_ROUTE_MAP: Record<string, string[]> = {
   "/portal/election/pu-reports": ["pu-reports"],
   "/portal/election/incidents": ["election-incidents"],
   "/portal/election/results": ["election-dashboard", "result-statuses"],
-  "/portal/election/upload": ["result-upload"],
+  "/portal/election/upload": ["result-upload", "duplicate-result-submission"],
   "/portal/election/export": ["election-dashboard"],
   "/portal/admin/election": [
     "election-administration",
@@ -823,12 +1115,14 @@ export const HELP_ROUTE_MAP: Record<string, string[]> = {
   "/portal/admin/members": ["manage-members", "account-suspended"],
   "/portal/admin/analytics": ["campaign-analytics"],
   "/portal/admin/reports": ["campaign-analytics"],
-  "/portal/admin/news": ["public-content"],
+  "/portal/admin/news": ["public-content", "news-images"],
   "/portal/admin/biography": ["public-content"],
   "/portal/admin/manifesto": ["public-content"],
   "/portal/admin/gallery": ["public-content"],
   "/portal/admin/announcements": [
     "public-content",
+    "events-admin",
+    "news-images",
     "notification-center-vs-popups",
   ],
   "/portal/admin/contact-messages": ["contact-messages"],
@@ -845,6 +1139,9 @@ export const HELP_ROUTE_MAP: Record<string, string[]> = {
  */
 export function helpArticlesForRoute(pathname: string): string[] {
   const parts = (pathname || "").split("/").filter(Boolean);
+
+  /* The homepage has no path segments but still has an entry. */
+  if (parts.length === 0) return HELP_ROUTE_MAP["/"] ?? [];
 
   for (let i = parts.length; i > 0; i -= 1) {
     const prefix = `/${parts.slice(0, i).join("/")}`;

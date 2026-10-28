@@ -18,8 +18,8 @@ import { BRANDING } from "@/config/branding";
 import { cloudinaryFolder } from "@/lib/cloudinary";
 
 export const metadata = {
-  title: `User Manual & Documentation | ${BRANDING.candidateLegalName} ${BRANDING.electionYear}`,
-  description: `Comprehensive user manual for campaign administrators and technical documentation for the ${BRANDING.appName} News System.`,
+  title: `Documentation & User Manual | ${BRANDING.shortName}`,
+  description: `${BRANDING.tagline}. User manual for campaign administrators and technical documentation for the news system.`,
 };
 
 export default function DocumentationPage() {

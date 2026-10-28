@@ -11,15 +11,17 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { BRANDING } from "@/config/branding";
 import {
   HELP_ARTICLES,
+  HELP_ATTRIBUTION,
   HELP_CATEGORIES,
   PUBLIC_INTRO,
   ROLE_INTRO,
+  filterHelpArticles,
   helpArticlesForRoute,
   type HelpArticle,
   type HelpRole,
+  type HelpViewer,
 } from "@/lib/help-content";
 import { HELP_OPEN_EVENT } from "@/components/help/HelpLink";
 
@@ -92,16 +94,46 @@ export default function ContextualHelp() {
     [profile],
   );
 
+  /*
+   * What this reader is allowed to open. Anonymous visitors get the
+   * "all" articles only; the role predicate is applied to every list
+   * below, so admin material never reaches a member — whether in the
+   * library, the category rows, the page hints or the starting points.
+   */
+  const viewer = useMemo<HelpViewer | null>(
+    () =>
+      profile
+        ? {
+            access_role: profile.access_role,
+            membership_types: profile.membership_types,
+          }
+        : null,
+    [profile],
+  );
+
+  const visibleArticles = useMemo(
+    () => filterHelpArticles(HELP_ARTICLES, viewer),
+    [viewer],
+  );
+
   const visibleCategories = useMemo(() => {
     return HELP_CATEGORIES.map((category) => ({
       category,
-      articles: HELP_ARTICLES.filter(
+      articles: visibleArticles.filter(
         (a) => a.category === category.id && matchesQuery(a, query),
       ),
     })).filter(({ articles }) => articles.length > 0);
-  }, [query]);
+  }, [query, visibleArticles]);
 
   const intro = profile ? ROLE_INTRO[role] : PUBLIC_INTRO;
+
+  const introArticles = useMemo(
+    () =>
+      intro.articles
+        .map((id) => visibleArticles.find((article) => article.id === id))
+        .filter((article): article is HelpArticle => Boolean(article)),
+    [intro, visibleArticles],
+  );
 
   /*
    * Page-specific help: the articles that belong to the current
@@ -110,9 +142,9 @@ export default function ContextualHelp() {
   const pageArticles = useMemo(
     () =>
       helpArticlesForRoute(pathname ?? "")
-        .map((id) => HELP_ARTICLES.find((article) => article.id === id))
+        .map((id) => visibleArticles.find((article) => article.id === id))
         .filter((article): article is HelpArticle => Boolean(article)),
-    [pathname],
+    [pathname, visibleArticles],
   );
 
   const openAndReveal = useCallback((articleId: string) => {
@@ -252,40 +284,30 @@ export default function ContextualHelp() {
                   </p>
                   <p className="mt-1 text-sm text-gray-700">{intro.text}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {intro.articles.map((id) => {
-                      const article = HELP_ARTICLES.find((a) => a.id === id);
-                      if (!article) return null;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => toggleArticle(id)}
-                          className="rounded-full border border-apc-primary/30 bg-white px-3 py-1 text-xs font-semibold text-apc-primary transition-colors hover:bg-apc-primary/10"
-                          aria-expanded={!!expanded[id]}
-                        >
-                          {article.title}
-                        </button>
-                      );
-                    })}
+                    {introArticles.map((article) => (
+                      <button
+                        key={article.id}
+                        type="button"
+                        onClick={() => toggleArticle(article.id)}
+                        className="rounded-full border border-apc-primary/30 bg-white px-3 py-1 text-xs font-semibold text-apc-primary transition-colors hover:bg-apc-primary/10"
+                        aria-expanded={!!expanded[article.id]}
+                      >
+                        {article.title}
+                      </button>
+                    ))}
                   </div>
-                  {intro.articles.some((id) => expanded[id]) && (
+                  {introArticles.some((article) => expanded[article.id]) && (
                     <div className="mt-3 space-y-2">
-                      {intro.articles
-                        .filter((id) => expanded[id])
-                        .map((id) => {
-                          const article = HELP_ARTICLES.find(
-                            (a) => a.id === id,
-                          );
-                          if (!article) return null;
-                          return (
-                            <ArticleBody
-                              key={id}
-                              article={article}
-                              onNavigate={() => setOpen(false)}
-                              compact
-                            />
-                          );
-                        })}
+                      {introArticles
+                        .filter((article) => expanded[article.id])
+                        .map((article) => (
+                          <ArticleBody
+                            key={article.id}
+                            article={article}
+                            onNavigate={() => setOpen(false)}
+                            compact
+                          />
+                        ))}
                     </div>
                   )}
                 </div>
@@ -371,11 +393,16 @@ export default function ContextualHelp() {
                 </section>
               ))}
 
-              <p className="pb-6 pt-2 text-center text-xs text-gray-400">
-                {BRANDING.shortName} Portal Guidance — describing the portal as it
-                actually works. Can't find an answer? Ask a campaign
-                administrator.
-              </p>
+              <div className="pb-6 pt-2 text-center">
+                <p className="text-xs font-semibold text-gray-500">
+                  {HELP_ATTRIBUTION}
+                </p>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Portal Guidance — describing the portal as it actually
+                  works. Can&apos;t find an answer? Ask a campaign
+                  administrator.
+                </p>
+              </div>
             </div>
           </div>
         </div>
