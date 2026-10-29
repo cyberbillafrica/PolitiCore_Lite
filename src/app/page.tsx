@@ -22,6 +22,7 @@ import {
 
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import ElectionCountdown from "@/components/home/ElectionCountdown";
 
 import { getPublishedNews } from "@/lib/firebase/firestore";
 import { getPublishedUpcomingEvents } from "@/lib/firebase/events";
@@ -229,7 +230,12 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="md:col-span-5 flex justify-center">
+              <div className="md:col-span-5 flex flex-col items-center justify-center gap-5">
+                <ElectionCountdown
+                  electionDate={settings.electionDate}
+                  className="w-full max-w-md"
+                />
+
                 {settings.heroImageUrl ? (
                   <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border-4 border-emerald-500/30 bg-gray-900">
                     <Image

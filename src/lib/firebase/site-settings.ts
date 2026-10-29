@@ -129,6 +129,14 @@ export interface SiteSettings {
   // Header & Navigation
   headerNotice?: string;
 
+  // Election Countdown
+  /**
+   * Election day shown by the homepage countdown, "YYYY-MM-DD".
+   * The countdown targets 00:00 West Africa Time on that day. Empty
+   * falls back to the build-time BRANDING.electionDateISO seed.
+   */
+  electionDate?: string;
+
   // Footer & Contact Information
   footerAddress: string;
   footerPhone: string;
@@ -269,6 +277,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   secondaryColor: BRANDING.secondaryColor,
 
   headerNotice: "Powering Modern Political Operations & Field Campaigns",
+
+  electionDate: "",
 
   footerAddress: BRANDING.footerAddress,
   footerPhone: BRANDING.footerPhone,

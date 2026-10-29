@@ -21,6 +21,7 @@ import {
   type DonationSettings,
 } from "@/lib/firebase/site-settings";
 import { BRANDING } from "@/config/branding";
+import { resolveElectionTarget } from "@/lib/election-countdown";
 import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +69,7 @@ export default function AdminSettingsPage() {
   const [newZone, setNewZone] = useState("");
   const [newLga, setNewLga] = useState("");
   const [activeTab, setActiveTab] = useState<
-    "organization" | "homepage" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance"
+    "organization" | "homepage" | "election" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance"
   >("organization");
 
   useEffect(() => {
@@ -166,6 +167,7 @@ export default function AdminSettingsPage() {
   const events = settings.eventsSection ?? DEFAULT_EVENTS_SECTION;
   const donation = settings.donation ?? DEFAULT_DONATION_SETTINGS;
   const campaignCtas = settings.campaignCtas ?? DEFAULT_CAMPAIGN_CTAS;
+  const electionTarget = resolveElectionTarget(settings.electionDate);
 
   if (loading) {
     return (
@@ -248,6 +250,7 @@ export default function AdminSettingsPage() {
         {[
           { id: "organization", label: "Organization Info", icon: Building2 },
           { id: "homepage", label: "Homepage", icon: Layout },
+          { id: "election", label: "Election Countdown", icon: CalendarDays },
           { id: "branding", label: "Logo & Branding", icon: ImageIcon },
           { id: "geography", label: "Geographic Hierarchy", icon: Map },
           { id: "modules", label: "Active Modules", icon: ToggleLeft },
@@ -262,7 +265,7 @@ export default function AdminSettingsPage() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id as "organization" | "homepage" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance")}
+              onClick={() => setActiveTab(tab.id as "organization" | "homepage" | "election" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance")}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
                 tab.id === "maintenance" && settings.maintenanceMode
                   ? "bg-amber-600 text-white shadow-sm"
@@ -1030,6 +1033,64 @@ export default function AdminSettingsPage() {
                     </p>
                   )}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* TAB: ELECTION COUNTDOWN */}
+        {activeTab === "election" && (
+          <Card className="dark:bg-gray-900 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800">
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-emerald-700" />
+                Election Countdown
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="max-w-md">
+                <label className="block text-xs font-extrabold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
+                  Election Date
+                </label>
+                <input
+                  type="date"
+                  value={settings.electionDate ?? ""}
+                  onChange={(e) =>
+                    setSettings({ ...settings, electionDate: e.target.value })
+                  }
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                  The homepage counts down to midnight (West Africa Time) on
+                  this date. Leave the field blank to use the platform default,
+                  and save to publish the change on the next homepage load.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 p-5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  Homepage countdown target
+                </p>
+                <p className="mt-1 text-lg font-black text-gray-900 dark:text-white">
+                  {electionTarget.label}
+                </p>
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                  {electionTarget.fromSettings
+                    ? "This date is saved in site settings."
+                    : "No date saved yet — the platform default above is live."}
+                </p>
+              </div>
+
+              {settings.electionDate ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSettings({ ...settings, electionDate: "" })
+                  }
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Clear date and use platform default
+                </button>
+              ) : null}
             </CardContent>
           </Card>
         )}
