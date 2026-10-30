@@ -13,6 +13,7 @@
     "project:campaign-access": "tsx scripts/project-campaign-access.ts",
     "backfill:election-upload": "tsx scripts/backfill-election-upload-grants.ts",
     "verify:clone": "tsx scripts/verify-clone.ts",
+    "generate:icons": "tsx scripts/generate-pwa-icons.ts",
     "verify:campaign-access": "tsx scripts/verify-campaign-access.ts",
     "check:campaign-projection": "tsx scripts/check-campaign-projection.ts",
     "diagnose:campaign-read": "tsx scripts/diagnose-campaign-read.ts",

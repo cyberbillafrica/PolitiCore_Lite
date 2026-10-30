@@ -29,8 +29,13 @@ import {
   Network,
   Image,
   BookOpen,
+  Sparkles,
 } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import {
+  getSiteSettings,
+  readCachedSiteSettings,
+} from "@/lib/firebase/site-settings";
 
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -157,6 +162,12 @@ const navigation: NavItem[] = [
     name: "Profile",
     href: "/portal/profile",
     icon: Users,
+  },
+
+  {
+    name: "Features",
+    href: "/about",
+    icon: Sparkles,
   },
 
   {
@@ -292,6 +303,24 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  /*
+   * Brand mark: the admin-uploaded logo when Settings provides one,
+   * otherwise the BRANDING monogram. Read exactly like Header does —
+   * cached copy first, live document second — so an upload appears on
+   * the next portal navigation without a rebuild.
+   */
+  const [logoUrl, setLogoUrl] = useState("");
+
+  useEffect(() => {
+    const cached = readCachedSiteSettings();
+    if (cached?.logoUrl) setLogoUrl(cached.logoUrl);
+
+    getSiteSettings()
+      .then((settings) => setLogoUrl(settings.logoUrl ?? ""))
+      .catch(() => {});
+  }, []);
+
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const pathname = usePathname();
@@ -747,9 +776,7 @@ export default function PortalLayout({
               className="flex items-center space-x-2"
               onClick={() => setSidebarOpen(false)}
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                {BRANDING.monogram}
-              </div>
+              <PortalBrandLogo logoUrl={logoUrl} />
 
               <span className="text-lg font-bold text-emerald-800">
                 {BRANDING.brandName}
@@ -790,9 +817,7 @@ export default function PortalLayout({
         <div className="flex h-full min-h-0 flex-col overflow-hidden border-r bg-white">
           <div className="flex h-16 shrink-0 items-center border-b px-6">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                {BRANDING.monogram}
-              </div>
+              <PortalBrandLogo logoUrl={logoUrl} />
 
               <span className="text-lg font-bold text-emerald-800">
                 {BRANDING.brandName}
@@ -834,9 +859,7 @@ export default function PortalLayout({
             </button>
 
             <Link href="/" className="flex items-center space-x-2 lg:hidden">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
-                {BRANDING.monogram}
-              </div>
+              <PortalBrandLogo logoUrl={logoUrl} />
               <span className="font-bold text-emerald-800 dark:text-emerald-400">
                 {BRANDING.brandName}
               </span>
@@ -944,6 +967,31 @@ export default function PortalLayout({
           </Link>
         </div>
       </nav>
+    </div>
+  );
+}
+
+/*
+ * The one brand mark used by the mobile sidebar, the desktop sidebar and
+ * the mobile top header. The image branch keeps the plate's h-8 w-8
+ * footprint, so the header height and spacing do not shift.
+ */
+function PortalBrandLogo({ logoUrl }: { logoUrl?: string | null }) {
+  if (logoUrl) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-emerald-200 bg-white p-0.5">
+        <img
+          src={logoUrl}
+          alt={BRANDING.brandName}
+          className="h-full w-full object-contain"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-700 text-white font-extrabold text-sm">
+      {BRANDING.monogram}
     </div>
   );
 }

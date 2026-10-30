@@ -35,12 +35,26 @@ function withoutTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+/*
+ * Read once, before BRANDING exists: `appName` falls back to the
+ * product name, and inside the object literal it cannot reference
+ * `BRANDING.shortName` (temporal dead zone).
+ */
+const DEFAULT_SHORT_NAME = read(
+  process.env.NEXT_PUBLIC_BRAND_SHORT_NAME,
+  "PolitiCore",
+);
+
 export const BRANDING = {
-  /** Campaign identity, e.g. the browser title suffix and share copy. */
-  appName: read(process.env.NEXT_PUBLIC_BRAND_APP_NAME, "Ifeanyi 2027"),
+  /**
+   * Campaign identity, e.g. the browser title suffix and share copy.
+   * A deployment that sets no env var is the PolitiCore product, not a
+   * candidate, so the fallback is the product name.
+   */
+  appName: read(process.env.NEXT_PUBLIC_BRAND_APP_NAME, DEFAULT_SHORT_NAME),
 
   /** Platform/product name in normal case: "PolitiCore". */
-  shortName: read(process.env.NEXT_PUBLIC_BRAND_SHORT_NAME, "PolitiCore"),
+  shortName: DEFAULT_SHORT_NAME,
 
   /** Platform wordmark as displayed: "POLITICORE". */
   brandName: read(process.env.NEXT_PUBLIC_BRAND_NAME, "POLITICORE"),

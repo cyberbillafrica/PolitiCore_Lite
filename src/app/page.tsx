@@ -61,6 +61,9 @@ export default function HomePage() {
   const [newsLoading, setNewsLoading] = useState(true);
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
+  /* URL of a hero image that failed to load, so a broken link falls back
+     to the info card instead of an empty dark panel. */
+  const [failedHeroImage, setFailedHeroImage] = useState<string | null>(null);
   const [bio, setBio] = useState<{
     about: string;
     fullName: string;
@@ -180,9 +183,21 @@ export default function HomePage() {
         <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full">
           <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
-          <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 md:py-24 lg:px-8">
-            <div className="grid items-center gap-12 md:grid-cols-12">
-              <div className="md:col-span-7">
+          <div className="relative mx-auto max-w-7xl px-4 pt-8 pb-16 sm:px-6 md:py-24 lg:px-8">
+            {/*
+              Mobile order: countdown -> hero copy/CTAs -> hero image.
+              The countdown is the first thing under the header on a
+              phone; on desktop it stays at the top of the right column.
+            */}
+            <div className="grid items-center gap-8 md:grid-cols-12 md:gap-x-12 md:gap-y-5">
+              <div className="order-1 mx-auto w-full max-w-md md:order-none md:col-span-5 md:col-start-8 md:row-start-1 md:mx-0">
+                <ElectionCountdown
+                  electionDate={settings.electionDate}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="order-2 md:order-none md:col-span-7 md:col-start-1 md:row-start-1">
                 {settings.headerNotice && (
                   <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
                     {settings.headerNotice}
@@ -230,13 +245,9 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="md:col-span-5 flex flex-col items-center justify-center gap-5">
-                <ElectionCountdown
-                  electionDate={settings.electionDate}
-                  className="w-full max-w-md"
-                />
-
-                {settings.heroImageUrl ? (
+              <div className="order-3 mx-auto flex w-full max-w-md flex-col items-center justify-center gap-5 md:order-none md:col-span-5 md:col-start-8 md:row-start-2 md:mx-0">
+                {settings.heroImageUrl &&
+                failedHeroImage !== settings.heroImageUrl ? (
                   <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border-4 border-emerald-500/30 bg-gray-900">
                     <Image
                       src={settings.heroImageUrl}
@@ -244,6 +255,8 @@ export default function HomePage() {
                       fill
                       unoptimized
                       priority
+                      sizes="(max-width: 768px) 100vw, 40vw"
+                      onError={() => setFailedHeroImage(settings.heroImageUrl)}
                       className="object-cover"
                     />
                   </div>

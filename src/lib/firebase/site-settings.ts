@@ -448,14 +448,25 @@ export async function updateSiteSettings(
     updatedAt: new Date().toISOString(),
   });
 
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
-    } catch (err) {
-      console.error("Local storage update error:", err);
-    }
-  }
+  /*
+   * The settings document is a single Firestore document (1 MiB limit).
+   * Images uploaded through the settings page now go to Cloudinary and
+   * only their URLs are stored here. A document written by the old
+   * base64 uploader can still be saved (it is merely large), but
+   * replacing its image with another inline one would exceed the limit
+   * and fail — hence the Cloudinary uploader and the migration prompt
+   * in the admin UI.
+   *
+   * A failed write is surfaced instead of swallowed: the old code
+   * reported "Saved" even when Firestore rejected the document, so the
+   * homepage silently kept the previous image.
+   */
 
+  /*
+   * Firestore is the source of truth, so the write happens BEFORE the
+   * local cache is updated. A failed write must surface to the caller
+   * instead of leaving the cache (and the admin) believing it saved.
+   */
   try {
     const docRef = doc(db, COLLECTION_NAME, DOC_ID);
     await setDoc(
@@ -467,7 +478,19 @@ export async function updateSiteSettings(
       { merge: true }
     );
   } catch (err) {
-    console.warn("Firestore update fallback to local session:", err);
+    console.error("Firestore site settings update failed:", err);
+    throw new Error(
+      "Settings could not be saved to Firestore, so nothing is live yet. Check your connection and admin permissions, then try again.",
+      { cause: err },
+    );
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    } catch (err) {
+      console.error("Local storage update error:", err);
+    }
   }
 
   return updated;

@@ -85,6 +85,29 @@ project.
 2. Optionally replace the four placeholders in `public/images/` (`candidate.jpeg`, `candidate1.jpg`, `official_logo.jpeg`, `official_logo1.jpg`). **They are not referenced by code** — they are leftovers. The portrait, logo and hero image that actually render are Cloudinary URLs stored in Firestore.
 3. Upload the real portrait via **Admin → Biography**, and the logo/hero via **Admin → Settings** after Step 9.
 
+### PWA icons
+
+The template ships with **placeholder "PC" monogram icons** in `public/icons/`. They are real PNGs and the app is installable with them, but they are not the client's mark. Replace them before handoff:
+
+1. Upload the client logo via **Admin → Settings → Branding**, then click **Save**. The logo is stored as `site_settings/general.logoUrl`.
+2. Regenerate the install icons from that logo:
+
+   ```bash
+   npm run generate:icons
+   npm run build
+   ```
+
+3. Redeploy. The script writes `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (20% safe area) and `apple-touch-icon.png` under `public/icons/`, containing the logo on the brand-green plate. It reads a Cloudinary URL or a legacy `data:image/...` value; if neither is readable it falls back to the monogram.
+
+   Use `npm run generate:icons -- --dry-run` to see which source it would use without writing files.
+
+4. Re-run `generate:icons` whenever the logo changes. The PNGs are static assets baked into the deployment, so a logo upload alone does not update an installed app icon.
+
+### Product pages
+
+- The sidebar **Features** item links to `/about`, the PolitiCore product marketing page. It is public and identical on every clone — no env gating, no candidate content.
+- Screenshots in `public/screenshots/` show PolitiCore branding. Replace them with candidate-branded screenshots for a more tailored feel, or leave them as product marketing.
+
 ## Step 6: Install and bootstrap
 
 ```bash

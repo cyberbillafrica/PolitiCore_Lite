@@ -21,6 +21,7 @@ import {
   type DonationSettings,
 } from "@/lib/firebase/site-settings";
 import { BRANDING } from "@/config/branding";
+import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import { resolveElectionTarget } from "@/lib/election-countdown";
 import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/components/providers/ThemeProvider";
@@ -68,6 +69,9 @@ export default function AdminSettingsPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [newZone, setNewZone] = useState("");
   const [newLga, setNewLga] = useState("");
+  const [uploadingField, setUploadingField] = useState<
+    "heroImageUrl" | "logoUrl" | null
+  >(null);
   const [activeTab, setActiveTab] = useState<
     "organization" | "homepage" | "election" | "branding" | "geography" | "modules" | "terminology" | "header_footer" | "theme" | "maintenance"
   >("organization");
@@ -105,26 +109,42 @@ export default function AdminSettingsPage() {
     }
   };
 
-  // Image Upload helper (converts to base64 data URL for local storage / firestore preview)
-  const handleImageUpload = (
+  /*
+   * Image upload goes to Cloudinary; only the resulting URL is stored in
+   * the settings document.
+   *
+   * The previous implementation embedded the file as a base64 data URL.
+   * A normal photo then pushed site_settings/general past Firestore's
+   * 1 MiB document limit, the write failed, and the failure was
+   * swallowed — so the admin saw "Saved" while the homepage kept the old
+   * image. Cloudinary is already used by gallery/news uploads.
+   */
+  const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     field: "heroImageUrl" | "logoUrl"
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.warning("Image size should be less than 2MB.");
-      return;
+    setUploadingField(field);
+    try {
+      const folder = cloudinaryFolder(
+        field === "heroImageUrl" ? "site/hero" : "site/branding",
+      );
+      const url = await uploadToCloudinary(file, folder);
+      setSettings((prev) => ({ ...prev, [field]: url }));
+      toast.success(
+        "Image uploaded. Press \"Save Control Settings\" to publish it."
+      );
+    } catch (err) {
+      console.error("Image upload failed:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Image upload failed. Try again."
+      );
+    } finally {
+      setUploadingField(null);
+      e.target.value = "";
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setSettings((prev) => ({ ...prev, [field]: reader.result }));
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   // Nested homepage-config setters (deep-write into site settings).
@@ -530,14 +550,36 @@ export default function AdminSettingsPage() {
                   </div>
                 )}
 
+                {settings.heroImageUrl.startsWith("data:") && (
+                  <p className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    This image is stored inside the settings document. That
+                    slows every page load and blocks larger replacements from
+                    saving — upload it again to move it to Cloudinary.
+                  </p>
+                )}
+
                 <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm">
-                    <Upload className="h-4 w-4" />
-                    Upload New Hero Image
+                  <label
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm ${
+                      uploadingField === "heroImageUrl"
+                        ? "opacity-60 pointer-events-none"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    {uploadingField === "heroImageUrl" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    {uploadingField === "heroImageUrl"
+                      ? "Uploading..."
+                      : "Upload New Hero Image"}
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp"
                       className="hidden"
+                      disabled={uploadingField !== null}
                       onChange={(e) => handleImageUpload(e, "heroImageUrl")}
                     />
                   </label>
@@ -550,6 +592,10 @@ export default function AdminSettingsPage() {
                     className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-xs"
                   />
                 </div>
+
+                <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                  JPG, PNG, WebP • Max 5MB
+                </p>
               </div>
               {/* ── CAMPAIGN CTAs ── */}
               <div className="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-4">
@@ -1149,13 +1195,26 @@ export default function AdminSettingsPage() {
                   )}
 
                   <div className="space-y-2 flex-1">
-                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all">
-                      <Upload className="h-4 w-4" />
-                      Upload Logo Image
+                    <label
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all ${
+                        uploadingField === "logoUrl"
+                          ? "opacity-60 pointer-events-none"
+                          : "cursor-pointer"
+                      }`}
+                    >
+                      {uploadingField === "logoUrl" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      {uploadingField === "logoUrl"
+                        ? "Uploading..."
+                        : "Upload Logo Image"}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp"
                         className="hidden"
+                        disabled={uploadingField !== null}
                         onChange={(e) => handleImageUpload(e, "logoUrl")}
                       />
                     </label>
@@ -1169,6 +1228,10 @@ export default function AdminSettingsPage() {
                         Reset to default text badge
                       </button>
                     )}
+
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                      JPG, PNG, WebP • Max 5MB
+                    </p>
                   </div>
                 </div>
               </div>
