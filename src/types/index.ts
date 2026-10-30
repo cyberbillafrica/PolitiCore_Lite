@@ -380,6 +380,8 @@ export interface TaskSubmission {
 
 export interface ElectionResultRecord {
   id?: string;
+  /** Missing on legacy documents; defaults to polling_unit. */
+  result_level?: "polling_unit" | "ward" | "lga" | "state";
   ward_id: string;
   lga_id?: string;
   polling_unit_id: string;

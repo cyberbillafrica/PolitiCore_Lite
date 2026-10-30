@@ -12,6 +12,7 @@
     "cleanup:grants": "tsx scripts/cleanup-stale-grants.ts",
     "project:campaign-access": "tsx scripts/project-campaign-access.ts",
     "backfill:election-upload": "tsx scripts/backfill-election-upload-grants.ts",
+    "backfill:result-level": "tsx scripts/backfill-result-level.ts",
     "verify:clone": "tsx scripts/verify-clone.ts",
     "generate:icons": "tsx scripts/generate-pwa-icons.ts",
     "verify:campaign-access": "tsx scripts/verify-campaign-access.ts",

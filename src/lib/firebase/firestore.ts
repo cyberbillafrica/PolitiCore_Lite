@@ -917,6 +917,36 @@ export async function getElectionResultsByWard(
 }
 
 /**
+ * Ward collations readable by an LGA-scoped coordinator.
+ *
+ * The read rule accepts an LGA grant only when the document carries the
+ * grant's `lga_id`; a ward-only query cannot prove that, so the ward
+ * pre-check carries BOTH equalities. No `orderBy` — equality filters
+ * merge from single-field indexes.
+ */
+export async function getElectionResultsByWardAndLga(
+  wardId: string,
+  lgaId: string,
+  overrideDb?: Firestore,
+): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
+  const q = query(
+    collection(store, "election_results"),
+    where("ward_id", "==", wardId),
+    where("lga_id", "==", lgaId),
+  );
+
+  const snap = await getDocs(q);
+
+  return newestFirst(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+    })),
+  );
+}
+
+/**
  * The document a member is always allowed to read, matched the way the
  * security rule matches it.
  *
@@ -957,6 +987,27 @@ export async function getElectionResultsByLga(
   const q = query(
     collection(store, "election_results"),
     where("lga_id", "==", lgaId),
+  );
+
+  const snap = await getDocs(q);
+
+  return newestFirst(
+    snap.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<ElectionResultRecord, "id">),
+    })),
+  );
+}
+
+/** State collations for one state id (EC8D). */
+export async function getElectionResultsByState(
+  stateId: string,
+  overrideDb?: Firestore,
+): Promise<ElectionResultRecord[]> {
+  const store = overrideDb ?? db;
+  const q = query(
+    collection(store, "election_results"),
+    where("state_id", "==", stateId),
   );
 
   const snap = await getDocs(q);

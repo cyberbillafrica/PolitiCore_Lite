@@ -29,6 +29,14 @@ import {
   deriveLgaIdFromWard,
   isWithinContestScope,
 } from "@/lib/election-scope";
+import {
+  getResultLevel,
+  resultLevelMeta,
+  type ElectionResultLevel,
+} from "@/lib/election-levels";
+
+export { getResultLevel };
+export type { ElectionResultLevel };
 import type {
   ElectionCycle,
   ElectionContest,
@@ -85,11 +93,14 @@ export interface ElectionResultDoc {
     scope_type: ContestScopeType;
     scope_id: string;
   };
+  /** Missing on legacy documents — read through `getResultLevel()`. */
+  result_level?: ElectionResultLevel;
   state_id?: string | null;
   senatorial_zone_id?: string | null;
   lga_id: string;
   ward_id: string;
   polling_unit_id: string;
+  notes?: string | null;
   results: ElectionPartyResult[];
   submitted_by: string;
   status: ElectionResultStatus;
@@ -576,11 +587,17 @@ export async function submitElectionResultWithEvidence(data: {
   contestId: string;
   contestType: ContestType;
   contestScope: { scope_type: ContestScopeType; scope_id: string };
+  /** Empty string when the level does not use this scope. */
   lgaId: string;
+  /** Empty string when the level does not use this scope. */
   wardId: string;
+  /** Empty string when the level does not use this scope. */
   pollingUnitId: string;
   stateId?: string | null;
   senatorialZoneId?: string | null;
+  /** Defaults to "polling_unit" so existing callers are unchanged. */
+  resultLevel?: ElectionResultLevel;
+  notes?: string | null;
   results: ElectionPartyResult[];
   userId: string;
   cloudinaryUrl?: string | null;
@@ -588,9 +605,12 @@ export async function submitElectionResultWithEvidence(data: {
   actorName?: string | null;
   actorRole?: string | null;
 }) {
+  const level = data.resultLevel ?? "polling_unit";
+  const levelMeta = resultLevelMeta(level);
+
   if (!data.cloudinaryUrl) {
     throw new Error(
-      "Form EC8 photo evidence is mandatory for result submission.",
+      `${levelMeta.formCode} photo evidence is mandatory for result submission.`,
     );
   }
 
@@ -620,30 +640,92 @@ export async function submitElectionResultWithEvidence(data: {
   }
 
   /*
-   * The submitted polling unit must sit inside the active contest's
+   * The submitted level must sit inside the active contest's
    * geographic scope. The LGA hierarchy comes from the seeded
    * electoral_data document, falling back to the bundled dataset.
    */
   const { getEnuguElectoralData } = await import("./electoral");
   const allLgas = (await getEnuguElectoralData())?.lgas ?? [];
-  if (
-    !isWithinContestScope(contest, { lgaId: data.lgaId }, allLgas) ||
-    !contestCoversWard(contest, data.lgaId, data.wardId, allLgas) ||
-    !contestCoversPollingUnit(
-      contest,
-      data.lgaId,
-      data.wardId,
-      data.pollingUnitId,
-      allLgas,
-    )
-  ) {
-    throw new Error(
-      "This polling unit is not within the scope of the active contest.",
-    );
+  const derivedWardLgaId = data.wardId
+    ? deriveLgaIdFromWard(allLgas, data.wardId)
+    : "";
+  const scopeLgaId = data.lgaId || derivedWardLgaId;
+
+  if (level === "polling_unit") {
+    if (!data.wardId || !data.pollingUnitId) {
+      throw new Error("A polling-unit result requires a ward and polling unit.");
+    }
+
+    if (
+      !isWithinContestScope(contest, { lgaId: scopeLgaId }, allLgas) ||
+      !contestCoversWard(contest, scopeLgaId, data.wardId, allLgas) ||
+      !contestCoversPollingUnit(
+        contest,
+        scopeLgaId,
+        data.wardId,
+        data.pollingUnitId,
+        allLgas,
+      )
+    ) {
+      throw new Error(
+        "This polling unit is not within the scope of the active contest.",
+      );
+    }
+  } else if (level === "ward") {
+    if (!data.wardId) {
+      throw new Error("A ward collation requires a ward.");
+    }
+
+    if (!contestCoversWard(contest, scopeLgaId, data.wardId, allLgas)) {
+      throw new Error(
+        "This ward is not within the scope of the active contest.",
+      );
+    }
+  } else if (level === "lga") {
+    if (!data.lgaId) {
+      throw new Error("An LGA collation requires an LGA.");
+    }
+
+    if (!isWithinContestScope(contest, { lgaId: data.lgaId }, allLgas)) {
+      throw new Error(
+        "This LGA is not within the scope of the active contest.",
+      );
+    }
+  } else {
+    if (contest.scope_type !== "state") {
+      throw new Error(
+        "A state collation (EC8D) is only accepted for a state-wide contest.",
+      );
+    }
+
+    if (!data.stateId) {
+      throw new Error("A state collation requires a state id.");
+    }
   }
 
-  // Deterministic ID across Contest + Polling Unit as required by Spec Section 15
-  const resultDocId = `${data.contestId}__${data.pollingUnitId}`;
+  /*
+   * Deterministic id per level. The `__ward__` / `__lga__` / `__state__`
+   * markers keep the new ids from colliding with the legacy
+   * `{contest}__{pu}` and `{ward}__{pu}` formats.
+   */
+  const stateId = data.stateId || contest.state_id || "enugu-state";
+  let resultDocId: string;
+
+  switch (level) {
+    case "ward":
+      resultDocId = `${data.contestId}__ward__${data.wardId}`;
+      break;
+    case "lga":
+      resultDocId = `${data.contestId}__lga__${data.lgaId}`;
+      break;
+    case "state":
+      resultDocId = `${data.contestId}__state__${stateId}`;
+      break;
+    default:
+      resultDocId = `${data.contestId}__${data.pollingUnitId}`;
+      break;
+  }
+
   const resultRef = doc(db, "election_results", resultDocId);
 
   const initialHistory: ElectionResultHistory = {
@@ -652,7 +734,7 @@ export async function submitElectionResultWithEvidence(data: {
     action: "create",
     new_results: data.results,
     new_status: "submitted",
-    notes: `Initial result submission for contest ${data.contestId} with Form EC8 evidence`,
+    notes: `Initial ${levelMeta.entityNoun} result submission for contest ${data.contestId} with ${levelMeta.formCode} evidence`,
   };
 
   /*
@@ -666,11 +748,16 @@ export async function submitElectionResultWithEvidence(data: {
     contest_id: data.contestId,
     contest_type: data.contestType,
     contest_scope: data.contestScope,
-    state_id: data.stateId || null,
+    result_level: level,
+    state_id: stateId,
     senatorial_zone_id: data.senatorialZoneId || null,
-    lga_id: data.lgaId,
-    ward_id: data.wardId,
-    polling_unit_id: data.pollingUnitId,
+    lga_id:
+      level === "state" ? "" : data.lgaId || derivedWardLgaId || "",
+    ward_id:
+      level === "polling_unit" || level === "ward" ? data.wardId : "",
+    polling_unit_id:
+      level === "polling_unit" ? data.pollingUnitId : "",
+    notes: data.notes?.trim() || null,
     results: data.results,
     submitted_by: data.userId,
     status: "submitted",
@@ -893,6 +980,8 @@ export async function correctElectionResult(data: {
 
 export interface ElectionResultScopeConstraint {
   contest_id?: string;
+  lga_id?: string;
+  state_id?: string;
   ward_id?: string;
   polling_unit_id?: string;
   submitted_by?: string;
@@ -1002,7 +1091,33 @@ export function subscribeToElectionResults(
     onError,
     "election results",
   );
-}/*
+}
+
+/**
+ * One-off read of a contest's results, filtered by level after the
+ * query. Legacy rows (no `result_level`) count as polling-unit results.
+ *
+ * The dashboard deliberately keeps ONE real-time listener and
+ * partitions in memory; this helper is for callers that need a
+ * point-in-time read.
+ */
+export async function getResultsByLevel(
+  contestId: string,
+  level: ElectionResultLevel,
+): Promise<ElectionResultDoc[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, "election_results"),
+      where("contest_id", "==", contestId),
+    ),
+  );
+
+  return snap.docs
+    .map((item) => ({ id: item.id, ...item.data() }) as ElectionResultDoc)
+    .filter((result) => getResultLevel(result) === level);
+}
+
+/*
  * ============================================================
  * POLLING UNIT REPORTS SERVICE
  * ============================================================

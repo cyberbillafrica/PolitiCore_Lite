@@ -41,9 +41,18 @@ import {
   deriveLgaIdFromWard,
   lgasWithinContestScope,
   describeContestScope,
+  lgaDisplayLabel,
   pollingUnitDisplayLabel,
   wardDisplayLabel,
 } from "@/lib/election-scope";
+import {
+  countApprovedByLevel,
+  countHierarchyTargets,
+  getResultLevel,
+  resultLevelMeta,
+  visibleResultLevels,
+  type ElectionResultLevel,
+} from "@/lib/election-levels";
 import { lgaIdForResult } from "@/lib/election-read-scope";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import { notify } from "@/lib/notify";
@@ -143,6 +152,8 @@ export default function ElectionDashboard() {
   const [selectedContestId, setSelectedContestId] = useState<string>("all");
   const [selectedLgaId, setSelectedLgaId] = useState<string>("all");
   const [selectedWardId, setSelectedWardId] = useState<string>("all");
+  const [activeLevel, setActiveLevel] =
+    useState<ElectionResultLevel>("polling_unit");
 
   // Configurable Party Comparison (Spec Section 38 & 39)
   const [comparePartyA, setComparePartyA] = useState<string>("");
@@ -220,42 +231,80 @@ export default function ElectionDashboard() {
    *
    *   - admin / election officer   -> the active contest (or the whole
    *                                   collection when no contest is chosen)
-   *   - an active assignment       -> that ward, or every ward of the
-   *                                   assignment's LGA, or its polling unit
+   *   - an active assignment       -> that ward, LGA, or polling unit
    *   - the member's own record    -> their registered ward + polling unit
    *
-   * A member with neither an assignment nor a registered polling unit
-   * cannot read anything, so no listener is opened at all rather than
-   * issuing an over-broad query that would fail.
+   * Round 16A: an LGA/zone coordinator queries by lga_id, not by every
+   * ward, so EC8C rows (which have no ward or polling unit) arrive in
+   * the same single merged subscription. Ward/PU rows in those LGAs are
+   * returned too and are deduplicated client-side.
+   *
+   * The ACTIVE contest is always included alongside a historical
+   * selection: the tab strip and completion counts stay on the active
+   * contest even while the rest of the dashboard is browsing an older
+   * one.
    */
   const resultScope = useMemo(() => {
     const contestFilter =
       selectedContestId !== "all" ? selectedContestId : undefined;
+    const activeContestFilter =
+      contestFilter && activeContest && activeContest.id !== contestFilter
+        ? activeContest.id
+        : undefined;
 
-    const withContest = (constraint: Omit<ElectionResultScopeConstraint, "contest_id">) => ({
-      ...(contestFilter ? { contest_id: contestFilter } : {}),
-      ...constraint,
-    });
+    const filters = [contestFilter, activeContestFilter].filter(
+      (value, index, list): value is string =>
+        Boolean(value) && list.indexOf(value) === index,
+    );
+
+    const scopeConstraints: Array<
+      Omit<ElectionResultScopeConstraint, "contest_id">
+    > = [];
+
+    const buildConstraints = (unrestricted: boolean) => {
+      if (unrestricted) {
+        return {
+          constraints: (filters.length > 0
+            ? filters.map((id) => ({ contest_id: id }))
+            : [{}]) as ElectionResultScopeConstraint[],
+          restricted: false,
+        };
+      }
+
+      const combined = filters.length
+        ? filters.flatMap((contestId) =>
+            scopeConstraints.map((scope) => ({
+              contest_id: contestId,
+              ...scope,
+            })),
+          )
+        : scopeConstraints;
+
+      // Collapse duplicates so one assignment does not double-subscribe.
+      const seen = new Set<string>();
+      const unique = combined.filter((constraint) => {
+        const key = JSON.stringify(constraint);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return {
+        constraints: unique as ElectionResultScopeConstraint[],
+        restricted: true,
+      };
+    };
 
     if (isAdmin || profile?.access_role === "election_officer") {
-      return {
-        constraints: [
-          contestFilter ? { contest_id: contestFilter } : {},
-        ] as ElectionResultScopeConstraint[],
-        restricted: false,
-      };
+      return buildConstraints(true);
     }
-
-    const constraints: ElectionResultScopeConstraint[] = [];
 
     // The member's own registered polling unit is always readable.
     if (profile?.ward_id && profile?.polling_unit_id) {
-      constraints.push(
-        withContest({
-          ward_id: profile.ward_id,
-          polling_unit_id: profile.polling_unit_id,
-        }),
-      );
+      scopeConstraints.push({
+        ward_id: profile.ward_id,
+        polling_unit_id: profile.polling_unit_id,
+      });
     }
 
     for (const assignment of assignments) {
@@ -270,16 +319,11 @@ export default function ElectionDashboard() {
         assignment.scope_type === "state" ||
         assignment.scope_type === "campaign"
       ) {
-        return {
-          constraints: [
-            contestFilter ? { contest_id: contestFilter } : {},
-          ] as ElectionResultScopeConstraint[],
-          restricted: false,
-        };
+        return buildConstraints(true);
       }
 
       if (assignment.scope_type === "ward" && assignment.scope_id) {
-        constraints.push(withContest({ ward_id: assignment.scope_id }));
+        scopeConstraints.push({ ward_id: assignment.scope_id });
         continue;
       }
 
@@ -287,7 +331,7 @@ export default function ElectionDashboard() {
         assignment.scope_type === "polling_unit" &&
         assignment.scope_id
       ) {
-        constraints.push(withContest({ polling_unit_id: assignment.scope_id }));
+        scopeConstraints.push({ polling_unit_id: assignment.scope_id });
         continue;
       }
 
@@ -299,23 +343,37 @@ export default function ElectionDashboard() {
             item.id.toLowerCase() === scopeId.replace(/-lga$/, ""),
         );
 
-        for (const ward of lga?.wards ?? []) {
-          constraints.push(withContest({ ward_id: ward.id }));
+        if (lga) scopeConstraints.push({ lga_id: lga.id });
+        continue;
+      }
+
+      if (
+        assignment.scope_type === "senatorial_zone" &&
+        assignment.scope_id
+      ) {
+        for (const lga of lgas) {
+          if (
+            assignmentCoversScope(
+              assignment,
+              { scope_type: "lga", scope_id: lga.id },
+              lgas,
+            )
+          ) {
+            scopeConstraints.push({ lga_id: lga.id });
+          }
         }
       }
     }
 
-    // Collapse duplicates so one LGA assignment does not double-subscribe.
-    const seen = new Set<string>();
-    const unique = constraints.filter((constraint) => {
-      const key = JSON.stringify(constraint);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    return { constraints: unique, restricted: true };
-  }, [isAdmin, profile, assignments, selectedContestId, lgas]);
+    return buildConstraints(false);
+  }, [
+    isAdmin,
+    profile,
+    assignments,
+    selectedContestId,
+    activeContest,
+    lgas,
+  ]);
 
   // Real-time Firestore Listener
   useEffect(() => {
@@ -674,12 +732,27 @@ export default function ElectionDashboard() {
   }, [scopedLgas, lockedWardId, selectedLgaId, selectedWardId]);
 
   // Operational Submissions vs Official Results
+  /*
+   * Round 16A: the one listener now returns every collation level. The
+   * legacy dashboards above (party totals, reporting %, charts) are
+   * polling-unit aggregations, so they keep counting EC8A rows ONLY —
+   * summing a ward collation on top of the PUs it collates would double
+   * count. Level tabs read `displayedResults` instead.
+   */
   const officialApprovedResults = useMemo(() => {
-    return viewerScopedResults.filter((r) => r.status === "approved");
-  }, [viewerScopedResults]);
+    return viewerScopedResults.filter(
+      (r) =>
+        getResultLevel(r) === "polling_unit" &&
+        r.status === "approved" &&
+        (selectedContestId === "all" ||
+          !r.contest_id ||
+          r.contest_id === selectedContestId),
+    );
+  }, [viewerScopedResults, selectedContestId]);
 
   const operationalSubmissions = useMemo(() => {
     return viewerScopedResults.filter((r) => {
+      if (getResultLevel(r) !== "polling_unit") return false;
       if (
         selectedContestId !== "all" &&
         r.contest_id &&
@@ -846,6 +919,113 @@ export default function ElectionDashboard() {
     scopedLgas,
     viewerScope,
   ]);
+
+  /*
+   * ============================================================
+   * COLLATION LEVELS, TABS & COMPLETION STRIP
+   * ============================================================
+   *
+   * The active contest — never the historical-contest dropdown —
+   * decides the tabs and their counts. Results are partitioned from
+   * the ONE merged listener in memory: no second subscription.
+   */
+  const visibleLevels = useMemo(
+    () => visibleResultLevels(activeContest, contestLgaIds),
+    [activeContest, contestLgaIds],
+  );
+
+  const activeLevelMeta = resultLevelMeta(activeLevel);
+
+  const activeContestResults = useMemo(() => {
+    if (!activeContest) return [];
+    return viewerScopedResults.filter(
+      (result) => result.contest_id === activeContest.id,
+    );
+  }, [viewerScopedResults, activeContest]);
+
+  const approvedByLevel = useMemo(
+    () =>
+      activeContest
+        ? countApprovedByLevel(activeContestResults, activeContest.id)
+        : {
+            polling_unit: 0,
+            ward: 0,
+            lga: 0,
+            state: 0,
+          },
+    [activeContestResults, activeContest],
+  );
+
+  const completionTotals = useMemo(() => {
+    const totals = countHierarchyTargets(scopedLgas);
+
+    if (viewerScope.unrestricted) return totals;
+
+    if (viewerScope.pollingUnitIds?.size) {
+      totals.polling_unit = viewerScope.pollingUnitIds.size;
+    } else if (viewerScope.wardIds?.size) {
+      totals.polling_unit = scopedLgas.reduce(
+        (sum, lga) =>
+          sum +
+          lga.wards
+            .filter((ward) => viewerScope.wardIds!.has(ward.id))
+            .reduce((wardSum, ward) => wardSum + ward.pollingUnits.length, 0),
+        0,
+      );
+    }
+
+    if (viewerScope.wardIds?.size) {
+      totals.ward = scopedLgas.reduce(
+        (sum, lga) =>
+          sum +
+          lga.wards.filter((ward) => viewerScope.wardIds!.has(ward.id)).length,
+        0,
+      );
+    }
+
+    if (viewerScope.lgaIds?.size) {
+      totals.lga = scopedLgas.length;
+    }
+
+    return totals;
+  }, [scopedLgas, viewerScope]);
+
+  const displayedResults = useMemo(() => {
+    if (!activeContest || visibleLevels.length === 0) {
+      return operationalSubmissions;
+    }
+
+    return activeContestResults
+      .filter((result) => getResultLevel(result) === activeLevel)
+      .filter(
+        (result) =>
+          selectedLgaId === "all" ||
+          lgaIdForResult(lgas, result.lga_id, result.ward_id).toLowerCase() ===
+            selectedLgaId.toLowerCase(),
+      )
+      .filter(
+        (result) =>
+          selectedWardId === "all" || result.ward_id === selectedWardId,
+      );
+  }, [
+    activeContest,
+    visibleLevels,
+    operationalSubmissions,
+    activeContestResults,
+    activeLevel,
+    selectedLgaId,
+    selectedWardId,
+    lgas,
+  ]);
+
+  /* A shorter tab set (contest change) must never leave a stale level. */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (visibleLevels.length > 0 && !visibleLevels.includes(activeLevel)) {
+      setActiveLevel("polling_unit");
+    }
+  }, [visibleLevels, activeLevel]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /*
    * ============================================================
@@ -1141,6 +1321,105 @@ export default function ElectionDashboard() {
           </span>
         </div>
       )}
+
+      {/* Completion strip + active-contest tabs (Round 16A) */}
+      {activeContest && visibleLevels.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b bg-gray-50/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                Collation completion
+              </p>
+              <p className="text-[11px] text-gray-400">
+                Approved / total in {activeContest.name}
+              </p>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {visibleLevels.map((level) => {
+                const meta = resultLevelMeta(level);
+                const approved = approvedByLevel[level];
+                const total = completionTotals[level];
+                const percent =
+                  total > 0
+                    ? Math.min(100, Math.round((approved / total) * 100))
+                    : 0;
+
+                return (
+                  <div
+                    key={level}
+                    className="min-w-[120px] flex-1 rounded-xl border border-gray-200 bg-white p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                        {meta.shortLabel}
+                      </span>
+                      <span className="text-[10px] font-bold text-gray-400">
+                        {meta.formCode}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-lg font-bold text-gray-900">
+                      {approved}
+                      <span className="text-xs font-semibold text-gray-400">
+                        {" "}/ {total}
+                      </span>
+                    </p>
+                    <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-3 flex flex-wrap gap-2">
+            {visibleLevels.map((level) => {
+              const meta = resultLevelMeta(level);
+              const selected = activeLevel === level;
+
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setActiveLevel(level)}
+                  aria-pressed={selected}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
+                    selected
+                      ? "bg-apc-primary text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {level === "state" ? "State (EC8D)" : meta.label}
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                      selected
+                        ? "bg-white/20 text-white"
+                        : "bg-white text-gray-500"
+                    }`}
+                  >
+                    {approvedByLevel[level]}/{completionTotals[level]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Historical contest notice — tabs stay on the active contest */}
+      {activeContest &&
+        selectedContestId !== "all" &&
+        selectedContestId !== activeContest.id && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+            Viewing historical contest — active contest is{" "}
+            <span className="font-bold">{activeContest.name}</span>. The tabs
+            and completion strip stay scoped to the active contest.
+          </div>
+        )}
 
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap items-center justify-between gap-4">
@@ -1491,7 +1770,10 @@ export default function ElectionDashboard() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>
-              Polling Unit Results ({operationalSubmissions.length})
+              {activeLevel === "polling_unit"
+                ? "Polling Unit Results"
+                : `${resultLevelMeta(activeLevel).label} Results`}{" "}
+              ({displayedResults.length})
             </CardTitle>
             {!isAdmin && (
               <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
@@ -1502,10 +1784,138 @@ export default function ElectionDashboard() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            {operationalSubmissions.length === 0 ? (
+            {displayedResults.length === 0 ? (
               <p className="text-center py-8 text-sm text-gray-500">
-                No polling unit election results available in this scope yet.
+                {activeLevel === "polling_unit"
+                  ? "No polling unit election results available in this scope yet."
+                  : `No ${resultLevelMeta(activeLevel).label.toLowerCase()} collations submitted yet.`}
               </p>
+            ) : activeLevel !== "polling_unit" ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50 text-xs font-semibold uppercase text-gray-500">
+                    <th className="text-left py-3 px-4">
+                      {resultLevelMeta(activeLevel).label}
+                    </th>
+                    <th className="text-left py-3 px-4">Contest</th>
+                    <th className="text-left py-3 px-4">Party breakdown</th>
+                    <th className="text-center py-3 px-4">Total</th>
+                    <th className="text-center py-3 px-4">Status</th>
+                    <th className="text-center py-3 px-4">
+                      {resultLevelMeta(activeLevel).formCode} Evidence
+                    </th>
+                    <th className="text-right py-3 px-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {displayedResults.map((r) => {
+                    const contestObj = contests.find(
+                      (c) => c.id === r.contest_id,
+                    );
+                    const areaLabel =
+                      activeLevel === "ward"
+                        ? wardDisplayLabel(lgas, r.ward_id)
+                        : activeLevel === "lga"
+                          ? lgas.find((l) => l.id === r.lga_id)?.name ||
+                            r.lga_id
+                          : r.state_id || "Enugu State";
+                    const totalVotes = r.results.reduce(
+                      (sum, item) => sum + Number(item.votes || 0),
+                      0,
+                    );
+
+                    return (
+                      <tr key={r.id} className="hover:bg-gray-50/80">
+                        <td className="py-3 px-4">
+                          <p className="font-semibold text-gray-900">
+                            {areaLabel}
+                          </p>
+                          <p className="text-xs text-gray-500">{r.id}</p>
+                        </td>
+                        <td className="py-3 px-4">
+                          <p className="font-semibold text-xs text-emerald-800">
+                            {contestObj?.name || r.contest_id}
+                          </p>
+                        </td>
+                        <td className="py-3 px-4">
+                          <p className="text-xs text-gray-700">
+                            {r.results
+                              .map((item) => `${item.party} ${item.votes}`)
+                              .join(" · ")}
+                          </p>
+                        </td>
+                        <td className="text-center py-3 px-4 font-bold text-gray-900">
+                          {totalVotes.toLocaleString()}
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span
+                            className={`px-2.5 py-1 text-xs font-bold rounded-full ${
+                              r.status === "approved"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : r.status === "rejected"
+                                  ? "bg-red-100 text-red-800"
+                                  : r.status === "clarification_required"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : r.status === "reopened"
+                                      ? "bg-purple-100 text-purple-800"
+                                      : "bg-blue-100 text-blue-800"
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          {r.cloudinary_url ? (
+                            <button
+                              onClick={() => setInspectResult(r)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-apc-primary hover:underline"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              Inspect {resultLevelMeta(activeLevel).formCode}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">
+                              No Image
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-right py-3 px-4">
+                          <div className="flex items-center justify-end gap-2">
+                            {r.history && r.history.length > 0 && (
+                              <button
+                                onClick={() => setInspectResult(r)}
+                                title="View audit history"
+                                className="p-1 text-gray-400 hover:text-apc-primary"
+                              >
+                                <History className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {isAdmin && (
+                              <button
+                                onClick={() => {
+                                  setEditingResult(r);
+                                  setEditFormResults([...r.results]);
+                                  setEditReason("");
+                                }}
+                                disabled={!electionMode}
+                                title={
+                                  electionMode
+                                    ? "Correct this result"
+                                    : "Election mode is off"
+                                }
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-apc-primary/10 text-apc-primary hover:bg-apc-primary hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-apc-primary/10 disabled:hover:text-apc-primary"
+                              >
+                                Correct
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -1518,7 +1928,7 @@ export default function ElectionDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {operationalSubmissions.map((r) => {
+                  {displayedResults.map((r) => {
                     const contestObj = contests.find(
                       (c) => c.id === r.contest_id,
                     );
@@ -1624,7 +2034,9 @@ export default function ElectionDashboard() {
           <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
             <div className="bg-apc-primary text-white p-5 flex items-center justify-between">
               <div>
-                <h2 className="font-bold text-lg">Form EC8 Result Evidence</h2>
+                <h2 className="font-bold text-lg">
+                  Form {resultLevelMeta(activeLevel).formCode} Result Evidence
+                </h2>
                 <p className="text-xs text-white/80">
                   PU:{" "}
                   {pollingUnitDisplayLabel(

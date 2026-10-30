@@ -10,7 +10,13 @@ import {
   submitElectionResultWithEvidence,
   getPoliticalParties,
 } from "@/lib/firebase/election";
-import { getElectionResultsByWardAndPollingUnit } from "@/lib/firebase/firestore";
+import {
+  getElectionResultsByWardAndPollingUnit,
+  getElectionResultsByWard,
+  getElectionResultsByWardAndLga,
+  getElectionResultsByLga,
+  getElectionResultsByState,
+} from "@/lib/firebase/firestore";
 import { electionRead } from "@/lib/firebase/query-debug";
 import { resolveUserNames, UNKNOWN_MEMBER_NAME } from "@/lib/userNames";
 import { assignmentCoversScope } from "@/lib/permissions";
@@ -18,12 +24,20 @@ import { uploadToCloudinary, cloudinaryFolder } from "@/lib/cloudinary";
 import { getAllEnuguLGAs } from "@/lib/firebase/electoral";
 import {
   contestCoversPollingUnit,
+  contestCoversWard,
   deriveLgaIdFromWard,
   describeContestScope,
+  isWithinContestScope,
   lgasWithinContestScope,
   pollingUnitDisplayLabel,
   wardDisplayLabel,
 } from "@/lib/election-scope";
+import {
+  availableUploadLevels,
+  getResultLevel,
+  resultLevelMeta,
+  type ElectionResultLevel,
+} from "@/lib/election-levels";
 import {
   useElectionMode,
   useActiveContest,
@@ -35,6 +49,7 @@ import type { ElectionResultRecord, LGA, PoliticalParty } from "@/types";
 type ExistingResult = ElectionResultRecord & {
   contest_id?: string;
   status?: string;
+  state_id?: string | null;
 };
 
 const COORDINATOR_POSITIONS = [
@@ -145,6 +160,9 @@ export default function ElectionUploadPage() {
 
   // Dynamic party vote entries based on active contest configuration
   const [partyVotes, setPartyVotes] = useState<Record<string, number>>({});
+
+  const [level, setLevel] = useState<ElectionResultLevel>("polling_unit");
+  const [notes, setNotes] = useState("");
 
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
@@ -301,6 +319,119 @@ export default function ElectionUploadPage() {
 
   const canSelectPollingUnit = coordinatorAssignments.length > 0;
 
+  const availableLevels = useMemo(
+    () =>
+      availableUploadLevels({
+        isAdminOrElectionOfficer,
+        assignments: coordinatorAssignments,
+        contest: activeContest,
+      }),
+    [isAdminOrElectionOfficer, coordinatorAssignments, activeContest],
+  );
+
+  /*
+   * Ward/LGA options for the collation forms. Admin/officer may pick
+   * anywhere in the active contest; a coordinator is limited to the
+   * wards/LGAs their active assignment covers.
+   */
+  const allowedWardOptions = useMemo(() => {
+    const wards = scopedLgaOptions.flatMap((lga) =>
+      lga.wards.map((ward) => ({ ...ward, lgaId: lga.id })),
+    );
+
+    if (isAdminOrElectionOfficer) return wards;
+
+    return wards.filter((ward) =>
+      coordinatorAssignments.some((assignment) =>
+        assignmentCoversScope(
+          assignment,
+          { scope_type: "ward", scope_id: ward.id },
+          lgas,
+        ),
+      ),
+    );
+  }, [
+    scopedLgaOptions,
+    isAdminOrElectionOfficer,
+    coordinatorAssignments,
+    lgas,
+  ]);
+
+  const allowedLgaOptions = useMemo(() => {
+    if (isAdminOrElectionOfficer) return scopedLgaOptions;
+
+    return scopedLgaOptions.filter((lga) =>
+      coordinatorAssignments.some((assignment) =>
+        assignmentCoversScope(
+          assignment,
+          { scope_type: "lga", scope_id: lga.id },
+          lgas,
+        ),
+      ),
+    );
+  }, [scopedLgaOptions, isAdminOrElectionOfficer, coordinatorAssignments, lgas]);
+
+  const stateId = currentContest?.state_id || "enugu-state";
+
+  const handleLevelChange = (next: ElectionResultLevel) => {
+    if (next === level) return;
+
+    setLevel(next);
+    setExistingResult(null);
+    setCheckingExisting(false);
+    setSubmitterName("");
+    setEvidenceFile(null);
+    setEvidencePreview(null);
+    setNotes("");
+    setMessage("");
+    setError("");
+
+    if (next === "ward") {
+      const single = allowedWardOptions.length === 1 ? allowedWardOptions[0] : null;
+      setForm({
+        lga_id: single?.lgaId ?? "",
+        ward_id: single?.id ?? "",
+        polling_unit_id: "",
+      });
+      return;
+    }
+
+    if (next === "lga") {
+      const single = allowedLgaOptions.length === 1 ? allowedLgaOptions[0] : null;
+      setForm({
+        lga_id: single?.id ?? "",
+        ward_id: "",
+        polling_unit_id: "",
+      });
+      return;
+    }
+
+    if (next === "state") {
+      setForm({ lga_id: "", ward_id: "", polling_unit_id: "" });
+      return;
+    }
+
+    setForm({
+      lga_id: isAdminOrElectionOfficer
+        ? singleLgaLocked
+          ? scopedLgaOptions[0]?.id ?? ""
+          : ""
+        : deriveLgaIdFromWard(lgas, profile?.ward_id),
+      ward_id: isAdminOrElectionOfficer ? "" : profile?.ward_id ?? "",
+      polling_unit_id: isAdminOrElectionOfficer
+        ? ""
+        : profile?.polling_unit_id ?? "",
+    });
+  };
+
+  /* If a contest/role change removes the selected level, fall back to PU. */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (availableLevels.length === 0) return;
+    if (!availableLevels.includes(level)) setLevel("polling_unit");
+  }, [availableLevels, level]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const allowedUnits = useMemo(() => {
     const units: Array<{
       lgaId: string;
@@ -383,28 +514,54 @@ export default function ElectionUploadPage() {
   }, [allowedUnits, canSelectPollingUnit, form.polling_unit_id]);
 
   /*
-   * The duplicate check runs before the form is shown. A query on
-   * ward + polling unit is provable by the read rule for the member's
-   * own PU and for a coordinator's ward; a `getDoc` on a missing
-   * deterministic id would itself be denied.
+   * The duplicate check runs before the form is shown. It is a QUERY, not
+   * a `getDoc`: a missing deterministic id would itself be denied by the
+   * read rule. Each level is queried by the scope field that proves
+   * readability (PU: ward + PU, Ward: ward, LGA: LGA, State: state), then
+   * filtered by contest and result_level in memory. Legacy documents
+   * (no `result_level`) count as polling-unit results.
    */
   useEffect(() => {
-    if (!activeContest?.id || !form.ward_id || !form.polling_unit_id) {
+    if (!activeContest?.id) {
       setExistingResult(null);
       setCheckingExisting(false);
       return;
     }
 
-    /*
-     * A coordinator's home PU is cleared by the effect above; do not
-     * run (or flash) a check for a unit outside the selector.
-     */
-    if (
-      canSelectPollingUnit &&
-      !allowedUnits.some(
-        (unit) => unit.pollingUnitId === form.polling_unit_id,
-      )
-    ) {
+    if (level === "polling_unit") {
+      if (!form.ward_id || !form.polling_unit_id) {
+        setExistingResult(null);
+        setCheckingExisting(false);
+        return;
+      }
+
+      /*
+       * A coordinator's home PU is cleared by the effect above; do not
+       * run (or flash) a check for a unit outside the selector.
+       */
+      if (
+        canSelectPollingUnit &&
+        !allowedUnits.some(
+          (unit) => unit.pollingUnitId === form.polling_unit_id,
+        )
+      ) {
+        setExistingResult(null);
+        setCheckingExisting(false);
+        return;
+      }
+    } else if (level === "ward") {
+      if (!form.ward_id) {
+        setExistingResult(null);
+        setCheckingExisting(false);
+        return;
+      }
+    } else if (level === "lga") {
+      if (!form.lga_id) {
+        setExistingResult(null);
+        setCheckingExisting(false);
+        return;
+      }
+    } else if (!stateId) {
       setExistingResult(null);
       setCheckingExisting(false);
       return;
@@ -412,29 +569,69 @@ export default function ElectionUploadPage() {
 
     let cancelled = false;
     const contestId = activeContest.id;
+    /*
+     * The ward pre-check carries the ward's LGA too: an LGA/zone
+     * coordinator's read grant is scoped to the LGA, and a ward-only
+     * query cannot be proven readable by the rules.
+     */
+    const wardCheckLgaId =
+      level === "ward" ? deriveLgaIdFromWard(lgas, form.ward_id) : "";
     setCheckingExisting(true);
+
+    const queryExisting = (): Promise<ElectionResultRecord[]> => {
+      if (level === "polling_unit") {
+        return getElectionResultsByWardAndPollingUnit(
+          form.ward_id,
+          form.polling_unit_id,
+        );
+      }
+
+      if (level === "ward") {
+        return wardCheckLgaId
+          ? getElectionResultsByWardAndLga(form.ward_id, wardCheckLgaId)
+          : getElectionResultsByWard(form.ward_id);
+      }
+
+      if (level === "lga") {
+        return getElectionResultsByLga(form.lga_id);
+      }
+
+      return getElectionResultsByState(stateId);
+    };
 
     electionRead(
       {
         collection: "election_results",
-        filter: {
-          ward_id: form.ward_id,
-          polling_unit_id: form.polling_unit_id,
-        },
+        filter:
+          level === "polling_unit"
+            ? {
+                ward_id: form.ward_id,
+                polling_unit_id: form.polling_unit_id,
+              }
+            : level === "ward"
+              ? { ward_id: form.ward_id, lga_id: wardCheckLgaId || undefined }
+              : level === "lga"
+                ? { lga_id: form.lga_id }
+                : { state_id: stateId },
       },
-      () =>
-        getElectionResultsByWardAndPollingUnit(
-          form.ward_id,
-          form.polling_unit_id,
-        ),
+      queryExisting,
     )
       .then((rows) => {
         if (cancelled) return;
 
         const match =
-          (rows as ExistingResult[]).find(
-            (row) => !row.contest_id || row.contest_id === contestId,
-          ) ?? null;
+          (rows as ExistingResult[]).find((row) => {
+            if (row.contest_id && row.contest_id !== contestId) return false;
+            if (getResultLevel(row) !== level) return false;
+
+            if (level === "polling_unit") {
+              return row.polling_unit_id === form.polling_unit_id;
+            }
+
+            if (level === "ward") return row.ward_id === form.ward_id;
+            if (level === "lga") return row.lga_id === form.lga_id;
+            return row.state_id === stateId;
+          }) ?? null;
 
         setExistingResult(match);
       })
@@ -458,6 +655,10 @@ export default function ElectionUploadPage() {
     canSelectPollingUnit,
     form.ward_id,
     form.polling_unit_id,
+    form.lga_id,
+    lgas,
+    level,
+    stateId,
   ]);
 
   useEffect(() => {
@@ -513,65 +714,153 @@ export default function ElectionUploadPage() {
       return;
     }
 
-    if (!form.ward_id || !form.polling_unit_id) {
-      notify.error("Ward and polling unit are required.");
+    const levelMeta = resultLevelMeta(level);
+
+    if (level === "polling_unit") {
+      if (!form.ward_id || !form.polling_unit_id) {
+        notify.error("Ward and polling unit are required.");
+        return;
+      }
+    } else if (level === "ward") {
+      if (!form.ward_id) {
+        notify.error("A ward is required for an EC8B collation.");
+        return;
+      }
+    } else if (level === "lga") {
+      if (!form.lga_id) {
+        notify.error("An LGA is required for an EC8C collation.");
+        return;
+      }
+    } else if (!stateId) {
+      notify.error("A state is required for an EC8D collation.");
       return;
     }
 
     if (!evidenceFile) {
-      notify.error("Form EC8 / official result sheet photo evidence is required.");
+      notify.error(
+        `${levelMeta.formCode} / official result sheet photo evidence is required.`,
+      );
       return;
     }
 
-    /*
-     * Coordinators may submit for any PU inside their assignment (the
-     * selector only lists those); everyone else is pinned to their own
-     * registered ward + polling unit. The rules enforce the same bound.
-     */
-    if (!isAdminOrElectionOfficer) {
-      if (canSelectPollingUnit) {
-        const allowed = allowedUnits.some(
-          (unit) =>
-            unit.wardId === form.ward_id &&
-            unit.pollingUnitId === form.polling_unit_id,
-        );
+    if (level === "polling_unit") {
+      /*
+       * Coordinators may submit for any PU inside their assignment (the
+       * selector only lists those); everyone else is pinned to their own
+       * registered ward + polling unit. The rules enforce the same bound.
+       */
+      if (!isAdminOrElectionOfficer) {
+        if (canSelectPollingUnit) {
+          const allowed = allowedUnits.some(
+            (unit) =>
+              unit.wardId === form.ward_id &&
+              unit.pollingUnitId === form.polling_unit_id,
+          );
 
-        if (!allowed) {
+          if (!allowed) {
+            notify.error(
+              "Choose a polling unit inside your assigned area and the active contest.",
+            );
+            return;
+          }
+        } else if (
+          form.ward_id !== profile?.ward_id ||
+          form.polling_unit_id !== profile?.polling_unit_id
+        ) {
           notify.error(
-            "Choose a polling unit inside your assigned area and the active contest.",
+            "You can only submit results for your registered ward and polling unit.",
           );
           return;
         }
-      } else if (
-        form.ward_id !== profile?.ward_id ||
-        form.polling_unit_id !== profile?.polling_unit_id
+      }
+
+      /*
+       * Round-4: EVERY role — admin and officer included — must pick a
+       * polling unit that sits inside the active contest's geographic
+       * scope. The boundary comes from the contest (scope_type /
+       * scope_id / lga_ids), never from a fixed LGA.
+       */
+      if (
+        !contestCoversPollingUnit(
+          currentContest,
+          form.lga_id,
+          form.ward_id,
+          form.polling_unit_id,
+          lgas,
+        )
       ) {
         notify.error(
-          "You can only submit results for your registered ward and polling unit.",
+          "This polling unit is not within the scope of the active contest.",
         );
         return;
       }
-    }
+    } else if (level === "ward") {
+      const wardLgaId = deriveLgaIdFromWard(lgas, form.ward_id);
 
-    /*
-     * Round-4: EVERY role — admin and officer included — must pick a
-     * polling unit that sits inside the active contest's geographic
-     * scope. The boundary comes from the contest (scope_type /
-     * scope_id / lga_ids), never from a fixed LGA.
-     */
-    if (
-      !contestCoversPollingUnit(
-        currentContest,
-        form.lga_id,
-        form.ward_id,
-        form.polling_unit_id,
-        lgas,
-      )
-    ) {
-      notify.error(
-        "This polling unit is not within the scope of the active contest.",
-      );
-      return;
+      if (!contestCoversWard(currentContest, wardLgaId, form.ward_id, lgas)) {
+        notify.error(
+          "This ward is not within the scope of the active contest.",
+        );
+        return;
+      }
+
+      if (
+        !isAdminOrElectionOfficer &&
+        !coordinatorAssignments.some((assignment) =>
+          assignmentCoversScope(
+            assignment,
+            { scope_type: "ward", scope_id: form.ward_id },
+            lgas,
+          ),
+        )
+      ) {
+        notify.error("This ward is outside your assigned upload scope.");
+        return;
+      }
+    } else if (level === "lga") {
+      if (
+        !isWithinContestScope(
+          currentContest,
+          { lgaId: form.lga_id },
+          lgas,
+        )
+      ) {
+        notify.error("This LGA is not within the scope of the active contest.");
+        return;
+      }
+
+      if (
+        !isAdminOrElectionOfficer &&
+        !coordinatorAssignments.some((assignment) =>
+          assignmentCoversScope(
+            assignment,
+            { scope_type: "lga", scope_id: form.lga_id },
+            lgas,
+          ),
+        )
+      ) {
+        notify.error("This LGA is outside your assigned upload scope.");
+        return;
+      }
+    } else {
+      if (currentContest.scope_type !== "state") {
+        notify.error(
+          "A state collation (EC8D) is only available for a state-wide contest.",
+        );
+        return;
+      }
+
+      if (
+        !isAdminOrElectionOfficer &&
+        !coordinatorAssignments.some(
+          (assignment) =>
+            assignment.scope_type === "state" ||
+            assignment.scope_type === "campaign",
+        )
+      ) {
+        notify.error("Only a state coordinator may submit a state collation.");
+        return;
+      }
     }
 
     // Format party vote payload
@@ -584,9 +873,23 @@ export default function ElectionUploadPage() {
       return;
     }
 
+    const wardLgaId = deriveLgaIdFromWard(lgas, form.ward_id);
+    const payloadLgaId =
+      level === "state"
+        ? ""
+        : level === "lga"
+          ? form.lga_id
+          : level === "ward"
+            ? wardLgaId
+            : form.lga_id || wardLgaId;
+    const payloadWardId =
+      level === "polling_unit" || level === "ward" ? form.ward_id : "";
+    const payloadPollingUnitId =
+      level === "polling_unit" ? form.polling_unit_id : "";
+
     setSubmitting(true);
     try {
-      // 1. Upload Form EC8 image to the per-client election-results folder
+      // 1. Upload the level's evidence image to the election-results folder
       let cloudinaryUrl: string | null = null;
       try {
         cloudinaryUrl = await uploadToCloudinary(
@@ -596,11 +899,15 @@ export default function ElectionUploadPage() {
       } catch (uploadErr: unknown) {
         const err = uploadErr as Error;
         console.error("Cloudinary upload error:", uploadErr);
-        throw new Error(err.message || "Failed to upload Form EC8 image.");
+        throw new Error(
+          err.message || `Failed to upload ${levelMeta.formCode} image.`,
+        );
       }
 
       if (!cloudinaryUrl) {
-        throw new Error("Form EC8 photo upload failed. Please try again.");
+        throw new Error(
+          `${levelMeta.formCode} photo upload failed. Please try again.`,
+        );
       }
 
       // 2. Submit contest-aware result + evidence metadata to Firestore
@@ -612,11 +919,13 @@ export default function ElectionUploadPage() {
           scope_type: currentContest.scope_type,
           scope_id: currentContest.scope_id,
         },
-        lgaId: form.lga_id,
-        wardId: form.ward_id,
-        pollingUnitId: form.polling_unit_id,
-        stateId: currentContest.state_id || "enugu-state",
+        resultLevel: level,
+        lgaId: payloadLgaId,
+        wardId: payloadWardId,
+        pollingUnitId: payloadPollingUnitId,
+        stateId,
         senatorialZoneId: currentContest.senatorial_zone_id || null,
+        notes: notes.trim() || null,
         results: formattedResults,
         userId: profile?.id || "unknown",
         cloudinaryUrl,
@@ -625,10 +934,11 @@ export default function ElectionUploadPage() {
       });
 
       setMessage(
-        `Results for ${currentContest.name} & Form EC8 evidence submitted successfully! They enter the Election Officer review queue.`
+        `${levelMeta.label} ${levelMeta.formCode} result for ${currentContest.name} submitted successfully! It enters the Election Officer review queue.`
       );
       setEvidenceFile(null);
       setEvidencePreview(null);
+      setNotes("");
     } catch (err: unknown) {
       const errorObj = err as Error;
       console.error("Submission failed:", err);
@@ -665,6 +975,8 @@ export default function ElectionUploadPage() {
     );
   }
 
+  const currentLevelMeta = resultLevelMeta(level);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       <div>
@@ -674,10 +986,11 @@ export default function ElectionUploadPage() {
           <span>ELECTION OPERATIONS DESK</span>
         </div>
         <h1 className="text-2xl font-bold text-gray-900">
-          Upload Polling Unit Result & Form EC8 Evidence
+          Upload Election Result & Form EC8 Evidence
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Submit official polling-unit result sheets for active election contests.
+          Submit EC8A polling-unit results and EC8B / EC8C / EC8D collations
+          for the active election contest.
         </p>
       </div>
 
@@ -715,12 +1028,60 @@ export default function ElectionUploadPage() {
 
         <p className="text-[11px] text-slate-400">
           The active contest fixed by the administrator defines who may
-          upload and where. Result submission is only accepted for the
-          polling units inside this scope.
+          upload and where. Every collation level is bound to this scope.
         </p>
       </div>
 
-      {!isAdminOrElectionOfficer && !canSelectPollingUnit && (
+      {/* Collation level selector — only levels the role may submit */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+              Collation Level
+            </p>
+            <p className="text-[11px] text-gray-500">
+              Only the levels your role and assignment authorize are shown.
+            </p>
+          </div>
+          <span className="text-[11px] font-bold text-apc-primary">
+            {currentLevelMeta.formCode}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {availableLevels.map((option) => {
+            const meta = resultLevelMeta(option);
+            const selected = option === level;
+
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => handleLevelChange(option)}
+                aria-pressed={selected}
+                className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                  selected
+                    ? "border-apc-primary bg-apc-primary text-white"
+                    : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                <span className="block text-xs font-bold">{meta.label}</span>
+                <span
+                  className={`block text-[10px] font-semibold ${
+                    selected ? "text-white/80" : "text-gray-400"
+                  }`}
+                >
+                  {meta.formCode}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {level === "polling_unit" &&
+        !isAdminOrElectionOfficer &&
+        !canSelectPollingUnit && (
         <div className="p-4 bg-apc-light text-apc-primary rounded-xl border border-apc-primary/20 text-xs space-y-1">
           <p className="font-bold text-sm">Your Registered Polling Unit Scope</p>
           <p>
@@ -744,11 +1105,12 @@ export default function ElectionUploadPage() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">
-                Result already submitted for this polling unit
+                Result already submitted for this {currentLevelMeta.entityNoun}
               </h2>
               <p className="mt-1 text-sm text-gray-600">
-                A result already exists for this polling unit in the active
-                contest, so this form is closed.
+                A {currentLevelMeta.formCode} result already exists for this{" "}
+                {currentLevelMeta.entityNoun} in the active contest, so this
+                form is closed.
               </p>
             </div>
           </div>
@@ -782,7 +1144,11 @@ export default function ElectionUploadPage() {
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href="/portal/election/results"
+              href={
+                level === "polling_unit"
+                  ? "/portal/election/results"
+                  : "/portal/election"
+              }
               className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-apc-dark"
             >
               <Eye className="w-4 h-4" /> View Result
@@ -805,7 +1171,9 @@ export default function ElectionUploadPage() {
         onSubmit={handleSubmit}
         className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8 space-y-6"
       >
-        {/* Geographic Location Selection */}
+        {/* Level-specific geographic location selection */}
+        {level === "polling_unit" ? (
+          <>
         {isAdminOrElectionOfficer ? (
           <div className="grid md:grid-cols-3 gap-4">
             <div>
@@ -974,14 +1342,115 @@ export default function ElectionUploadPage() {
             </div>
           </div>
         )}
+          </>
+        ) : level === "ward" ? (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                Ward *
+              </label>
+              <select
+                value={form.ward_id}
+                onChange={(e) => {
+                  const ward = allowedWardOptions.find(
+                    (item) => item.id === e.target.value,
+                  );
+                  setForm({
+                    ...form,
+                    lga_id: ward?.lgaId ?? "",
+                    ward_id: e.target.value,
+                    polling_unit_id: "",
+                  });
+                }}
+                disabled={allowedWardOptions.length === 1}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary disabled:bg-gray-100 text-xs"
+                required
+              >
+                <option value="">
+                  {allowedWardOptions.length === 1
+                    ? "Locked to your assigned ward"
+                    : "Select ward"}
+                </option>
+                {scopedLgaOptions.map((lga) => {
+                  const wardOptions = allowedWardOptions.filter(
+                    (ward) => ward.lgaId === lga.id,
+                  );
+                  if (wardOptions.length === 0) return null;
 
-        {/* Form EC8 Evidence Photo Upload */}
+                  return (
+                    <optgroup key={lga.id} label={lga.name}>
+                      {wardOptions.map((ward) => (
+                        <option key={ward.id} value={ward.id}>
+                          {ward.code} — {ward.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              Only wards inside your assignment scope and the active contest
+              are listed.
+            </p>
+          </div>
+        ) : level === "lga" ? (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                LGA *
+              </label>
+              <select
+                value={form.lga_id}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    lga_id: e.target.value,
+                    ward_id: "",
+                    polling_unit_id: "",
+                  })
+                }
+                disabled={allowedLgaOptions.length === 1}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary disabled:bg-gray-100 text-xs"
+                required
+              >
+                <option value="">
+                  {allowedLgaOptions.length === 1
+                    ? "Locked to your assigned LGA"
+                    : "Select LGA"}
+                </option>
+                {allowedLgaOptions.map((lga) => (
+                  <option key={lga.id} value={lga.id}>
+                    {lga.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] text-gray-500">
+              Only LGAs inside your assignment scope and the active contest are
+              listed.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs space-y-1">
+            <p className="font-bold text-gray-800">State collation (EC8D)</p>
+            <p className="text-gray-600">
+              State: <span className="font-semibold">{stateId}</span>
+            </p>
+            <p className="text-gray-500">
+              The state is fixed by the active state-wide contest.
+            </p>
+          </div>
+        )}
+
+        {/* Level-specific Form EC8 evidence photo upload */}
         <div className="border-t pt-6">
           <label className="block text-sm font-semibold text-gray-900 mb-1">
-            Official Form EC8 Result Sheet Evidence Photo *
+            Official Form {currentLevelMeta.formCode} Result Sheet Evidence Photo *
           </label>
           <p className="text-xs text-gray-500 mb-3">
-            Upload a clear photo of the signed Form EC8 result document for this polling unit.
+            Upload a clear photo of the signed Form {currentLevelMeta.formCode}{" "}
+            result document for this {currentLevelMeta.entityNoun}.
           </p>
 
           <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl p-6 bg-gray-50 hover:bg-gray-100/50 transition-colors">
@@ -989,7 +1458,7 @@ export default function ElectionUploadPage() {
               <div className="relative w-full aspect-video rounded-lg overflow-hidden border mb-3 bg-slate-900">
                 <img
                   src={evidencePreview}
-                  alt="Form EC8 Result Sheet"
+                  alt={`Form ${currentLevelMeta.formCode} Result Sheet`}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -1048,7 +1517,25 @@ export default function ElectionUploadPage() {
           )}
         </div>
 
-        
+        {level !== "polling_unit" && (
+          <div className="border-t pt-6">
+            <label className="block text-sm font-semibold text-gray-900 mb-1">
+              Notes (optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-3">
+              Add any context the election officer should see while reviewing
+              this {currentLevelMeta.label} collation.
+            </p>
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder={`e.g. EC8${currentLevelMeta.formCode.slice(-1)} collation sheet signed by the ward agent`}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary text-xs"
+            />
+          </div>
+        )}
+
         {message && (
           <div className="flex items-center gap-2 p-4 bg-green-50 text-green-700 rounded-lg border border-green-200 text-xs font-medium">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -1070,12 +1557,18 @@ export default function ElectionUploadPage() {
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Uploading Form EC8 & Registering Submission...</span>
+              <span>
+                Uploading Form {currentLevelMeta.formCode} & Registering
+                Submission...
+              </span>
             </>
           ) : (
             <>
               <FileText className="h-4 w-4" />
-              <span>Submit Contest Polling Unit Result</span>
+              <span>
+                Submit {currentLevelMeta.label} Result (
+                {currentLevelMeta.formCode})
+              </span>
             </>
           )}
         </button>

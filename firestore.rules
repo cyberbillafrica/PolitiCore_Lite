@@ -305,7 +305,28 @@ service cloud.firestore {
         || registeredAt(data.ward_id, data.polling_unit_id)
         || hasGlobalAccess("view_election_results")
         || hasScopedAccess("view_election_results", "ward", data.ward_id)
-        || hasScopedAccess("view_election_results", "polling_unit", data.polling_unit_id);
+        || hasScopedAccess("view_election_results", "polling_unit", data.polling_unit_id)
+        /*
+         * Round 16A: EC8C/EC8D rows carry no polling unit and an EC8C
+         * row carries no ward. LGA/state coordinators hold their read
+         * grant at that scope, so check it explicitly.
+         */
+        || (
+          data.get("lga_id", "") != ""
+          && hasScopedAccess(
+              "view_election_results",
+              "lga",
+              data.get("lga_id", "")
+            )
+        )
+        || (
+          data.get("state_id", "") != ""
+          && hasScopedAccess(
+              "view_election_results",
+              "state",
+              data.get("state_id", "")
+            )
+        );
     }
 
     /*
@@ -1280,6 +1301,12 @@ service cloud.firestore {
         )
         && request.resource.data.submitted_by == request.auth.uid
         && request.resource.data.contest_id is string
+        /*
+         * Round 16A: every level writes the same uniform fields, using
+         * an empty string where the level does not apply. The review
+         * helpers compare these fields unchanged, so they must exist on
+         * every document.
+         */
         && request.resource.data.lga_id is string
         && request.resource.data.ward_id is string
         && request.resource.data.polling_unit_id is string
@@ -1288,41 +1315,101 @@ service cloud.firestore {
         && request.resource.data.status == "submitted"
         && request.resource.data.verified == false
         && request.resource.data.cloudinary_url is string
-        && (
-          // Support both ID formats: contest__pu and ward__pu
-          resultId == request.resource.data.contest_id + "__"
-                      + request.resource.data.polling_unit_id
-          || resultId == request.resource.data.ward_id + "__"
-                      + request.resource.data.polling_unit_id
-        )
-        // Round 4: submission target is the ACTIVE contest, and the
-        // polling unit must sit inside its geographic scope. (The
-        // result_submitted audit entry is written in the same client
-        // batch — see src/lib/firebase/election.ts.)
         && hasActiveContest()
         && request.resource.data.contest_id
             == get(electionSettingsDoc()).data.active_contest_id
-        && activeContestAllowsLga()
         && (
-          isAdminOrElectionOfficer()
-          || registeredAt(
-              request.resource.data.ward_id,
-              request.resource.data.polling_unit_id
-            )
           /*
-           * Round 10: a coordinator may submit for any polling unit in
-           * their assignment scope. The `upload_election_result`
-           * projection carries a ward grant for every ward the
-           * assignment covers, plus a global grant for a state /
-           * campaign assignment. The active-contest clauses ABOVE are
-           * unchanged and still bound every role.
+           * EC8A — polling unit. Legacy documents have no
+           * result_level field; they keep the original path unchanged.
            */
-          || hasGlobalAccess("upload_election_result")
-          || hasScopedAccess(
-              "upload_election_result",
-              "ward",
-              request.resource.data.ward_id
+          (
+            (
+              !request.resource.data.keys().hasAny(["result_level"])
+              || request.resource.data.get("result_level", "") == "polling_unit"
             )
+            && (
+              resultId == request.resource.data.contest_id + "__"
+                          + request.resource.data.polling_unit_id
+              || resultId == request.resource.data.ward_id + "__"
+                          + request.resource.data.polling_unit_id
+            )
+            && activeContestAllowsLga()
+            && (
+              isAdminOrElectionOfficer()
+              || registeredAt(
+                  request.resource.data.ward_id,
+                  request.resource.data.polling_unit_id
+                )
+              || hasGlobalAccess("upload_election_result")
+              || hasScopedAccess(
+                  "upload_election_result",
+                  "ward",
+                  request.resource.data.ward_id
+                )
+            )
+          )
+          ||
+          /* EC8B — ward collation (no polling unit). */
+          (
+            request.resource.data.get("result_level", "") == "ward"
+            && request.resource.data.ward_id != ""
+            && activeContestAllowsLga()
+            && resultId == request.resource.data.contest_id + "__ward__"
+                        + request.resource.data.ward_id
+            && (
+              isAdminOrElectionOfficer()
+              || hasGlobalAccess("upload_election_result")
+              || hasScopedAccess(
+                  "upload_election_result",
+                  "ward",
+                  request.resource.data.ward_id
+                )
+              /*
+               * An LGA coordinator (and a zone coordinator through the
+               * projected LGA grants) submits ward collations for the
+               * wards of their own LGA. The payload's lga_id is the
+               * grant key; the upload form derives it from the ward.
+               */
+              || hasScopedAccess(
+                  "upload_election_result",
+                  "lga",
+                  request.resource.data.lga_id
+                )
+            )
+          )
+          ||
+          /* EC8C — LGA collation (no ward or polling unit). */
+          (
+            request.resource.data.get("result_level", "") == "lga"
+            && request.resource.data.lga_id != ""
+            && activeContestAllowsLga()
+            && resultId == request.resource.data.contest_id + "__lga__"
+                        + request.resource.data.lga_id
+            && (
+              isAdminOrElectionOfficer()
+              || hasGlobalAccess("upload_election_result")
+              || hasScopedAccess(
+                  "upload_election_result",
+                  "lga",
+                  request.resource.data.lga_id
+                )
+            )
+          )
+          ||
+          /* EC8D — state collation, only for a state-wide contest. */
+          (
+            request.resource.data.get("result_level", "") == "state"
+            && request.resource.data.get("state_id", "") != ""
+            && exists(activeContestDoc())
+            && get(activeContestDoc()).data.scope_type == "state"
+            && resultId == request.resource.data.contest_id + "__state__"
+                        + request.resource.data.state_id
+            && (
+              isAdminOrElectionOfficer()
+              || hasGlobalAccess("upload_election_result")
+            )
+          )
         );
 
       // Officer review (approve / reject / clarify / reopen).

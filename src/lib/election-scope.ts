@@ -227,6 +227,24 @@ export function wardDisplayLabel(
 }
 
 /**
+ * Display label for an LGA id, e.g. "nkanu-west (Nkanu West)".
+ * Falls back to the bare id when the hierarchy is not loaded.
+ */
+export function lgaDisplayLabel(
+  allLgas: LGA[],
+  lgaId?: string | null,
+): string {
+  const id = (lgaId ?? "").trim();
+  if (!id) return "—";
+
+  const lga = allLgas.find(
+    (item) => item.id.toLowerCase() === id.toLowerCase(),
+  );
+
+  return lga?.name ? `${id} (${lga.name})` : id;
+}
+
+/**
  * Same idea for a polling unit:
  *
  *   nkanu-west-ward-02-pu-016 (Central School Agbani)
