@@ -183,47 +183,46 @@ export default function HomePage() {
         <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-900 to-green-950 text-white max-w-full">
           <div className="absolute inset-0 bg-black/30 pointer-events-none" />
 
-          <div className="relative mx-auto max-w-7xl px-4 pt-8 pb-16 sm:px-6 md:py-24 lg:px-8">
+          <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 md:pb-20 md:pt-8 lg:px-8">
             {/*
-              Mobile order: countdown -> hero copy/CTAs -> hero image.
-              The countdown is the first thing under the header on a
-              phone; on desktop it stays at the top of the right column.
+              Mobile order: countdown -> hero copy -> hero image -> CTAs.
+              On desktop the copy sits on the left while the countdown and
+              image stack at the top of the right column.
+
+              Both wrappers are `contents` on mobile, so their children
+              become grid items and the shared `order-*` classes can slot
+              the image between the copy and the CTAs.
             */}
-            <div className="grid items-center gap-8 md:grid-cols-12 md:gap-x-12 md:gap-y-5">
-              <div className="order-1 mx-auto w-full max-w-md md:order-none md:col-span-5 md:col-start-8 md:row-start-1 md:mx-0">
-                <ElectionCountdown
-                  electionDate={settings.electionDate}
-                  className="w-full"
-                />
-              </div>
+            <div className="grid gap-8 md:grid-cols-12 md:items-start md:gap-x-12">
+              <div className="contents md:col-span-7 md:col-start-1 md:row-start-1 md:block">
+                <div className="order-2 md:order-none">
+                  {settings.headerNotice && (
+                    <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
+                      {settings.headerNotice}
+                    </div>
+                  )}
 
-              <div className="order-2 md:order-none md:col-span-7 md:col-start-1 md:row-start-1">
-                {settings.headerNotice && (
-                  <div className="mb-6 inline-block rounded-full border border-emerald-400/30 bg-emerald-500/20 px-4 py-1.5 text-xs font-semibold tracking-wide text-emerald-200 backdrop-blur-sm uppercase">
-                    {settings.headerNotice}
-                  </div>
-                )}
+                  <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl tracking-tight">
+                    {settings.heroTitle}
+                  </h1>
 
-                <h1 className="mb-4 text-4xl font-extrabold leading-tight md:text-6xl tracking-tight">
-                  {settings.heroTitle}
-                </h1>
+                  {settings.heroTagline && (
+                    <p className="mb-6 text-2xl font-semibold text-emerald-300 md:text-3xl">
+                      {settings.heroTagline}
+                    </p>
+                  )}
 
-                {settings.heroTagline && (
-                  <p className="mb-6 text-2xl font-semibold text-emerald-300 md:text-3xl">
-                    {settings.heroTagline}
-                  </p>
-                )}
-
-                {settings.heroDescription && (
-                  <p className="mb-8 text-base text-gray-200 leading-relaxed md:text-lg max-w-xl">
-                    {settings.heroDescription}
-                  </p>
-                )}
+                  {settings.heroDescription && (
+                    <p className="mb-0 text-base text-gray-200 leading-relaxed md:mb-8 md:text-lg max-w-xl">
+                      {settings.heroDescription}
+                    </p>
+                  )}
+                </div>
 
                 {/* Hero primary/secondary buttons are configurable
                     in admin settings (heroCtaText / heroCtaLink and
                     the optional heroCta2 pair). */}
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <div className="order-4 mt-1 flex flex-col gap-3 sm:flex-row sm:flex-wrap md:mt-0">
                   {settings.heroCtaText && (
                     <Link
                       href={settings.heroCtaLink || "/about"}
@@ -245,58 +244,67 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="order-3 mx-auto flex w-full max-w-md flex-col items-center justify-center gap-5 md:order-none md:col-span-5 md:col-start-8 md:row-start-2 md:mx-0">
-                {settings.heroImageUrl &&
-                failedHeroImage !== settings.heroImageUrl ? (
-                  <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border-4 border-emerald-500/30 bg-gray-900">
-                    <Image
-                      src={settings.heroImageUrl}
-                      alt={settings.heroTitle}
-                      fill
-                      unoptimized
-                      priority
-                      sizes="(max-width: 768px) 100vw, 40vw"
-                      onError={() => setFailedHeroImage(settings.heroImageUrl)}
-                      className="object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-full max-w-md rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl space-y-6">
-                    <h3 className="text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
-                      Campaign Operations &amp; Intelligence
-                    </h3>
+              <div className="contents md:col-span-5 md:col-start-8 md:row-start-1 md:flex md:flex-col md:gap-6">
+                <div className="order-1 mx-auto w-full max-w-md md:order-none md:mx-0">
+                  <ElectionCountdown
+                    electionDate={settings.electionDate}
+                    className="w-full"
+                  />
+                </div>
 
-                    <div className="space-y-4">
-                      <div className="flex items-start space-x-3">
-                        <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
-                          <Users className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-base text-emerald-200">
-                            Stakeholder Engagement
-                          </h4>
-                          <p className="text-xs text-gray-300 mt-1 leading-relaxed">
-                            Centralize leadership relationships, grassroots networks, and field coordination.
-                          </p>
-                        </div>
-                      </div>
+                <div className="order-3 mx-auto flex w-full max-w-md flex-col items-center justify-center gap-5 md:order-none md:mx-0">
+                  {settings.heroImageUrl &&
+                  failedHeroImage !== settings.heroImageUrl ? (
+                    <div className="relative w-full max-w-md aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl border-4 border-emerald-500/30 bg-gray-900">
+                      <Image
+                        src={settings.heroImageUrl}
+                        alt={settings.heroTitle}
+                        fill
+                        unoptimized
+                        priority
+                        sizes="(max-width: 768px) 100vw, 40vw"
+                        onError={() => setFailedHeroImage(settings.heroImageUrl)}
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-md rounded-2xl border border-emerald-400/20 bg-white/10 p-8 backdrop-blur-md shadow-2xl space-y-6">
+                      <h3 className="text-xl font-bold text-white border-b border-emerald-400/30 pb-3">
+                        Campaign Operations &amp; Intelligence
+                      </h3>
 
-                      <div className="flex items-start space-x-3">
-                        <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
-                          <Target className="h-5 w-5" />
+                      <div className="space-y-4">
+                        <div className="flex items-start space-x-3">
+                          <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
+                            <Users className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-base text-emerald-200">
+                              Stakeholder Engagement
+                            </h4>
+                            <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                              Centralize leadership relationships, grassroots networks, and field coordination.
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-bold text-base text-emerald-200">
-                            Field Operations &amp; Tasks
-                          </h4>
-                          <p className="text-xs text-gray-300 mt-1 leading-relaxed">
-                            Deploy coordinators and track real-time field reports across all geographical zones.
-                          </p>
+
+                        <div className="flex items-start space-x-3">
+                          <div className="mt-1 rounded-lg bg-emerald-500/20 p-2 text-emerald-300 border border-emerald-400/30">
+                            <Target className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-base text-emerald-200">
+                              Field Operations &amp; Tasks
+                            </h4>
+                            <p className="text-xs text-gray-300 mt-1 leading-relaxed">
+                              Deploy coordinators and track real-time field reports across all geographical zones.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
