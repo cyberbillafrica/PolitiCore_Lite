@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   CheckCircle,
   XCircle,
   HelpCircle,
@@ -31,7 +32,17 @@ import {
 } from "@/lib/firebase/election";
 import { deleteElectionResultWithAudit } from "@/lib/firebase/election-audit";
 import { getEnuguElectoralData } from "@/lib/firebase/electoral";
-import { isWithinContestScope } from "@/lib/election-scope";
+import {
+  isWithinContestScope,
+  lgaDisplayLabel,
+  pollingUnitDisplayLabel,
+  wardDisplayLabel,
+} from "@/lib/election-scope";
+import {
+  computeCollationComparison,
+  getResultLevel,
+  resultLevelMeta,
+} from "@/lib/election-levels";
 import { resolveUserNames } from "@/lib/userNames";
 import { useElectionMode, useActiveContest } from "@/hooks/useElectionEngine";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
@@ -85,6 +96,7 @@ export default function ElectionOperationsPage() {
   const [selectedResult, setSelectedResult] = useState<ElectionResultDoc | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
   const [submittingAction, setSubmittingAction] = useState(false);
+  const [approveWarningOpen, setApproveWarningOpen] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   /*
@@ -166,6 +178,56 @@ export default function ElectionOperationsPage() {
       ward: wardName ? `${wardId} (${wardName})` : wardId,
       pu: puName ? `${puId} (${puName})` : puId,
     };
+  };
+
+  /**
+   * Round 16B — level-aware labels. A collation has no polling unit (and
+   * EC8C/EC8D have no ward), so the old PU-only label rendered blank.
+   */
+  const levelLabel = (result: ElectionResultDoc) => {
+    const level = getResultLevel(result);
+    const lgasData = electoralData?.lgas ?? [];
+
+    if (level === "ward") {
+      return `Ward: ${wardDisplayLabel(lgasData, result.ward_id)}`;
+    }
+    if (level === "lga") {
+      return `LGA: ${lgaDisplayLabel(lgasData, result.lga_id)}`;
+    }
+    if (level === "state") {
+      return `State: ${result.state_id || "Enugu State"}`;
+    }
+
+    return pollingUnitDisplayLabel(
+      lgasData,
+      result.ward_id,
+      result.polling_unit_id,
+    );
+  };
+
+  const levelDetail = (result: ElectionResultDoc) => {
+    const level = getResultLevel(result);
+    const lgasData = electoralData?.lgas ?? [];
+
+    if (level === "ward") {
+      return `Ward collation · ${resultLevelMeta(level).formCode} · ${lgaDisplayLabel(
+        lgasData,
+        result.lga_id,
+      )}`;
+    }
+    if (level === "lga") {
+      return `LGA collation · ${resultLevelMeta(level).formCode}`;
+    }
+    if (level === "state") {
+      return `State collation · ${resultLevelMeta(level).formCode}`;
+    }
+
+    const labels = getElectoralLabels(
+      result.ward_id,
+      result.polling_unit_id,
+      result.lga_id,
+    );
+    return `${labels.lga} LGA • Ward ${labels.ward}`;
   };
 
   // Auth Protection Check: Strictly Election Officer per J-E2-4 & Spec §27
@@ -273,7 +335,28 @@ export default function ElectionOperationsPage() {
     !activeContest ||
     !isWithinContestScope(activeContest, { lgaId: result.lga_id });
 
-  const handleReview = async (action: "approve" | "reject" | "clarify" | "reopen") => {
+  /* Round 16B — display-only comparison for the collation under review. */
+  const selectedLevel = selectedResult
+    ? getResultLevel(selectedResult)
+    : "polling_unit";
+  const selectedComparison =
+    selectedResult && selectedLevel !== "polling_unit" && electoralData
+      ? computeCollationComparison(selectedResult, resultsInScope, electoralData)
+      : null;
+  const discrepancySummary = selectedComparison?.perParty
+    .filter((entry) => entry.isDiscrepant)
+    .map(
+      (entry) =>
+        `${entry.party} ${entry.difference > 0 ? "+" : ""}${entry.difference}`,
+    )
+    .join(" / ");
+  const reviewChildNoun =
+    selectedLevel === "ward" ? "PU" : selectedLevel === "lga" ? "ward" : "LGA";
+
+  const handleReview = async (
+    action: "approve" | "reject" | "clarify" | "reopen",
+    options?: { skipDiscrepancyConfirm?: boolean },
+  ) => {
     if (!selectedResult || !profile) return;
 
     if (isResultOutOfScope(selectedResult)) {
@@ -308,6 +391,20 @@ export default function ElectionOperationsPage() {
       return;
     }
 
+    /*
+     * A discrepancy is advice, not a block: ask once, then approve on a
+     * second click. Reject/clarify/reopen are never gated.
+     */
+    if (
+      action === "approve" &&
+      !options?.skipDiscrepancyConfirm &&
+      selectedComparison?.hasDiscrepancy
+    ) {
+      setApproveWarningOpen(true);
+      return;
+    }
+
+    setApproveWarningOpen(false);
     setSubmittingAction(true);
     setFeedbackMsg(null);
 
@@ -327,6 +424,7 @@ export default function ElectionOperationsPage() {
         text: `Result successfully marked as ${action.toUpperCase()}!`,
       });
       setReviewNotes("");
+      setApproveWarningOpen(false);
       setSelectedResult(null);
     } catch (err: unknown) {
       const errorObj = err as Error;
@@ -452,7 +550,7 @@ export default function ElectionOperationsPage() {
             Form EC8 Inspection & Audit Desk
           </h1>
           <p className="text-slate-600 text-sm mt-1">
-            Review submitted polling unit results against Form EC8 physical evidence before official collation.
+            Review submitted results and collations against Form EC8 physical evidence before official collation.
           </p>
         </div>
 
@@ -577,7 +675,6 @@ export default function ElectionOperationsPage() {
           ) : (
             <div className="divide-y divide-slate-100 max-h-[700px] overflow-y-auto">
               {filteredResults.map((res) => {
-                const labels = getElectoralLabels(res.ward_id, res.polling_unit_id, res.lga_id);
                 const isSelected = selectedResult?.id === res.id;
                 const totalVotes = res.results.reduce((acc, curr) => acc + (curr.votes || 0), 0);
                 const contestObj = contests.find((c) => c.id === res.contest_id);
@@ -588,6 +685,7 @@ export default function ElectionOperationsPage() {
                     onClick={() => {
                       setSelectedResult(res);
                       setReviewNotes(res.review_notes || "");
+                      setApproveWarningOpen(false);
                     }}
                     className={`p-4 cursor-pointer transition-colors hover:bg-slate-50 flex items-center justify-between gap-4 ${
                       isSelected ? "bg-emerald-50/60 border-l-4 border-emerald-600" : ""
@@ -595,7 +693,9 @@ export default function ElectionOperationsPage() {
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">{labels.pu}</span>
+                        <span className="font-bold text-slate-900 text-sm">
+                          {levelLabel(res)}
+                        </span>
                         {getStatusBadge(res.status)}
                       </div>
                       <div className="text-[11px] font-semibold text-emerald-800">
@@ -603,11 +703,13 @@ export default function ElectionOperationsPage() {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500">
                         <span className="flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-slate-400" /> {labels.lga}
+                          <Building2 className="w-3 h-3 text-slate-400" />
+                          {levelDetail(res)}
                         </span>
                         <span>•</span>
                         <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-slate-400" /> Ward: {labels.ward}
+                          <MapPin className="w-3 h-3 text-slate-400" />
+                          {resultLevelMeta(getResultLevel(res)).formCode}
                         </span>
                       </div>
                       <div className="text-xs text-slate-600 font-medium pt-1">
@@ -643,15 +745,18 @@ export default function ElectionOperationsPage() {
                   {getStatusBadge(selectedResult.status)}
                 </div>
                 {(() => {
-                  const labels = getElectoralLabels(selectedResult.ward_id, selectedResult.polling_unit_id, selectedResult.lga_id);
                   const contestObj = contests.find((c) => c.id === selectedResult.contest_id);
                   return (
                     <div className="space-y-1">
                       <div className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
                         Contest: {contestObj?.name || selectedResult.contest_id || "General Contest"}
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900 pt-1">{labels.pu}</h3>
-                      <p className="text-xs text-slate-500">{labels.lga} LGA • Ward {labels.ward}</p>
+                      <h3 className="text-lg font-bold text-slate-900 pt-1">
+                        {levelLabel(selectedResult)}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        {levelDetail(selectedResult)}
+                      </p>
                     </div>
                   );
                 })()}
@@ -713,6 +818,91 @@ export default function ElectionOperationsPage() {
                 </div>
               </div>
 
+              {/* Round 16B — approved child aggregation comparison */}
+              {selectedComparison && (
+                <div className="rounded-xl border overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-slate-50 px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                        Child aggregation comparison
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Approved {reviewChildNoun} results ·{" "}
+                        {selectedComparison.childApprovedCount}/
+                        {selectedComparison.childCount} covered
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                        selectedComparison.hasDiscrepancy
+                          ? "border-amber-200 bg-amber-100 text-amber-800"
+                          : selectedComparison.isComplete
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {selectedComparison.hasDiscrepancy
+                        ? "Discrepancy"
+                        : selectedComparison.isComplete
+                          ? "Matches"
+                          : "Pending coverage"}
+                    </span>
+                  </div>
+
+                  {selectedComparison.isComplete ? (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b bg-white text-[10px] uppercase text-slate-500">
+                          <th className="px-3 py-2 text-left">Party</th>
+                          <th className="px-3 py-2 text-right">Submitted</th>
+                          <th className="px-3 py-2 text-right">Children</th>
+                          <th className="px-3 py-2 text-right">Difference</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedComparison.perParty.map((entry) => (
+                          <tr key={entry.party}>
+                            <td className="px-3 py-1.5 font-bold uppercase text-slate-800">
+                              {entry.party}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-slate-700">
+                              {entry.submitted.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-slate-700">
+                              {entry.aggregated.toLocaleString()}
+                            </td>
+                            <td
+                              className={`px-3 py-1.5 text-right font-mono font-bold ${
+                                entry.isDiscrepant
+                                  ? "text-amber-700"
+                                  : "text-emerald-700"
+                              }`}
+                            >
+                              {entry.difference > 0 ? "+" : ""}
+                              {entry.difference.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-3 text-xs text-slate-600">
+                      Waiting for {selectedComparison.childApprovedCount}/
+                      {selectedComparison.childCount} {reviewChildNoun}{" "}
+                      results to be approved before comparing. Not a
+                      discrepancy — coverage is pending.
+                    </p>
+                  )}
+
+                  {selectedComparison.hasDiscrepancy && (
+                    <p className="border-t border-amber-200 bg-amber-50 p-2.5 text-[11px] font-semibold text-amber-900">
+                      Discrepancy detected. Review the evidence and child
+                      results before approving. Approval is not blocked.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Review Notes Input */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-slate-700 block">Officer Notes / Clarification Reason</label>
@@ -731,6 +921,58 @@ export default function ElectionOperationsPage() {
               {isElectionOfficer ? (
               <div className="space-y-2 pt-2 border-t border-slate-100">
                 <span className="text-xs font-semibold text-slate-700 block">Officer Decision</span>
+
+                {selectedComparison?.hasDiscrepancy && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+                    <p className="flex items-center gap-1.5 font-bold">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Discrepancy detected
+                    </p>
+                    <p className="mt-1">
+                      {discrepancySummary
+                        ? `Difference: ${discrepancySummary} versus the approved child aggregation.`
+                        : "Submitted total differs from the approved child aggregation."}{" "}
+                      Approval is not blocked; the decision is yours.
+                    </p>
+                  </div>
+                )}
+
+                {approveWarningOpen && (
+                  <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-100 p-3">
+                    <p className="text-xs font-bold text-amber-900">
+                      Approve despite the discrepancy?
+                    </p>
+                    <p className="text-[11px] text-amber-900">
+                      {discrepancySummary
+                        ? `Difference: ${discrepancySummary}.`
+                        : "The submitted total differs from the approved child aggregation."}{" "}
+                      Approval will be recorded in the audit trail.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() =>
+                          handleReview("approve", {
+                            skipDiscrepancyConfirm: true,
+                          })
+                        }
+                        disabled={
+                          submittingAction || electionModeLoading || !electionMode
+                        }
+                        className="flex-1 rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {submittingAction ? "Approving..." : "Approve anyway"}
+                      </button>
+                      <button
+                        onClick={() => setApproveWarningOpen(false)}
+                        disabled={submittingAction}
+                        className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleReview("approve")}

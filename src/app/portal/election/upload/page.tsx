@@ -34,6 +34,7 @@ import {
 } from "@/lib/election-scope";
 import {
   availableUploadLevels,
+  computeChildAggregationPreview,
   getResultLevel,
   resultLevelMeta,
   type ElectionResultLevel,
@@ -183,6 +184,12 @@ export default function ElectionUploadPage() {
   );
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [submitterName, setSubmitterName] = useState("");
+  /*
+   * Round 16B: the duplicate pre-check already asks Firestore for every
+   * row in this level's scope. Keeping those rows lets the pre-submit
+   * aggregation hint render with ZERO additional reads.
+   */
+  const [scopeRows, setScopeRows] = useState<ExistingResult[]>([]);
 
   // Load LGAs & parties
   useEffect(() => {
@@ -525,8 +532,12 @@ export default function ElectionUploadPage() {
     if (!activeContest?.id) {
       setExistingResult(null);
       setCheckingExisting(false);
+      setScopeRows([]);
       return;
     }
+
+    /* A new scope invalidates the previous level's rows. */
+    setScopeRows([]);
 
     if (level === "polling_unit") {
       if (!form.ward_id || !form.polling_unit_id) {
@@ -619,6 +630,8 @@ export default function ElectionUploadPage() {
       .then((rows) => {
         if (cancelled) return;
 
+        setScopeRows(rows as ExistingResult[]);
+
         const match =
           (rows as ExistingResult[]).find((row) => {
             if (row.contest_id && row.contest_id !== contestId) return false;
@@ -679,6 +692,68 @@ export default function ElectionUploadPage() {
       cancelled = true;
     };
   }, [existingResult]);
+
+  /*
+   * Round 16B — pre-submit aggregation hint.
+   *
+   * `scopeRows` are the rows the duplicate check already fetched:
+   *   ward  -> the ward's PU results
+   *   lga   -> the LGA's ward collations
+   *   state -> the state's LGA collations
+   * No extra Firestore query is issued for this panel.
+   */
+  const childPreview = useMemo(() => {
+    if (level === "polling_unit" || checkingExisting || !activeContest?.id) {
+      return null;
+    }
+
+    const scopeId =
+      level === "ward" ? form.ward_id : level === "lga" ? form.lga_id : stateId;
+
+    if (!scopeId) return null;
+
+    /* One query may include a historical contest in the same area. */
+    const contestRows = scopeRows.filter(
+      (row) => !row.contest_id || row.contest_id === activeContest.id,
+    );
+
+    return computeChildAggregationPreview(level, scopeId, contestRows, {
+      state: "Enugu State",
+      lgas,
+    });
+  }, [
+    level,
+    checkingExisting,
+    activeContest?.id,
+    form.ward_id,
+    form.lga_id,
+    stateId,
+    scopeRows,
+    lgas,
+  ]);
+
+  const childPreviewUnits =
+    level === "ward" ? "PUs" : level === "lga" ? "Wards" : "LGAs";
+
+  /* Compare only once the uploader has typed at least one vote. */
+  const enteredDiffersFromAggregation = useMemo(() => {
+    if (!childPreview) return false;
+
+    const hasEnteredVotes = trackedPartyObjects.some(
+      (party) => Number(partyVotes[party.id] ?? 0) > 0,
+    );
+    if (!hasEnteredVotes) return false;
+
+    return trackedPartyObjects.some((party) => {
+      const entered = Number(partyVotes[party.id] ?? 0);
+      const aggregated =
+        childPreview.perParty[party.id.toUpperCase()] ??
+        childPreview.perParty[party.acronym.toUpperCase()] ??
+        0;
+
+      return entered !== aggregated;
+    });
+  }, [childPreview, trackedPartyObjects, partyVotes]);
 
   // Resolved names for member reporting area
   const memberLgaId = deriveLgaIdFromWard(lgas, profile?.ward_id);
@@ -1533,6 +1608,44 @@ export default function ElectionUploadPage() {
               placeholder={`e.g. EC8${currentLevelMeta.formCode.slice(-1)} collation sheet signed by the ward agent`}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-apc-primary text-xs"
             />
+          </div>
+        )}
+
+        {/* Round 16B — aggregation hint from the duplicate-check rows */}
+        {level !== "polling_unit" && childPreview && (
+          <div
+            className={`border rounded-xl p-4 text-xs ${
+              enteredDiffersFromAggregation
+                ? "bg-amber-50 border-amber-200"
+                : "bg-slate-50 border-slate-200"
+            }`}
+          >
+            <p className="font-bold text-slate-800">
+              Based on approved child results:
+            </p>
+            <p className="mt-1 font-mono text-slate-700">
+              {trackedPartyObjects.length === 0
+                ? "No tracked parties configured."
+                : trackedPartyObjects
+                    .map((party) => {
+                      const votes =
+                        childPreview.perParty[party.id.toUpperCase()] ??
+                        childPreview.perParty[party.acronym.toUpperCase()] ??
+                        0;
+                      return `${party.acronym} ${votes.toLocaleString()}`;
+                    })
+                    .join(" · ")}
+            </p>
+            <p className="mt-1 text-slate-500">
+              Coverage: {childPreview.childApprovedCount}/
+              {childPreview.childCount} {childPreviewUnits} approved
+            </p>
+            {enteredDiffersFromAggregation && (
+              <p className="mt-2 font-semibold text-amber-900">
+                Your totals differ from the aggregation. Officer will review
+                the discrepancy.
+              </p>
+            )}
           </div>
         )}
 
