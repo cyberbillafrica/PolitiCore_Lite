@@ -57,6 +57,14 @@ import {
   type ElectionResultLevel,
 } from "@/lib/election-levels";
 import { lgaIdForResult } from "@/lib/election-read-scope";
+import {
+  aggregatePartyVotes,
+  countApprovedPollingUnits,
+  countDiscrepanciesInScope,
+  filterApprovedResultsForMetrics,
+  filterResultsByGeographicScope,
+  scopeCompletionTotals,
+} from "@/lib/election-metrics";
 import BackToDashboardLink from "@/components/election/BackToDashboardLink";
 import { notify } from "@/lib/notify";
 import {
@@ -744,16 +752,32 @@ export default function ElectionDashboard() {
    * summing a ward collation on top of the PUs it collates would double
    * count. Level tabs read `displayedResults` instead.
    */
-  const officialApprovedResults = useMemo(() => {
-    return viewerScopedResults.filter(
-      (r) =>
-        getResultLevel(r) === "polling_unit" &&
-        r.status === "approved" &&
-        (selectedContestId === "all" ||
-          !r.contest_id ||
-          r.contest_id === selectedContestId),
-    );
-  }, [viewerScopedResults, selectedContestId]);
+  const metricContestId =
+    selectedContestId !== "all"
+      ? selectedContestId
+      : activeContest?.id ?? null;
+
+  /*
+   * Round 16C: every dashboard metric derives from this ONE set —
+   * approved polling-unit rows restricted to the selected contest AND
+   * the geographic drill-down. The old code filtered the denominator by
+   * geography but summed a contest-wide numerator, which is why a ward
+   * could read "10 / 7".
+   *
+   * When the contest dropdown is "all", the ACTIVE contest is the
+   * metric authority. This guard is metrics-only; table rows and the
+   * strip keep their existing "all" behaviour.
+   */
+  const geoFilteredApprovedResults = useMemo(
+    () =>
+      filterApprovedResultsForMetrics(viewerScopedResults, {
+        contestId: metricContestId,
+        selectedLgaId,
+        selectedWardId,
+        lgas,
+      }),
+    [viewerScopedResults, metricContestId, selectedLgaId, selectedWardId, lgas],
+  );
 
   const operationalSubmissions = useMemo(() => {
     return viewerScopedResults.filter((r) => {
@@ -808,21 +832,8 @@ export default function ElectionDashboard() {
 
   // Aggregated Official Party Totals & Operational Breakdown
   const aggregates = useMemo(() => {
-    const partyTotals: Record<string, number> = {};
-    for (const p of trackedParties) {
-      partyTotals[p.toLowerCase()] = 0;
-    }
-
-    let totalOfficialVotes = 0;
-
-    for (const r of officialApprovedResults) {
-      for (const pr of r.results) {
-        const partyKey = pr.party.toLowerCase();
-        const v = Number(pr.votes) || 0;
-        totalOfficialVotes += v;
-        partyTotals[partyKey] = (partyTotals[partyKey] || 0) + v;
-      }
-    }
+    const { totalVotes: totalOfficialVotes, partyTotals } =
+      aggregatePartyVotes(geoFilteredApprovedResults, trackedParties);
 
     // Determine leading party among tracked parties
     let leadingParty = "None";
@@ -841,7 +852,9 @@ export default function ElectionDashboard() {
     const pendingCount = operationalSubmissions.filter(
       (r) => r.status === "submitted" || r.status === "pending_review",
     ).length;
-    const approvedCount = officialApprovedResults.length;
+    const approvedCount = countApprovedPollingUnits(
+      geoFilteredApprovedResults,
+    );
     const rejectedCount = operationalSubmissions.filter(
       (r) => r.status === "rejected",
     ).length;
@@ -896,7 +909,7 @@ export default function ElectionDashboard() {
 
     const reportingPercent =
       totalPUsInScope > 0
-        ? ((approvedCount / totalPUsInScope) * 100).toFixed(1)
+        ? Math.min(100, (approvedCount / totalPUsInScope) * 100).toFixed(1)
         : "0.0";
 
     return {
@@ -916,7 +929,7 @@ export default function ElectionDashboard() {
       reportingPercent,
     };
   }, [
-    officialApprovedResults,
+    geoFilteredApprovedResults,
     operationalSubmissions,
     trackedParties,
     comparePartyA,
@@ -946,20 +959,30 @@ export default function ElectionDashboard() {
     );
   }, [viewerScopedResults, activeContest]);
 
+  const geoScopedActiveContestResults = useMemo(
+    () =>
+      filterResultsByGeographicScope(activeContestResults, {
+        selectedLgaId,
+        selectedWardId,
+        lgas,
+      }),
+    [activeContestResults, selectedLgaId, selectedWardId, lgas],
+  );
+
   const approvedByLevel = useMemo(
     () =>
       activeContest
-        ? countApprovedByLevel(activeContestResults, activeContest.id)
+        ? countApprovedByLevel(geoScopedActiveContestResults, activeContest.id)
         : {
             polling_unit: 0,
             ward: 0,
             lga: 0,
             state: 0,
           },
-    [activeContestResults, activeContest],
+    [geoScopedActiveContestResults, activeContest],
   );
 
-  const completionTotals = useMemo(() => {
+  const contestCompletionTotals = useMemo(() => {
     const totals = countHierarchyTargets(scopedLgas);
 
     if (viewerScope.unrestricted) return totals;
@@ -994,6 +1017,31 @@ export default function ElectionDashboard() {
   }, [scopedLgas, viewerScope]);
 
   /*
+   * Round 16C: the strip follows the geographic filter with the same
+   * level-aware rules as the rows. A ward drill-down leaves one ward,
+   * its parent LGA and the state collation visible.
+   */
+  const completionTotals = useMemo(
+    () =>
+      scopeCompletionTotals({
+        totals: contestCompletionTotals,
+        selectedLgaId,
+        selectedWardId,
+        lgas: scopedLgas,
+        pollingUnitLocked:
+          !viewerScope.unrestricted &&
+          (viewerScope.pollingUnitIds?.size ?? 0) > 0,
+      }),
+    [
+      contestCompletionTotals,
+      selectedLgaId,
+      selectedWardId,
+      scopedLgas,
+      viewerScope,
+    ],
+  );
+
+  /*
    * Round 16B — collation discrepancy detection.
    *
    * Pure and in-memory: the one merged listener already holds every
@@ -1021,9 +1069,21 @@ export default function ElectionDashboard() {
     return map;
   }, [activeContestResults, hierarchy]);
 
+  /*
+   * Without a geographic filter the count is exactly Round 16B's; only a
+   * drill-down needs the scope-aware pass.
+   */
   const discrepancyCounts = useMemo(
-    () => countDiscrepancies(activeContestResults, hierarchy),
-    [activeContestResults, hierarchy],
+    () =>
+      selectedLgaId === "all" && selectedWardId === "all"
+        ? countDiscrepancies(activeContestResults, hierarchy)
+        : countDiscrepanciesInScope(
+            activeContestResults,
+            activeContestResults,
+            hierarchy,
+            { selectedLgaId, selectedWardId, lgas },
+          ),
+    [activeContestResults, hierarchy, selectedLgaId, selectedWardId, lgas],
   );
 
   const visibleDiscrepancyCount = useMemo(
@@ -1153,7 +1213,7 @@ export default function ElectionDashboard() {
   const levelChartData = useMemo(() => {
     const groupMap = new Map<string, Record<string, unknown>>();
 
-    for (const r of officialApprovedResults) {
+    for (const r of geoFilteredApprovedResults) {
       let groupName = r.polling_unit_id || r.ward_id;
 
       for (const l of lgas) {
@@ -1189,7 +1249,7 @@ export default function ElectionDashboard() {
     }
 
     return Array.from(groupMap.values());
-  }, [officialApprovedResults, lgas, trackedParties, aggregationLevel]);
+  }, [geoFilteredApprovedResults, lgas, trackedParties, aggregationLevel]);
 
   /*
    * A contest narrower than the whole state gets ONE summary row
@@ -1199,13 +1259,20 @@ export default function ElectionDashboard() {
     if (contestLgaIds === null) return null;
 
     const row: Record<string, unknown> = {
-      group: activeContest ? activeContest.name : "Contest scope",
+      group:
+        selectedWardId !== "all"
+          ? `Ward: ${wardDisplayLabel(lgas, selectedWardId)}`
+          : selectedLgaId !== "all"
+            ? `LGA: ${lgaDisplayLabel(lgas, selectedLgaId)}`
+            : activeContest
+              ? activeContest.name
+              : "Contest scope",
     };
     for (const p of trackedParties) {
       row[p.toUpperCase()] = 0;
     }
 
-    for (const r of officialApprovedResults) {
+    for (const r of geoFilteredApprovedResults) {
       for (const pr of r.results) {
         const pKey = pr.party.toUpperCase();
         row[pKey] = ((row[pKey] as number) || 0) + (Number(pr.votes) || 0);
@@ -1213,7 +1280,15 @@ export default function ElectionDashboard() {
     }
 
     return row;
-  }, [contestLgaIds, activeContest, officialApprovedResults, trackedParties]);
+  }, [
+    contestLgaIds,
+    activeContest,
+    geoFilteredApprovedResults,
+    trackedParties,
+    selectedLgaId,
+    selectedWardId,
+    lgas,
+  ]);
 
   // Pie Chart Data
   const pieChartData = useMemo(() => {
