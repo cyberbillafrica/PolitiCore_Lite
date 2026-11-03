@@ -18,10 +18,8 @@ import {
 } from "firebase/firestore";
 
 import { auth, db, firebaseConfig } from "./config";
-import {
-  ensureBaselineCampaignProjection,
-  syncCampaignAccessForUser,
-} from "./userAccess";
+import { syncCampaignAccessForUser } from "./userAccess";
+import { notifyAdminsOfRegistration } from "./registrations";
 
 import type { MembershipType, Role } from "@/types";
 
@@ -89,6 +87,17 @@ export async function signUpVolunteer(
       access_role: "member",
 
       /**
+       * Round 17 — a public signup is NOT usable until an admin
+       * approves it. The account is created (so the profile and the
+       * decision survive) but every portal surface and every rule gate
+       * treats `pending` as blocked.
+       *
+       * Admin-created members skip this: createMemberByAdmin() writes
+       * an account the admin is already vouching for.
+       */
+      status: "pending",
+
+      /**
        * Social ranking starts at zero.
        */
       points: 0,
@@ -99,23 +108,42 @@ export async function signUpVolunteer(
     });
 
     /*
-     * Baseline projection.
+     * Round 17 — NO campaign projection at signup.
      *
-     * Without it a brand-new plain campaign member has ZERO
-     * `user_access` documents, so every campaign read gated on
-     * `hasAccess()` is denied and the portal shows "Missing or
-     * insufficient permissions". Failures are logged inside the helper
-     * and never block the signup.
+     * Campaign reads are gated on `hasAccess()` (the `user_access`
+     * index), not on `isActiveUser()`. Writing the baseline here would
+     * therefore let a pending registration read its ward's activities
+     * and assignments through the SDK even though the app refuses to
+     * sign it in. The 9 baseline documents are written by the APPROVAL
+     * batch instead (see `approveRegistration` in ./userAccess), so a
+     * pending account has no grants at all and `hasAccess()` denies it
+     * naturally.
      */
-    await ensureBaselineCampaignProjection(user.uid, {
-      profile: {
-        access_role: "member",
-        membership_types: userData.membership_types ?? [],
-        lga_id: userData.lga_id ?? null,
-        ward_id: userData.ward_id ?? null,
-        polling_unit_id: userData.polling_unit_id ?? null,
-      },
+
+    /*
+     * Tell the admins. This runs while the new account's session still
+     * exists (the notification rule requires actor_id == uid), and it
+     * never blocks the signup.
+     */
+    await notifyAdminsOfRegistration({
+      userId: user.uid,
+      fullName: userData.full_name,
+      wardId: userData.ward_id,
     });
+
+    /*
+     * Round 17 — do not leave a pending account signed in.
+     *
+     * `createUserWithEmailAndPassword` authenticates on the primary
+     * instance, so without this the applicant would already hold a
+     * session while the UI says "awaiting approval". Signing out here
+     * also means the AuthContext status check never has to bounce them.
+     *
+     * A failed sign-out is not a failed registration: the account exists
+     * and the `pending` status still ejects the session on the next
+     * auth-state check.
+     */
+    await signOut(auth).catch(() => {});
 
     return {
       user,
@@ -310,29 +338,71 @@ export async function logOut() {
  * administrator."
  */
 
-export const SUSPENSION_NOTICE_STORAGE_KEY =
-  "politicore.auth.suspendedNotice";
+/**
+ * Statuses that must not hold a session. Round 17 adds the two
+ * registration states to the Round 6 suspension state.
+ */
+export type BlockedAccountStatus = "pending" | "rejected" | "suspended";
 
-/** Flag the one-time suspension notice for the login screen. */
-export function flagSuspensionNotice(): void {
+/** One-time, per-tab notice left for the login screen. */
+export const ACCOUNT_NOTICE_STORAGE_KEY = "politicore.auth.accountNotice";
+
+/** Legacy alias (suspension-only name, same key). */
+export const SUSPENSION_NOTICE_STORAGE_KEY = ACCOUNT_NOTICE_STORAGE_KEY;
+
+export function isBlockedAccountStatus(
+  value: unknown,
+): value is BlockedAccountStatus {
+  return value === "pending" || value === "rejected" || value === "suspended";
+}
+
+/** The message the login screen shows for a blocked account. */
+export function blockedAccountMessage(status: BlockedAccountStatus): string {
+  switch (status) {
+    case "pending":
+      return "Your registration is pending admin approval. You\u2019ll be able to log in once approved.";
+
+    case "rejected":
+      return "Your registration was declined. Please contact the campaign team for more information.";
+
+    default:
+      return "Your account has been suspended. Please contact an administrator.";
+  }
+}
+
+/** Flag the one-time notice for the login screen. */
+export function flagAccountNotice(status: BlockedAccountStatus): void {
   try {
-    window.sessionStorage.setItem(SUSPENSION_NOTICE_STORAGE_KEY, "1");
+    window.sessionStorage.setItem(ACCOUNT_NOTICE_STORAGE_KEY, status);
   } catch {
     /* Storage unavailable — the notice simply is not shown. */
   }
 }
 
-/** Consume the one-time suspension notice (called by the login page). */
-export function consumeSuspensionNotice(): boolean {
+/** Consume the one-time notice (called by the login page). */
+export function consumeAccountNotice(): BlockedAccountStatus | null {
   try {
-    if (window.sessionStorage.getItem(SUSPENSION_NOTICE_STORAGE_KEY)) {
-      window.sessionStorage.removeItem(SUSPENSION_NOTICE_STORAGE_KEY);
-      return true;
+    const value = window.sessionStorage.getItem(ACCOUNT_NOTICE_STORAGE_KEY);
+
+    if (value) {
+      window.sessionStorage.removeItem(ACCOUNT_NOTICE_STORAGE_KEY);
+      return isBlockedAccountStatus(value) ? value : null;
     }
   } catch {
     /* Storage unavailable. */
   }
-  return false;
+
+  return null;
+}
+
+/** @deprecated Use `flagAccountNotice("suspended")`. */
+export function flagSuspensionNotice(): void {
+  flagAccountNotice("suspended");
+}
+
+/** @deprecated Use `consumeAccountNotice()` and compare with "suspended". */
+export function consumeSuspensionNotice(): boolean {
+  return consumeAccountNotice() === "suspended";
 }
 
 /*
@@ -342,14 +412,12 @@ export function consumeSuspensionNotice(): boolean {
  */
 export function subscribeToUserStatus(
   userId: string,
-  onSuspended: () => void,
+  onStatusChange: (status: string | null) => void,
 ): Unsubscribe {
   return onSnapshot(doc(db, "users", userId), (snapshot) => {
     const data = snapshot.data() as { status?: string } | undefined;
 
-    if (data?.status === "suspended") {
-      onSuspended();
-    }
+    onStatusChange(typeof data?.status === "string" ? data.status : null);
   });
 }
 

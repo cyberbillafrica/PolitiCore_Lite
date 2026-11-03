@@ -24,6 +24,9 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   "issue_status_changed",
   "activity_created",
   "role_assigned",
+  "registration_pending",
+  "registration_approved",
+  "registration_rejected",
 ];
 
 /**
@@ -41,6 +44,43 @@ export const NOTIFICATION_RECIPIENT_CAP = 100;
  * The recipients a fan-out may write to: unique, non-empty, never the
  * actor (nobody is notified about their own action), capped.
  */
+/*
+ * ============================================================
+ * REGISTRATION REVIEW AUDIENCE (Round 17)
+ * ============================================================
+ */
+
+/**
+ * Most admins ONE signup may notify.
+ *
+ * A deployment with a large admin bench must not let a burst of public
+ * signups turn into an unbounded fan-out; the first 20 admins are told, and
+ * the review page is the source of truth for everyone else.
+ */
+export const REGISTRATION_ADMIN_CAP = 20;
+
+/**
+ * Admins who should hear about a new registration.
+ *
+ * Only ACTIVE admins count: an absent `status` is active (legacy
+ * profiles), while a pending, rejected or suspended admin is skipped so a
+ * not-yet-approved account can never be asked to approve somebody else.
+ */
+export function registrationAdminRecipients(
+  admins: Array<{ id: string; status?: string | null }>,
+  actorId: string,
+  cap = REGISTRATION_ADMIN_CAP,
+): string[] {
+  const eligible = admins
+    .filter((admin) => {
+      const status = (admin.status ?? "").trim().toLowerCase();
+      return status === "" || status === "active";
+    })
+    .map((admin) => admin.id);
+
+  return capRecipients(eligible, actorId, cap);
+}
+
 export function capRecipients(
   userIds: Array<string | null | undefined>,
   actorId: string,

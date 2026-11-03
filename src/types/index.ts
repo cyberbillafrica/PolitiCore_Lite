@@ -12,6 +12,16 @@
 export type Role = "admin" | "member" | "election_officer";
 
 // ============================================================
+// ACCOUNT STATUS
+// ============================================================
+
+/**
+ * Account lifecycle. An ABSENT `status` means "active" — every user
+ * created before Round 17 carries no field and keeps working.
+ */
+export type UserStatus = "active" | "pending" | "rejected" | "suspended";
+
+// ============================================================
 // MEMBERSHIP TYPES
 // ============================================================
 
@@ -303,16 +313,34 @@ export interface UserProfile {
   access_role: Role;
 
   /*
-   * Account status. Valid values: "active" (default) and
-   * "suspended". An ABSENT field counts as active.
+   * Account status. Valid values:
    *
-   * A suspended member is blocked from the portal until an admin
-   * lifts the suspension (see docs/member-suspension.md). The
-   * optional audit fields record when and by whom.
+   *   "active"    full access (also the default when ABSENT)
+   *   "pending"   registered, awaiting admin approval — no access
+   *   "rejected"  registration declined — no access
+   *   "suspended" blocked by an admin after being active
+   *
+   * See docs/member-suspension.md and docs/registration-gate.md.
+   * The optional audit fields record when and by whom.
    */
-  status?: string;
+  status?: UserStatus;
   suspended_at?: unknown;
   suspended_by?: string | null;
+
+  /*
+   * Registration review audit fields (Round 17).
+   */
+  approved_at?: unknown;
+  approved_by?: string | null;
+  rejected_at?: unknown;
+  rejected_by?: string | null;
+  rejection_reason?: string | null;
+
+  /*
+   * Ids of the `user_access` documents the campaign projection owns
+   * for this profile. Written by the projection, never by the member.
+   */
+  access_projection_ids?: string[];
 
   // Membership
   membership_types: MembershipType[];
@@ -618,7 +646,10 @@ export type NotificationType =
   | "issue_raised"
   | "issue_status_changed"
   | "activity_created"
-  | "role_assigned";
+  | "role_assigned"
+  | "registration_pending"
+  | "registration_approved"
+  | "registration_rejected";
 
 export interface AppNotification {
   id: string;

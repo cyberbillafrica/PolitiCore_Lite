@@ -101,6 +101,13 @@ export interface SeedUserInput {
   lga_id?: string | null;
   full_name?: string;
   email?: string;
+
+  /**
+   * Account status (Round 17). Omit for a legacy profile: an absent
+   * field counts as active.
+   */
+  status?: string;
+  access_projection_ids?: string[];
 }
 
 /** Write a `/users/{uid}` profile document. */
@@ -124,6 +131,12 @@ export async function seedUser(
       points: 0,
       rank: "member",
       created_at: new Date(),
+
+      ...(input.status !== undefined ? { status: input.status } : {}),
+
+      ...(input.access_projection_ids !== undefined
+        ? { access_projection_ids: input.access_projection_ids }
+        : {}),
     });
   });
 }

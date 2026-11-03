@@ -7,7 +7,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 
-import { consumeSuspensionNotice, signIn } from "@/lib/firebase/auth";
+import {
+  blockedAccountMessage,
+  consumeAccountNotice,
+  isBlockedAccountStatus,
+  logOut,
+  signIn,
+  type BlockedAccountStatus,
+} from "@/lib/firebase/auth";
+import { getUserProfile } from "@/lib/firebase/firestore";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
@@ -17,7 +25,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [suspendedNotice, setSuspendedNotice] = useState(false);
+  const [notice, setNotice] = useState<BlockedAccountStatus | null>(null);
 
   const router = useRouter();
 
@@ -27,22 +35,64 @@ export default function LoginPage() {
    * AuthContext. Consume it so it appears exactly once.
    */
   useEffect(() => {
-    if (consumeSuspensionNotice()) {
-      setSuspendedNotice(true);
+    const next = consumeAccountNotice();
+
+    if (next) {
+      setNotice(next);
     }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    setError("");
     setLoading(true);
 
-    const { error: signInError } = await signIn(email, password);
+    const { user, error: signInError } = await signIn(email, password);
 
     if (signInError) {
       notify.error(getLoginErrorMessage(signInError));
       setLoading(false);
       return;
+    }
+
+    /*
+     * Round 17 — registration gate.
+     *
+     * Firebase Auth happily signs in a pending or rejected account; the
+     * app must refuse the session and say why. The profile is read with
+     * the fresh session (owner reads are allowed), then the session is
+     * dropped so the portal never mounts for a blocked account.
+     */
+    if (user) {
+      try {
+        const profile = (await getUserProfile(user.uid)) as {
+          status?: string;
+        } | null;
+
+        const status = profile?.status;
+
+        if (isBlockedAccountStatus(status)) {
+          await logOut();
+
+          setError(blockedAccountMessage(status));
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        /*
+         * The status read can lose the race with AuthContext signing a
+         * blocked account out. Refuse the session rather than letting an
+         * unverified account through.
+         */
+        console.error("Failed to verify account status:", error);
+
+        await logOut();
+
+        notify.error("Unable to verify your account status. Please try again.");
+        setLoading(false);
+        return;
+      }
     }
 
     router.push("/portal/dashboard");
@@ -70,16 +120,26 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Suspension notice */}
-            {suspendedNotice && (
-              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-                Your account has been suspended. Please contact an
-                administrator.
+            {/* Account-status notice (left by a mid-session sign-out) */}
+            {notice && (
+              <div
+                className={`mb-6 rounded-lg border px-4 py-3 text-sm font-medium ${
+                  notice === "rejected"
+                    ? "border-red-200 bg-red-50 text-red-800"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {blockedAccountMessage(notice)}
               </div>
             )}
 
             {/* Error */}
-            
+            {error && (
+              <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                {error}
+              </div>
+            )}
+
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email */}

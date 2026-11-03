@@ -405,6 +405,35 @@ export function buildBaselineAccessDocs(
   }));
 }
 
+/**
+ * Does this profile's recorded index omit any baseline document?
+ *
+ * Round 17 withholds the baseline from pending registrations and writes it
+ * in the approval batch. A profile approved by an earlier deployment (or
+ * one whose projection write failed) can therefore be `active` with an
+ * empty index. The login flow repairs exactly that case, and a healthy
+ * member — every expected id already recorded — asks for no work at all.
+ *
+ * Pure: the zone id is derived from the LGA, so no hierarchy read is
+ * needed to answer.
+ */
+export function baselineIndexNeedsRepair(
+  userId: string,
+  profile: CampaignAccessProfile | null | undefined,
+  recorded: unknown,
+): boolean {
+  const baseline = buildBaselineAccessDocs(userId, profile);
+  if (baseline.length === 0) return false;
+
+  const known = new Set(
+    Array.isArray(recorded)
+      ? recorded.filter((item): item is string => typeof item === "string")
+      : [],
+  );
+
+  return baseline.some((doc) => !known.has(doc.id));
+}
+
 /* ============================================================
  * COORDINATOR SCOPE EXPANSION
  * ============================================================ */

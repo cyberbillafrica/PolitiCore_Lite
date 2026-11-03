@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import {
   ArrowRight,
@@ -18,6 +19,7 @@ import {
   Target,
   TrendingUp,
   Upload,
+  UserCheck,
   Users,
   Vote,
 } from "lucide-react";
@@ -25,6 +27,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { subscribePendingRegistrationCount } from "@/lib/firebase/registrations";
 
 import {
   formatOrganizationalPosition,
@@ -42,6 +45,21 @@ export default function AdminDashboard() {
     isCampaignCouncilMember,
     accessLoading,
   } = useAuth();
+
+  /*
+   * Round 17 — live pending-registration count. The card below only shows
+   * when somebody is actually waiting, so the dashboard stays quiet once
+   * the queue is clear.
+   */
+  const [pendingRegistrations, setPendingRegistrations] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = subscribePendingRegistrationCount(
+      setPendingRegistrations,
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   if (!profile) {
     return null;
@@ -167,6 +185,17 @@ export default function AdminDashboard() {
             description="Manage campaign and social members, profiles and access."
             href="/portal/admin/members"
           />
+
+          {pendingRegistrations > 0 && (
+            <AdminCard
+              icon={<UserCheck className="h-5 w-5" />}
+              title="Pending Registrations"
+              description={`${pendingRegistrations} registration${
+                pendingRegistrations === 1 ? "" : "s"
+              } awaiting your review.`}
+              href="/portal/admin/registrations"
+            />
+          )}
 
           <AdminCard
             icon={<CheckSquare className="h-5 w-5" />}

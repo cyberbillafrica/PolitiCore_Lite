@@ -17,6 +17,7 @@ import {
   CAMPAIGN_PROJECTED_PERMISSIONS,
   ELECTION_RESULTS_PERMISSION,
   ELECTION_UPLOAD_PERMISSION,
+  baselineIndexNeedsRepair,
   buildCampaignAccessDocId,
   buildBaselineAccessDocs,
   computeExpectedCampaignAccess,
@@ -538,8 +539,20 @@ export async function ensureBaselineCampaignProjection(
       return result;
     }
 
-    const recordedSet = new Set(recorded);
-    const toAdd = baseline.filter((doc) => !recordedSet.has(doc.id));
+    /*
+     * Idempotence is checked against the documents that ACTUALLY exist,
+     * not only against `access_projection_ids`. A profile approved by an
+     * earlier deployment (or repaired by the login flow) may already own
+     * its baseline while the index is still empty; rewriting all nine
+     * documents on every login would be pure noise.
+     */
+    const existing = await loadExistingCampaignAccess(userId);
+    const existingSet = new Set(existing.ids);
+    const staleSet = new Set(existing.staleIds);
+
+    const toAdd = baseline.filter(
+      (doc) => !existingSet.has(doc.id) || staleSet.has(doc.id),
+    );
 
     if (toAdd.length > 0) {
       const batch = writeBatch(db);
@@ -559,10 +572,13 @@ export async function ensureBaselineCampaignProjection(
         new Set([...recorded, ...baseline.map((doc) => doc.id)]),
       );
 
-      await updateDoc(doc(db, "users", userId), {
-        [ACCESS_PROJECTION_IDS_FIELD]: merged,
-        updated_at: serverTimestamp(),
-      });
+      /* No index change means no write: a healthy login is read-only. */
+      if (merged.length !== recorded.length) {
+        await updateDoc(doc(db, "users", userId), {
+          [ACCESS_PROJECTION_IDS_FIELD]: merged,
+          updated_at: serverTimestamp(),
+        });
+      }
     }
 
     result.added = toAdd.length;
@@ -574,6 +590,151 @@ export async function ensureBaselineCampaignProjection(
     result.error = error instanceof Error ? error.message : String(error);
     return result;
   }
+}
+
+/* ============================================================
+ * REGISTRATION APPROVAL (Round 17)
+ * ============================================================ */
+
+/**
+ * Flip a pending registration to active IN ONE BATCH.
+ *
+ * Approval is the only moment a new member's campaign grants come into
+ * existence, so the status change and the permission index must land
+ * together: an `active` profile with no grants looks approved but cannot
+ * read anything, while grants for a still-`pending` profile would
+ * contradict the gate. Firestore batches are atomic, so both commit or
+ * neither does.
+ *
+ * Admin field edits are applied in the same write, and the projection is
+ * computed from the POST-approval profile — a corrected ward or polling
+ * unit must project to the corrected area.
+ */
+export async function approveRegistration(
+  userId: string,
+  edits: Record<string, unknown> = {},
+  options: { actorId?: string | null } = {},
+): Promise<CampaignProjectionResult> {
+  const result: CampaignProjectionResult = {
+    userId,
+    added: 0,
+    deleted: 0,
+    total: 0,
+  };
+
+  if (!userId) {
+    result.skipped = "no user id";
+    return result;
+  }
+
+  try {
+    const profileSnap = await getDoc(doc(db, "users", userId));
+
+    if (!profileSnap.exists()) {
+      result.skipped = "no profile";
+      return result;
+    }
+
+    const raw = profileSnap.data();
+
+    /* Identity, status and the index are owned by this function. */
+    const cleanEdits: Record<string, unknown> = { ...edits };
+    delete cleanEdits.id;
+    delete cleanEdits.user_id;
+    delete cleanEdits.status;
+    delete cleanEdits[ACCESS_PROJECTION_IDS_FIELD];
+
+    const profile = toProfile({ ...raw, ...cleanEdits });
+    const baseline = buildBaselineAccessDocs(userId, profile);
+    const recorded = recordedProjectionIds(raw);
+
+    const merged = Array.from(
+      new Set([...recorded, ...baseline.map((doc) => doc.id)]),
+    );
+
+    const batch = writeBatch(db);
+
+    batch.update(doc(db, "users", userId), {
+      ...cleanEdits,
+      status: "active",
+      approved_at: serverTimestamp(),
+      approved_by: options.actorId ?? null,
+      rejected_at: null,
+      rejected_by: null,
+      rejection_reason: null,
+      [ACCESS_PROJECTION_IDS_FIELD]: merged,
+      updated_at: serverTimestamp(),
+    });
+
+    for (const entry of baseline) {
+      batch.set(
+        doc(db, "user_access", entry.id),
+        accessDocData(userId, entry),
+      );
+    }
+
+    await batch.commit();
+
+    result.added = baseline.length;
+    result.total = baseline.length;
+    return result;
+  } catch (error) {
+    console.warn("Failed to approve registration:", error);
+
+    result.error = error instanceof Error ? error.message : String(error);
+    return result;
+  }
+}
+
+/* ============================================================
+ * LOGIN REPAIR (Round 17)
+ * ============================================================ */
+
+/**
+ * Repair an `active` profile whose baseline was never projected.
+ *
+ * Round 17 approves a registration and writes its 9 baseline documents in
+ * one batch, but two windows remain: a profile approved by an earlier
+ * deployment, and an approval whose projection write failed after the
+ * status write landed. Both leave an active member with no grants, which
+ * looks like "Missing or insufficient permissions" everywhere.
+ *
+ * The login flow calls this once per sign-in. It returns `null` — no work
+ * — for a healthy member, a blocked account, or a profile that is not
+ * baseline-eligible, and it writes only the documents that are missing.
+ *
+ * `persistIndex` defaults to FALSE: the owner-update rule pins
+ * `access_projection_ids` so a member can never clear or forge their own
+ * projection index (Round 17, blocker 3). Approval writes the index in
+ * the admin's session; the repair only fills in missing grants.
+ */
+export async function repairBaselineCampaignProjection(
+  userId: string,
+  raw: Record<string, unknown> | undefined,
+): Promise<CampaignProjectionResult | null> {
+  if (!userId || !raw) return null;
+
+  const status = typeof raw.status === "string" ? raw.status.trim() : "";
+
+  /* An absent status is a legacy active profile. */
+  if (status !== "" && status !== "active") return null;
+
+  const profile = toProfile(raw);
+
+  if (
+    !baselineIndexNeedsRepair(
+      userId,
+      profile,
+      raw[ACCESS_PROJECTION_IDS_FIELD],
+    )
+  ) {
+    return null;
+  }
+
+  return ensureBaselineCampaignProjection(userId, {
+    profile,
+    persistIndex: false,
+  });
 }
 
 /**

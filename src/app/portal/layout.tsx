@@ -30,6 +30,7 @@ import {
   Image,
   BookOpen,
   Sparkles,
+  UserCheck,
 } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import {
@@ -54,6 +55,7 @@ import {
 } from "@/lib/election-nav";
 import { useElectionMode } from "@/hooks/useElectionEngine";
 import { useElectoralLookup } from "@/hooks/useElectoralLookup";
+import { subscribePendingRegistrationCount } from "@/lib/firebase/registrations";
 
 import type { Permission, UserProfile, Ward, PollingUnit } from "@/types";
 
@@ -244,6 +246,12 @@ const adminNavigation = [
   },
 
   {
+    name: "Registrations",
+    href: "/portal/admin/registrations",
+    icon: UserCheck,
+  },
+
+  {
     name: "Tasks",
     href: "/portal/tasks",
     icon: CheckSquare,
@@ -354,6 +362,18 @@ export default function PortalLayout({
    * server-side by `electionModeEnabled()` in firestore.rules.
    */
   const { electionMode } = useElectionMode();
+
+  /*
+   * Round 17 — live pending-registration badge. Only admins may read the
+   * queue, so the subscription is created only for them.
+   */
+  const [pendingRegistrations, setPendingRegistrations] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    return subscribePendingRegistrationCount(setPendingRegistrations);
+  }, [isAdmin]);
 
   const [campaignOpen, setCampaignOpen] = useState(() =>
     pathname.startsWith("/portal/campaign"),
@@ -722,6 +742,13 @@ export default function PortalLayout({
                     <item.icon className="mr-3 h-5 w-5" />
 
                     {item.name}
+
+                    {item.href === "/portal/admin/registrations" &&
+                      pendingRegistrations > 0 && (
+                        <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                          {pendingRegistrations}
+                        </span>
+                      )}
                   </Link>
                 );
               })}

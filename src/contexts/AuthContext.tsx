@@ -5,12 +5,14 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User } from "firebase/auth";
 
 import {
-  flagSuspensionNotice,
+  flagAccountNotice,
+  isBlockedAccountStatus,
   logOut,
   onAuthStateChange,
   subscribeToUserStatus,
 } from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firebase/firestore";
+import { repairBaselineCampaignProjection } from "@/lib/firebase/userAccess";
 
 import {
   getUserOrganizationalAssignments,
@@ -232,20 +234,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : null;
 
         /*
-         * SUSPENSION CHECK AT LOGIN.
+         * ACCOUNT-STATUS CHECK AT LOGIN.
          *
          * Firebase Auth has already signed this user in — the app's
-         * job is to detect the suspension and kick them out before
+         * job is to detect a blocked account and kick them out before
          * any profile state is published.
+         *
+         * Round 17 adds the two registration states to the Round 6
+         * suspension state:
+         *   pending   never approved, no portal access
+         *   rejected  declined by an admin
          */
-        if (userProfile?.status === "suspended") {
+        if (isBlockedAccountStatus(userProfile?.status)) {
           setProfile(null);
           setLoading(false);
           setAccessLoading(false);
 
-          flagSuspensionNotice();
+          flagAccountNotice(userProfile.status);
           await logOut();
           return;
+        }
+
+        /*
+         * Round 17 — repair a missing campaign baseline.
+         *
+         * Approval writes the 9 baseline grants in the same batch as the
+         * status change, but a profile approved before this round (or one
+         * whose projection write failed) is active with no grants. This is
+         * a no-op for a healthy member and writes only what is missing.
+         */
+        if (data) {
+          void repairBaselineCampaignProjection(firebaseUser.uid, data);
         }
 
         setProfile(userProfile);
@@ -358,8 +377,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
-    const unsubscribe = subscribeToUserStatus(user.uid, () => {
-      flagSuspensionNotice();
+    const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
+      if (!isBlockedAccountStatus(status)) return;
+
+      flagAccountNotice(status);
       setProfile(null);
       setAssignments([]);
       setGrants([]);

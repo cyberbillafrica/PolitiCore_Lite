@@ -352,21 +352,25 @@ export default function VolunteerPage() {
             </div>
 
             <h1 className="mb-4 text-3xl font-bold text-apc-primary">
-              Registration Successful!
+              Registration Submitted
             </h1>
 
-            <p className="mb-8 text-gray-600">
-              Thank you for joining the campaign. Your account has been created
-              successfully.
+            <p className="mb-4 text-gray-600">
+              Thank you for joining the campaign. Your registration has been
+              received and is awaiting administrator approval.
             </p>
 
-            <a
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-lg bg-apc-primary px-6 py-3 font-semibold text-white transition-colors hover:bg-apc-dark"
+            <p className="mb-8 text-sm text-gray-500">
+              You will be able to log in once your registration is approved.
+              Check your email for updates.
+            </p>
+
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 rounded-lg border border-apc-primary px-6 py-3 font-semibold text-apc-primary transition-colors hover:bg-apc-primary hover:text-white"
             >
-              Login Now
-              <ArrowRight className="h-4 w-4" />
-            </a>
+              Return to homepage
+            </Link>
           </div>
         </main>
 
