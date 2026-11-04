@@ -32,7 +32,7 @@ import {
 import { auth } from "./config";
 
 /** The product's minimum, deliberately stricter than Firebase's six. */
-export const MIN_PASSWORD_LENGTH = 8;
+export const MIN_PASSWORD_LENGTH = 6;
 
 /*
  * A reset request can stall on a dying connection. Waiting forever is
