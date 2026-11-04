@@ -1,13 +1,18 @@
 "use client";
 
 
-import { notify } from "@/lib/notify";
 import { BRANDING } from "@/config/branding";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { UserPlus, ArrowRight, CheckCircle2, ExternalLink } from "lucide-react";
+import {
+  UserPlus,
+  ArrowRight,
+  CheckCircle2,
+  ExternalLink,
+  AlertCircle,
+} from "lucide-react";
 import Link from "next/link";
 
 import Header from "@/components/layout/Header";
@@ -198,9 +203,100 @@ function isValidUrl(value?: string) {
   }
 }
 
+/*
+ * A failed signup, split into what happened and what the applicant can do
+ * about it. `signUpVolunteer()` returns a descriptive message, but several
+ * very different situations share that shape: a taken email address, a
+ * dropped connection, and an account whose profile was never saved are not
+ * fixed by the same next step.
+ */
+type SignupFailure = {
+  /** What went wrong, in one line. */
+  message: string;
+  /** What the applicant should do now. */
+  hint: string;
+  /** True when correcting the form and submitting again can succeed. */
+  canRetry: boolean;
+  /** True when an account already exists and logging in is the way forward. */
+  showLogin: boolean;
+  /** The address the attempt used, repeated back for support. */
+  email?: string;
+};
+
+function describeSignupFailure(raw: string | undefined, email: string): SignupFailure {
+  const text = (raw ?? "").toLowerCase();
+
+  /*
+   * The account exists but the profile write failed. Submitting the form
+   * again would only produce "email-already-in-use", so the next step is
+   * a human one. Must be checked before the generic "timed out" case.
+   */
+  if (text.includes("your account was created")) {
+    return {
+      message: "Your account was created, but your registration was not saved.",
+      hint: "Please do not submit the form again. Contact the campaign team and they will finish setting up your registration.",
+      canRetry: false,
+      showLogin: false,
+      email,
+    };
+  }
+
+  if (text.includes("email-already-in-use")) {
+    return {
+      message: "An account already exists for this email address.",
+      hint: "Log in if you have registered before. If your registration was declined, contact the campaign team.",
+      canRetry: false,
+      showLogin: true,
+      email,
+    };
+  }
+
+  if (text.includes("weak-password")) {
+    return {
+      message: "That password is too weak to use.",
+      hint: "Choose a password with at least 6 characters, then submit again.",
+      canRetry: true,
+      showLogin: false,
+    };
+  }
+
+  if (
+    text.includes("network") ||
+    text.includes("offline") ||
+    text.includes("unavailable") ||
+    text.includes("timeout") ||
+    text.includes("timed out")
+  ) {
+    return {
+      message: "We could not reach the registration service.",
+      hint: "Check your internet connection, then submit the form again. Your answers are still filled in.",
+      canRetry: true,
+      showLogin: false,
+    };
+  }
+
+  /* validateSignupInput() messages name the missing field. */
+  if (text.startsWith("please ")) {
+    return {
+      message: "We could not submit your registration.",
+      hint: raw ?? "",
+      canRetry: true,
+      showLogin: false,
+    };
+  }
+
+  return {
+    message: "We could not complete your registration.",
+    hint: "Please try again. If it keeps failing, contact the campaign team.",
+    canRetry: true,
+    showLogin: false,
+    email,
+  };
+}
+
 export default function VolunteerPage() {
   const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
+  const [signupFailure, setSignupFailure] = useState<SignupFailure | null>(null);
 
   /*
    * The state-wide LGA list is publicly readable from
@@ -320,6 +416,8 @@ export default function VolunteerPage() {
   const onSubmit = async (data: VolunteerFormData) => {
     const { email, password, ...userData } = data;
 
+    setSignupFailure(null);
+
     const { user, error: signUpError } = await signUpVolunteer(
       email,
       password,
@@ -327,7 +425,12 @@ export default function VolunteerPage() {
     );
 
     if (signUpError) {
-      notify.error(signUpError);
+      /*
+       * Shown inline, next to the submit button the applicant just pressed,
+       * rather than as a toast that disappears on its own: some of these
+       * failures require a specific next step.
+       */
+      setSignupFailure(describeSignupFailure(signUpError, email));
       return;
     }
 
@@ -416,9 +519,6 @@ export default function VolunteerPage() {
           </div>
         </div>
 
-        {/* Error */}
-
-        
         <div className="rounded-2xl bg-white p-6 shadow-lg sm:p-8">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
             {/* ─────────────────────────────────────
@@ -720,6 +820,54 @@ export default function VolunteerPage() {
             {/* ─────────────────────────────────────
                 SUBMIT
             ───────────────────────────────────── */}
+
+            {signupFailure && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 p-5"
+              >
+                <div className="flex gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
+                  <div className="text-sm">
+                    <p className="font-semibold text-red-900">
+                      {signupFailure.message}
+                    </p>
+
+                    <p className="mt-1 leading-6 text-red-800">
+                      {signupFailure.hint}
+
+                      {signupFailure.email && (
+                        <>
+                          {" "}
+                          Use{" "}
+                          <span className="font-semibold">
+                            {signupFailure.email}
+                          </span>{" "}
+                          when you contact us.
+                        </>
+                      )}
+                    </p>
+
+                    {signupFailure.showLogin && (
+                      <Link
+                        href="/login"
+                        className="mt-2 inline-block font-semibold text-red-900 underline underline-offset-2"
+                      >
+                        Go to login
+                      </Link>
+                    )}
+
+                    {signupFailure.canRetry && (
+                      <p className="mt-2 leading-6 text-red-800">
+                        Your answers are still filled in — correct what you need
+                        and submit again.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end border-t pt-8">
               <button

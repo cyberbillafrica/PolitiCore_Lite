@@ -11,6 +11,7 @@ import { getAuth } from "firebase/auth";
 
 import {
   doc,
+  getDoc,
   setDoc,
   serverTimestamp,
   onSnapshot,
@@ -20,8 +21,47 @@ import {
 import { auth, db, firebaseConfig } from "./config";
 import { syncCampaignAccessForUser } from "./userAccess";
 import { notifyAdminsOfRegistration } from "./registrations";
+import {
+  settleWithin,
+  validateSignupInput,
+  writeWithCredentialRetry,
+} from "./signup-profile-write";
 
 import type { MembershipType, Role } from "@/types";
+
+/**
+ * Whether the Firestore client can authenticate requests for `uid` yet.
+ *
+ * A read of the caller's own profile is the cheapest probe: the rule is
+ * `allow read: if isSignedIn()`, so `permission-denied` means the freshly
+ * created credential has not been installed on the client yet. A probe
+ * that never answers counts as "not ready" too.
+ */
+async function firestoreCredentialReady(
+  uid: string,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const outcome = await settleWithin(getDoc(doc(db, "users", uid)), 3_000);
+
+    if (outcome.status === "fulfilled") return true;
+
+    const code =
+      outcome.status === "rejected"
+        ? (outcome.reason as { code?: string } | null)?.code
+        : null;
+
+    if (outcome.status === "rejected" && code !== "permission-denied") {
+      return false;
+    }
+
+    if (Date.now() >= deadline) return false;
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
 
 /**
  * Creates a new volunteer account through the public
@@ -55,6 +95,17 @@ export async function signUpVolunteer(
   },
 ) {
   try {
+    /*
+     * Round 17A — validate before the account exists. An account created
+     * for data we refuse to store is an auth user with no profile, and
+     * nothing later in the flow can recover it.
+     */
+    const validationError = validateSignupInput({ email, password, userData });
+
+    if (validationError) {
+      return { user: null, error: validationError };
+    }
+
     const userCredential = await createUserWithEmailAndPassword(
       auth,
       email,
@@ -75,36 +126,59 @@ export async function signUpVolunteer(
       }
     }
 
-    await setDoc(doc(db, "users", user.uid), {
-      ...cleanedUserData,
+    /*
+     * Round 17A — do not race the credential.
+     *
+     * `createUserWithEmailAndPassword` resolves as soon as the account and
+     * its token exist. Firestore installs that credential on its own client
+     * asynchronously. A write issued before that goes out unauthenticated:
+     * the server denies it and the stream reset for the new credential
+     * aborts the in-flight request, so the promise never settles. Production
+     * produced auth accounts with no profile and a spinner that never
+     * stopped.
+     *
+     * Waiting for the auth state, then for an authenticated read to succeed,
+     * guarantees the write leaves on an authenticated client. The bounded
+     * retry below covers the residual timing window and turns a dropped
+     * write into a real error instead of a hung form.
+     */
+    await auth.authStateReady().catch(() => {});
 
-      email,
+    await writeWithCredentialRetry({
+      waitForCredential: () => firestoreCredentialReady(user.uid),
 
-      /**
-       * Everyone registering through the public
-       * registration form starts as a normal member.
-       */
-      access_role: "member",
+      write: () =>
+        setDoc(doc(db, "users", user.uid), {
+          ...cleanedUserData,
 
-      /**
-       * Round 17 — a public signup is NOT usable until an admin
-       * approves it. The account is created (so the profile and the
-       * decision survive) but every portal surface and every rule gate
-       * treats `pending` as blocked.
-       *
-       * Admin-created members skip this: createMemberByAdmin() writes
-       * an account the admin is already vouching for.
-       */
-      status: "pending",
+          email,
 
-      /**
-       * Social ranking starts at zero.
-       */
-      points: 0,
-      rank: "Volunteer",
+          /**
+           * Everyone registering through the public
+           * registration form starts as a normal member.
+           */
+          access_role: "member",
 
-      created_at: serverTimestamp(),
-      updated_at: serverTimestamp(),
+          /**
+           * Round 17 — a public signup is NOT usable until an admin
+           * approves it. The account is created (so the profile and the
+           * decision survive) but every portal surface and every rule gate
+           * treats `pending` as blocked.
+           *
+           * Admin-created members skip this: createMemberByAdmin() writes
+           * an account the admin is already vouching for.
+           */
+          status: "pending",
+
+          /**
+           * Social ranking starts at zero.
+           */
+          points: 0,
+          rank: "Volunteer",
+
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        }),
     });
 
     /*
