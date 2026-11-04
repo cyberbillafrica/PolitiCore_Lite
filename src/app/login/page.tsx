@@ -210,6 +210,16 @@ export default function LoginPage() {
                 </div>
               </div>
 
+              {/* Password recovery */}
+              <div className="flex justify-end">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-medium text-apc-primary hover:underline"
+                >
+                  Forgot your password? Reset it
+                </Link>
+              </div>
+
               {/* Submit */}
               <button
                 type="submit"

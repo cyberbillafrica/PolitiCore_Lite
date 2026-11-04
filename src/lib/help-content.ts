@@ -184,7 +184,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     steps: [
       "Go to the sign-in page and enter your email address and password.",
       "If you see a message that the details are incorrect, check for typing errors first.",
-      "If you have forgotten your password or can't get in, contact a campaign administrator to have your access checked or your password reset.",
+      "If you have forgotten your password, use the reset link on the sign-in page to set a new one yourself — it only needs access to the email address on the account. If you cannot reach that inbox, contact a campaign administrator to have your access checked or your password reset.",
     ],
   },
   {
@@ -761,11 +761,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
     roles: ["all"],
     keywords: ["password", "forgot", "reset", "locked out", "cannot sign in"],
     body: [
-      "There is no self-service password reset in this portal. If you have forgotten your password or cannot sign in, contact a campaign administrator and ask them to reset your access.",
+      "You can reset your own password from the sign-in page: choose the reset link, enter the email address the account was registered with, and open the message Firebase sends you. The link takes you to a page where you set a new password, and then you sign in with it.",
       "Sign-in problems can also come from a wrong email address — make sure you use the address the account was registered with.",
-      "For account security, password resets are handled individually by administrators, never through public broadcasts.",
+      "If you cannot reach the email address on the account, contact a campaign administrator — they can reset your access for you. Password changes are never sent through public broadcasts.",
     ],
-    related: [{ label: "Go to the sign-in page", href: "/login" }],
+    related: [
+      { label: "Go to the sign-in page", href: "/login" },
+      { label: "Reset your password", href: "/forgot-password" },
+    ],
   },
   {
     id: "about-the-public-site",
@@ -1077,6 +1080,8 @@ export const HELP_ROUTE_MAP: Record<string, string[]> = {
     "resetting-your-password",
     "account-suspended",
   ],
+  "/forgot-password": ["resetting-your-password"],
+  "/reset-password": ["resetting-your-password"],
   "/volunteer": ["registering-as-a-volunteer", "membership-types"],
   "/register-inec-officer": ["inec-officer-registration"],
   "/about": ["what-is-the-portal"],

@@ -29,6 +29,8 @@ export function MaintenanceGuard({ children }: { children: React.ReactNode }) {
   const isBypassed =
     pathname.startsWith("/portal") ||
     pathname.startsWith("/login") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".");
