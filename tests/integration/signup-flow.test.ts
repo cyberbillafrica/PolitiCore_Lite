@@ -4,11 +4,15 @@ import { initializeApp, deleteApp, type App } from "firebase-admin/app";
 import { getAuth as getAdminAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 
 import { auth, db } from "@/lib/firebase/config";
-import { signUpVolunteer } from "@/lib/firebase/auth";
+import {
+  isSignupInProgress,
+  shouldEjectForAccountStatus,
+  signUpVolunteer,
+} from "@/lib/firebase/auth";
 
 import { INTEGRATION_PROJECT_ID } from "./env";
 
@@ -168,6 +172,68 @@ describe("signUpVolunteer", () => {
     const profile = await getDoc(doc(db, "users", result.user!.uid));
 
     expect(profile.data()?.status).toBe("pending");
+  });
+
+  it("survives the app's own pending gate while it writes the profile", async () => {
+    await seedAdmin();
+
+    /*
+     * Round 17B regression. AuthContext watches the signed-in user's profile
+     * and signs out any blocked status. Firestore echoes the signup write to
+     * the local cache BEFORE the server acknowledges it, so that watcher used
+     * to eject the applicant mid-write: the write was aborted, `users/{uid}`
+     * never landed, admins were never notified, and the form reported a
+     * failure for an account that existed.
+     *
+     * This reproduces the watcher with the same predicate the app uses, so
+     * the two halves of the interaction are exercised together.
+     */
+    let stopProfile: () => void = () => undefined;
+
+    const stopAuth = onAuthStateChanged(auth, (user) => {
+      stopProfile();
+      stopProfile = () => undefined;
+
+      if (!user) return;
+
+      stopProfile = onSnapshot(doc(db, "users", user.uid), (snapshot) => {
+        const status = (snapshot.data()?.status as string | undefined) ?? null;
+
+        if (shouldEjectForAccountStatus(status)) {
+          void signOut(auth);
+        }
+      });
+    });
+
+    try {
+      const pending = signUpVolunteer(
+        uniqueEmail("gate"),
+        "secret123",
+        VALID_DATA,
+      );
+
+      /* The signup owns the session from the moment it starts. */
+      expect(isSignupInProgress()).toBe(true);
+      expect(shouldEjectForAccountStatus("pending")).toBe(false);
+
+      const result = await pending;
+
+      expect(result.error).toBeNull();
+      expect(isSignupInProgress()).toBe(false);
+
+      const profile = await adminDb.doc(`users/${result.user!.uid}`).get();
+
+      expect(profile.exists).toBe(true);
+      expect(profile.data()?.status).toBe("pending");
+
+      /* Outside the signup window the gate is unchanged. */
+      expect(shouldEjectForAccountStatus("pending")).toBe(true);
+      expect(shouldEjectForAccountStatus("active")).toBe(false);
+      expect(shouldEjectForAccountStatus(undefined)).toBe(false);
+    } finally {
+      stopProfile();
+      stopAuth();
+    }
   });
 
   it("rejects invalid input before any account is created", async () => {

@@ -9,6 +9,7 @@ import {
   isBlockedAccountStatus,
   logOut,
   onAuthStateChange,
+  shouldEjectForAccountStatus,
   subscribeToUserStatus,
 } from "@/lib/firebase/auth";
 import { getUserProfile } from "@/lib/firebase/firestore";
@@ -245,7 +246,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
          *   pending   never approved, no portal access
          *   rejected  declined by an admin
          */
-        if (isBlockedAccountStatus(userProfile?.status)) {
+        if (
+          /* Narrows the status type for the notice below. */
+          isBlockedAccountStatus(userProfile?.status) &&
+          /* Adds the signup window: never eject our own pending write. */
+          shouldEjectForAccountStatus(userProfile?.status)
+        ) {
           setProfile(null);
           setLoading(false);
           setAccessLoading(false);
@@ -378,7 +384,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
-      if (!isBlockedAccountStatus(status)) return;
+      /*
+       * A signup write echoes `pending` locally before the server has it;
+       * ejecting then would abort the very write that creates the account.
+       */
+      if (!shouldEjectForAccountStatus(status)) return;
 
       flagAccountNotice(status);
       setProfile(null);

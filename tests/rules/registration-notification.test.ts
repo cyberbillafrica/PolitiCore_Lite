@@ -213,6 +213,12 @@ describe("login gate wiring", () => {
     expect(context).toContain("subscribeToUserStatus");
   });
 
+  it("does not eject the account its own signup is still writing", () => {
+    /* Round 17B: the watcher must go through the signup-aware gate. */
+    expect(context).toContain("shouldEjectForAccountStatus(status)");
+    expect(context).toContain("shouldEjectForAccountStatus(userProfile?.status)");
+  });
+
   it("repairs a missing projection on login", () => {
     expect(context).toContain(
       "repairBaselineCampaignProjection(firebaseUser.uid, data)",

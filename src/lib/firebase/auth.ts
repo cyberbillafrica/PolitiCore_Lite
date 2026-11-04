@@ -106,6 +106,13 @@ export async function signUpVolunteer(
       return { user: null, error: validationError };
     }
 
+    /*
+     * From here until the account is signed out, a `pending` status belongs
+     * to this signup and must not eject the session (see
+     * `shouldEjectForAccountStatus`).
+     */
+    signupInProgress = true;
+
     const userCredential = await createUserWithEmailAndPassword(
       auth,
       email,
@@ -228,6 +235,8 @@ export async function signUpVolunteer(
       user: null,
       error: error.message,
     };
+  } finally {
+    signupInProgress = false;
   }
 }
 
@@ -428,6 +437,40 @@ export function isBlockedAccountStatus(
   value: unknown,
 ): value is BlockedAccountStatus {
   return value === "pending" || value === "rejected" || value === "suspended";
+}
+
+/*
+ * Round 17B — the registration gate must not fire on its own signup.
+ *
+ * `signUpVolunteer` writes a pending profile, and Firestore echoes that
+ * write to the local cache immediately, long before the server acknowledges
+ * it. AuthContext watches the same document, so it saw a pending account,
+ * signed the applicant out mid-write, and the dropped stream aborted the
+ * write: auth account created, `users/{uid}` never saved, admins never
+ * notified. Every production signup failed this way while the emulator
+ * tests passed, because those call `signUpVolunteer` without AuthContext.
+ *
+ * The flag below marks the window in which the pending status is the RESULT
+ * of the signup we are performing, not a login attempt. Outside that window
+ * a pending account is ejected exactly as before.
+ */
+let signupInProgress = false;
+
+/** True while `signUpVolunteer` owns the freshly created session. */
+export function isSignupInProgress(): boolean {
+  return signupInProgress;
+}
+
+/**
+ * Should the app reject this account status right now?
+ *
+ * Blocked statuses eject the session — except while the signup that is
+ * creating this very account is still running.
+ */
+export function shouldEjectForAccountStatus(
+  value: unknown,
+): value is BlockedAccountStatus {
+  return !signupInProgress && isBlockedAccountStatus(value);
 }
 
 /** The message the login screen shows for a blocked account. */
